@@ -164,7 +164,7 @@ static Point3D compute_node_recursive( int i, int j, const BaseCorners& corners,
  * @return Kokkos::View<double**[3], Kokkos::HostSpace> Host view containing coordinates
  *         for the subdomain. Dimensions are ((i_end_incl - 1) - i_start, (j_end_incl - 1) - j_start).
  */
-SphericalShellSubMeshViewType
+GridData2D< double, 3 >
     compute_subdomain( const BaseCorners& corners, int i_start_incl, int i_end_incl, int j_start_incl, int j_end_incl )
 {
     const int i_start = i_start_incl;
@@ -188,7 +188,7 @@ SphericalShellSubMeshViewType
     const size_t subdomain_rows = i_end - i_start;
     const size_t subdomain_cols = j_end - j_start;
 
-    SphericalShellSubMeshViewType subdomain_coords( "subdomain_coords", subdomain_rows, subdomain_cols );
+    GridData2D< double, 3 > subdomain_coords( "subdomain_coords", subdomain_rows, subdomain_cols );
 
     MemoizationCache cache; // Each subdomain computation gets its own cache
 
@@ -211,7 +211,7 @@ SphericalShellSubMeshViewType
     return subdomain_coords;
 }
 
-static SphericalShellSubMeshViewType setup_coords_subdomain(
+static GridData2D< double, 3 > unit_sphere_single_shell_subdomain_coords(
     int diamond_id,
     int ntan,
     int i_start_incl,
@@ -348,234 +348,7 @@ static SphericalShellSubMeshViewType setup_coords_subdomain(
     return compute_subdomain( corners, i_start_incl, i_end_incl, j_start_incl, j_end_incl );
 }
 
-/// @brief Computes the vertex coordinates on a single diamond of the shell with radius 1.
-inline SphericalShellSubMeshViewType setup_coords_classic( int ntan, int diamond_id )
-{
-    // -------------------
-    //  Consistency Check
-    // -------------------
-    int power = ntan - 1;
-    int lvl   = 0;
-    while ( power > 0 )
-    {
-        ++lvl;
-        power /= 2;
-    }
-    --lvl;
-    if ( 1 << lvl != ntan - 1 )
-    {
-        throw std::invalid_argument(
-            "ERROR: For SHELLMESH_CLASSIC (ntan-1) must be a power of 2, but ntan is " + std::to_string( ntan ) );
-    }
-
-    // Coordinates of the twelve icosahedral nodes of the base grid
-    real_t i_node[12][3];
-
-    // Association of the ten diamonds to the twelve icosahedral nodes
-    //
-    // For each diamond we store the indices of its vertices on the
-    // icosahedral base grid in this map. Ordering: We start with the
-    // pole and proceed in counter-clockwise fashion.
-    int d_node[10][4];
-
-    // -----------------------------------------
-    //  Initialise the twelve icosahedral nodes
-    // -----------------------------------------
-
-    // the pentagonal nodes on each "ring" are given in anti-clockwise ordering
-    real_t fifthpi = real_c( 0.4 * std::asin( 1.0 ) );
-    real_t w       = real_c( 2.0 * std::acos( 1.0 / ( 2.0 * std::sin( fifthpi ) ) ) );
-    real_t cosw    = std::cos( w );
-    real_t sinw    = std::sin( w );
-    real_t phi     = 0.0;
-
-    // North Pole
-    i_node[0][0] = 0.0;
-    i_node[0][1] = 0.0;
-    i_node[0][2] = +1.0;
-
-    // South Pole
-    i_node[11][0] = 0.0;
-    i_node[11][1] = 0.0;
-    i_node[11][2] = -1.0;
-
-    // upper ring
-    for ( int k = 1; k <= 5; k++ )
-    {
-        phi          = real_c( 2.0 ) * ( real_c( k ) - real_c( 0.5 ) ) * fifthpi;
-        i_node[k][0] = sinw * std::cos( phi );
-        i_node[k][1] = sinw * std::sin( phi );
-        i_node[k][2] = cosw;
-    }
-
-    // lower ring
-    for ( int k = 1; k <= 5; k++ )
-    {
-        phi              = real_c( 2.0 ) * ( real_c( k ) - 1 ) * fifthpi;
-        i_node[k + 5][0] = sinw * std::cos( phi );
-        i_node[k + 5][1] = sinw * std::sin( phi );
-        i_node[k + 5][2] = -cosw;
-    }
-
-    // ----------------------------------------------
-    // Setup internal index maps for mesh generation
-    // ----------------------------------------------
-
-    // Map icosahedral node indices to diamonds (northern hemisphere)
-    d_node[0][0] = 0;
-    d_node[0][1] = 5;
-    d_node[0][2] = 6;
-    d_node[0][3] = 1;
-    d_node[1][0] = 0;
-    d_node[1][1] = 1;
-    d_node[1][2] = 7;
-    d_node[1][3] = 2;
-    d_node[2][0] = 0;
-    d_node[2][1] = 2;
-    d_node[2][2] = 8;
-    d_node[2][3] = 3;
-    d_node[3][0] = 0;
-    d_node[3][1] = 3;
-    d_node[3][2] = 9;
-    d_node[3][3] = 4;
-    d_node[4][0] = 0;
-    d_node[4][1] = 4;
-    d_node[4][2] = 10;
-    d_node[4][3] = 5;
-
-    // Map icosahedral node indices to diamonds (southern hemisphere)
-    d_node[5][0] = 11;
-    d_node[5][1] = 7;
-    d_node[5][2] = 1;
-    d_node[5][3] = 6;
-    d_node[6][0] = 11;
-    d_node[6][1] = 8;
-    d_node[6][2] = 2;
-    d_node[6][3] = 7;
-    d_node[7][0] = 11;
-    d_node[7][1] = 9;
-    d_node[7][2] = 3;
-    d_node[7][3] = 8;
-    d_node[8][0] = 11;
-    d_node[8][1] = 10;
-    d_node[8][2] = 4;
-    d_node[8][3] = 9;
-    d_node[9][0] = 11;
-    d_node[9][1] = 6;
-    d_node[9][2] = 5;
-    d_node[9][3] = 10;
-
-    // --------------------------
-    //  Allocate 4D memory array
-    // --------------------------
-
-    SphericalShellSubMeshViewType             node_coords( "node_coords", ntan, ntan );
-    SphericalShellSubMeshViewType::HostMirror node_coords_host = Kokkos::create_mirror_view( node_coords );
-
-    // ------------------------
-    //  Meshing of unit sphere
-    // ------------------------
-
-    // "left" and "right" w.r.t. d_node depend on hemisphere
-    int L, R;
-    if ( diamond_id < 5 )
-    {
-        L = 1;
-        R = 3;
-    }
-    else
-    {
-        R = 1;
-        L = 3;
-    }
-
-    // Insert coordinates of four nodes of this icosahedral diamond for each dim.
-    for ( int i = 0; i < 3; ++i )
-    {
-        node_coords_host( 0, 0, i )               = i_node[d_node[diamond_id][0]][i];
-        node_coords_host( ntan - 1, 0, i )        = i_node[d_node[diamond_id][L]][i];
-        node_coords_host( ntan - 1, ntan - 1, i ) = i_node[d_node[diamond_id][2]][i];
-        node_coords_host( 0, ntan - 1, i )        = i_node[d_node[diamond_id][R]][i];
-    }
-
-    // Loop over refinement levels
-    for ( int m = 1; m < ntan - 1; m *= 2 )
-    {
-        const int l  = ( ntan - 1 ) / m;
-        const int l2 = l / 2;
-
-        // rows of diamond
-        for ( int j1 = 0; j1 <= m; ++j1 )
-        {
-            for ( int j2 = 0; j2 < m; ++j2 )
-            {
-                // compute coordinates of new node
-                const int i1 = j1 * l;
-                const int i2 = j2 * l + l2;
-
-                // compute new node as midpoint of arc
-                const auto x = node_coords_host( i1, i2 - l2, 0 ) + node_coords_host( i1, i2 + l2, 0 );
-                const auto y = node_coords_host( i1, i2 - l2, 1 ) + node_coords_host( i1, i2 + l2, 1 );
-                const auto z = node_coords_host( i1, i2 - l2, 2 ) + node_coords_host( i1, i2 + l2, 2 );
-
-                const auto scl = std::sqrt( x * x + y * y + z * z );
-
-                node_coords_host( i1, i2, 0 ) = x / scl;
-                node_coords_host( i1, i2, 1 ) = y / scl;
-                node_coords_host( i1, i2, 2 ) = z / scl;
-            }
-        }
-
-        // columns of diamond
-        for ( int j1 = 0; j1 <= m; ++j1 )
-        {
-            for ( int j2 = 0; j2 < m; ++j2 )
-            {
-                // compute coordinates of new node
-                const int i1 = j2 * l + l2;
-                const int i2 = j1 * l;
-
-                // compute new node as midpoint of arc
-                const auto x = node_coords_host( i1 - l2, i2, 0 ) + node_coords_host( i1 + l2, i2, 0 );
-                const auto y = node_coords_host( i1 - l2, i2, 1 ) + node_coords_host( i1 + l2, i2, 1 );
-                const auto z = node_coords_host( i1 - l2, i2, 2 ) + node_coords_host( i1 + l2, i2, 2 );
-
-                const auto scl = std::sqrt( x * x + y * y + z * z );
-
-                node_coords_host( i1, i2, 0 ) = x / scl;
-                node_coords_host( i1, i2, 1 ) = y / scl;
-                node_coords_host( i1, i2, 2 ) = z / scl;
-            }
-        }
-
-        // diagonals of diamond
-        for ( int j1 = 0; j1 < m; ++j1 )
-        {
-            for ( int j2 = 0; j2 < m; ++j2 )
-            {
-                // compute coordinates of new node
-                const int i1 = j1 * l + l2;
-                const int i2 = j2 * l + l2;
-
-                // compute new node as midpoint of arc
-                const auto x = node_coords_host( i1 - l2, i2 + l2, 0 ) + node_coords_host( i1 + l2, i2 - l2, 0 );
-                const auto y = node_coords_host( i1 - l2, i2 + l2, 1 ) + node_coords_host( i1 + l2, i2 - l2, 1 );
-                const auto z = node_coords_host( i1 - l2, i2 + l2, 2 ) + node_coords_host( i1 + l2, i2 - l2, 2 );
-
-                const auto scl = std::sqrt( x * x + y * y + z * z );
-
-                node_coords_host( i1, i2, 0 ) = x / scl;
-                node_coords_host( i1, i2, 1 ) = y / scl;
-                node_coords_host( i1, i2, 2 ) = z / scl;
-            }
-        }
-    }
-
-    Kokkos::deep_copy<>( node_coords, node_coords_host );
-    return node_coords;
-}
-
-SphericalShellSubMeshViewType setup_coords_subdomain(
+GridData2D< double, 3 > unit_sphere_single_shell_subdomain_coords(
     int diamond_id,
     int global_refinements,
     int num_subdomains_per_side,
@@ -597,7 +370,7 @@ SphericalShellSubMeshViewType setup_coords_subdomain(
     const auto end_i = start_i + elements_in_subdomain_i;
     const auto end_j = start_j + elements_in_subdomain_j;
 
-    return setup_coords_subdomain( diamond_id, ntan, start_i, end_i, start_j, end_j );
+    return unit_sphere_single_shell_subdomain_coords( diamond_id, ntan, start_i, end_i, start_j, end_j );
 }
 
 } // namespace terra

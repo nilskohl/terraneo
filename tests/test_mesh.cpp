@@ -1,6 +1,7 @@
 #include <fstream> // For VTK output example
 #include <iomanip>
 #include <iostream>
+#include <optional>
 
 #include "terra/point_3d.hpp"
 #include "terra/spherical_shell_mesh.hpp"
@@ -11,37 +12,42 @@ int main( int argc, char** argv )
 {
     Kokkos::initialize( argc, argv );
     {
-        const int global_refinements = 8;
-        const int n_subdomains       = 4;
+        const int global_refinements    = 2;
+        const int n_subdomains_per_side = 2;
+        const int diamond_id            = 0;
 
-        for ( int i = 0; i < 1; ++i )
+        const int num_shells = 4;
+        const int num_layers = num_shells - 1;
+
+        auto mesh_view_full =
+            terra::unit_sphere_single_shell_subdomain_coords( diamond_id, global_refinements, 1, 0, 0 );
+        auto mesh_view_partial = terra::unit_sphere_single_shell_subdomain_coords(
+            diamond_id, global_refinements, n_subdomains_per_side, 0, 0 );
+        auto mesh_view_partial_2 = terra::unit_sphere_single_shell_subdomain_coords(
+            diamond_id, global_refinements, n_subdomains_per_side, 1, 0 );
+
+        terra::write_rectilinear_to_triangular_vtu(
+            mesh_view_full, "mesh_full.vtu", terra::DiagonalSplitType::BACKWARD_SLASH );
+        terra::write_rectilinear_to_triangular_vtu(
+            mesh_view_partial, "mesh_view_partial.vtu", terra::DiagonalSplitType::BACKWARD_SLASH );
+        terra::write_rectilinear_to_triangular_vtu(
+            mesh_view_partial_2, "mesh_view_partial_2.vtu", terra::DiagonalSplitType::BACKWARD_SLASH );
+
+        terra::GridDataScalar1D< double > radii( "radii", num_shells );
+        auto                              radii_host = Kokkos::create_mirror_view( radii );
+        for ( int i = 0; i < num_shells; ++i )
         {
-            auto mesh_view_full      = terra::setup_coords_subdomain( i, global_refinements, 1, 0, 0 );
-            auto mesh_view_partial   = terra::setup_coords_subdomain( i, global_refinements, n_subdomains, 0, 0 );
-            auto mesh_view_partial_2 = terra::setup_coords_subdomain( i, global_refinements, n_subdomains, 1, 0 );
-            auto mesh_view_partial_3 = terra::setup_coords_subdomain( i, global_refinements, n_subdomains, 0, 1 );
-            auto mesh_view_partial_4 = terra::setup_coords_subdomain( i, global_refinements, n_subdomains, 1, 1 );
-            terra::write_vtk_xml_quad_mesh(
-                "mesh_view_full_" + std::to_string( i ) + ".vtu",
-                mesh_view_full,
-                terra::VtkElementType::QUADRATIC_QUAD );
-            terra::write_vtk_xml_quad_mesh(
-                "mesh_view_partial_" + std::to_string( i ) + ".vtu",
-                mesh_view_partial,
-                terra::VtkElementType::QUADRATIC_QUAD );
-            terra::write_vtk_xml_quad_mesh(
-                "mesh_view_partial_2_" + std::to_string( i ) + ".vtu",
-                mesh_view_partial_2,
-                terra::VtkElementType::QUADRATIC_QUAD );
-            terra::write_vtk_xml_quad_mesh(
-                "mesh_view_partial_3_" + std::to_string( i ) + ".vtu",
-                mesh_view_partial_3,
-                terra::VtkElementType::QUADRATIC_QUAD );
-            terra::write_vtk_xml_quad_mesh(
-                "mesh_view_partial_4_" + std::to_string( i ) + ".vtu",
-                mesh_view_partial_4,
-                terra::VtkElementType::QUADRATIC_QUAD );
+            radii_host( i ) = 0.5 + ( 0.5 / num_layers ) * i;
         }
+        Kokkos::deep_copy( radii_host, radii );
+
+        terra::write_surface_radial_extruded_to_wedge_vtu(
+            mesh_view_full,
+            radii,
+            std::optional< terra::GridData3D< double, 3 > >(),
+            "data_name",
+            "shell.vtu",
+            terra::DiagonalSplitType::BACKWARD_SLASH );
     }
     Kokkos::finalize();
 

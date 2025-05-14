@@ -1,4 +1,5 @@
 #pragma once
+#include "grid.hpp"
 
 namespace terra {
 
@@ -262,4 +263,430 @@ void write_vtk_xml_quad_mesh(
     }
 }
 
+// Enum to choose the diagonal for splitting quads
+enum class DiagonalSplitType
+{
+    FORWARD_SLASH, // Connects (i,j) with (i+1,j+1)
+    BACKWARD_SLASH // Connects (i+1,j) with (i,j+1)
+};
+
+// Helper to get VTK type string from C++ type
+template < typename T >
+std::string get_vtk_type_string()
+{
+    if ( std::is_same_v< T, float > )
+        return "Float32";
+    if ( std::is_same_v< T, double > )
+        return "Float64";
+    if ( std::is_same_v< T, int > )
+        return "Int32";
+    if ( std::is_same_v< T, long long > )
+        return "Int64";
+    if ( std::is_same_v< T, int8_t > )
+        return "Int8";
+    if ( std::is_same_v< T, uint8_t > )
+        return "UInt8";
+    // Add more types as needed
+    throw std::runtime_error( "Unsupported data type for VTK output" );
+}
+
+template < typename ScalarType >
+void write_rectilinear_to_triangular_vtu(
+    Kokkos::View< ScalarType** [3] > points_device_view,
+    const std::string&               filename,
+    DiagonalSplitType                split_type )
+{
+    auto points_host_mirror = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, points_device_view );
+
+    const int Nx = points_host_mirror.extent( 0 ); // Number of points in 1st dim (e.g., x)
+    const int Ny = points_host_mirror.extent( 1 ); // Number of points in 2nd dim (e.g., y)
+
+    if ( Nx < 2 || Ny < 2 )
+    {
+        throw std::runtime_error( "Grid dimensions are too small to form cells (Nx, Ny must be >= 2)." );
+    }
+
+    const long long num_total_points   = static_cast< long long >( Nx ) * Ny;
+    const long long num_quads_in_plane = static_cast< long long >( Nx - 1 ) * ( Ny - 1 );
+    const long long num_cells          = num_quads_in_plane * 2; // Each quad becomes 2 triangles
+
+    std::ofstream vtk_file( filename );
+    if ( !vtk_file.is_open() )
+    {
+        throw std::runtime_error( "Failed to open file: " + filename );
+    }
+
+    vtk_file
+        << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+    vtk_file << "  <UnstructuredGrid>\n";
+    vtk_file << "    <Piece NumberOfPoints=\"" << num_total_points << "\" NumberOfCells=\"" << num_cells << "\">\n";
+
+    // --- Points ---
+    // Points are written by iterating through the first index (Nx), then the second index (Ny).
+    // The global point ID for point_host_mirror(i,j,*) is (i * Ny + j).
+    vtk_file << "      <Points>\n";
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< ScalarType >()
+             << "\" Name=\"Coordinates\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+    vtk_file << std::fixed << std::setprecision( 10 );
+    for ( int i = 0; i < Nx; ++i )
+    { // Iterate 1st dim
+        for ( int j = 0; j < Ny; ++j )
+        { // Iterate 2nd dim
+            vtk_file << "          " << points_host_mirror( i, j, 0 ) << " " << points_host_mirror( i, j, 1 ) << " "
+                     << points_host_mirror( i, j, 2 ) << "\n";
+        }
+    }
+    vtk_file << "        </DataArray>\n";
+    vtk_file << "      </Points>\n";
+
+    // --- Cells (Connectivity, Offsets, Types) ---
+    vtk_file << "      <Cells>\n";
+
+    // Connectivity
+    std::vector< long long > connectivity_data;
+    connectivity_data.reserve( num_cells * 3 ); // 3 (indices) per triangle
+
+    for ( int i = 0; i < Nx - 1; ++i )
+    { // Iterate over quads in 1st dim
+        for ( int j = 0; j < Ny - 1; ++j )
+        { // Iterate over quads in 2nd dim
+            // Global 0-based indices of the quad's corners
+            // Point (i,j) has global ID: i * Ny + j
+            long long p00 = static_cast< long long >( i ) * Ny + j;             // (i, j)
+            long long p10 = static_cast< long long >( i + 1 ) * Ny + j;         // (i+1, j)
+            long long p01 = static_cast< long long >( i ) * Ny + ( j + 1 );     // (i, j+1)
+            long long p11 = static_cast< long long >( i + 1 ) * Ny + ( j + 1 ); // (i+1, j+1)
+
+            if ( split_type == DiagonalSplitType::FORWARD_SLASH )
+            {
+                // Diagonal from (i,j) to (i+1,j+1)
+                // Triangle 1: (i,j), (i+1,j), (i+1,j+1)
+                connectivity_data.push_back( p00 );
+                connectivity_data.push_back( p10 );
+                connectivity_data.push_back( p11 );
+                // Triangle 2: (i,j), (i+1,j+1), (i,j+1)
+                connectivity_data.push_back( p00 );
+                connectivity_data.push_back( p11 );
+                connectivity_data.push_back( p01 );
+            }
+            else
+            { // BACKWARD_SLASH
+                // Diagonal from (i+1,j) to (i,j+1)
+                // Triangle 1: (i,j), (i+1,j), (i,j+1)
+                connectivity_data.push_back( p00 );
+                connectivity_data.push_back( p10 );
+                connectivity_data.push_back( p01 );
+                // Triangle 2: (i+1,j), (i+1,j+1), (i,j+1)
+                connectivity_data.push_back( p10 );
+                connectivity_data.push_back( p11 );
+                connectivity_data.push_back( p01 );
+            }
+        }
+    }
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< long long >()
+             << "\" Name=\"connectivity\" format=\"ascii\">\n";
+    vtk_file << "          ";
+    for ( size_t k = 0; k < connectivity_data.size(); ++k )
+    {
+        vtk_file << connectivity_data[k] << ( ( k == connectivity_data.size() - 1 ) ? "" : " " );
+        if ( ( k + 1 ) % 3 == 0 && k < connectivity_data.size() - 1 )
+        { // Newline for readability
+            vtk_file << "\n          ";
+        }
+    }
+    vtk_file << "\n";
+    vtk_file << "        </DataArray>\n";
+
+    // Offsets
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< long long >()
+             << "\" Name=\"offsets\" format=\"ascii\">\n";
+    long long current_offset = 0;
+    for ( long long c = 0; c < num_cells; ++c )
+    {
+        current_offset += ( 3 ); // Each triangle: 3 points
+        vtk_file << "          " << current_offset << "\n";
+    }
+    vtk_file << "        </DataArray>\n";
+
+    // Types (VTK_TRIANGLE = 5)
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< uint8_t >()
+             << "\" Name=\"types\" format=\"ascii\">\n";
+    for ( long long c = 0; c < num_cells; ++c )
+    {
+        vtk_file << "          5\n";
+    }
+    vtk_file << "        </DataArray>\n";
+    vtk_file << "      </Cells>\n";
+
+    vtk_file << "    </Piece>\n";
+    vtk_file << "  </UnstructuredGrid>\n";
+    vtk_file << "</VTKFile>\n";
+
+    vtk_file.close();
+}
+
+template <
+    typename PointRealT,    // Type for surface coordinates and radii elements
+    typename VectorRealT,   // Type for vector data components
+    size_t NumVecComponents // Number of components in the vector data (can be 0 if no vector data via optional)
+    >
+void write_surface_radial_extruded_to_wedge_vtu(
+    GridData2D< PointRealT, 3 >                                  surface_points_device_view,
+    GridDataScalar1D< PointRealT >                               radii_device_view,
+    std::optional< GridData3D< VectorRealT, NumVecComponents > > optional_vector_data_device_view,
+    const std::string& vector_data_name, // Used only if vector_data_device_view has value & NumVecComponents > 0
+    const std::string& filename,
+    DiagonalSplitType  split_type )
+{
+    // --- 1. Create host mirrors and copy data ---
+    auto surface_points_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, surface_points_device_view );
+    auto radii_host          = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, radii_device_view );
+
+    typename Kokkos::View< VectorRealT*** [NumVecComponents], Kokkos::LayoutRight, Kokkos::HostSpace >::HostMirror
+         vector_data_host;
+    bool has_vector_data = false;
+    if ( NumVecComponents > 0 && optional_vector_data_device_view.has_value() )
+    {
+        vector_data_host =
+            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, optional_vector_data_device_view.value() );
+        has_vector_data = true;
+    }
+    // Kokkos::fence(); // If using non-blocking deep_copy
+
+    // --- 2. Get dimensions ---
+    const int Ns       = surface_points_host.extent( 0 ); // Num points in 1st dim of surface
+    const int Nt       = surface_points_host.extent( 1 ); // Num points in 2nd dim of surface
+    const int Nw_radii = radii_host.extent( 0 );          // Num of radius values (defines layers of points)
+
+    if ( Ns < 2 || Nt < 2 )
+    {
+        throw std::runtime_error( "Surface grid dimensions (Ns, Nt) must be >= 2 to form base triangles." );
+    }
+    if ( Nw_radii < 1 )
+    {
+        throw std::runtime_error( "Radii view must contain at least one radius value (Nw_radii >= 1)." );
+    }
+
+    // Validate vector data dimensions if provided
+    if ( has_vector_data )
+    { // Implies NumVecComponents > 0
+        if ( vector_data_host.extent( 0 ) != Ns || vector_data_host.extent( 1 ) != Nt ||
+             vector_data_host.extent( 2 ) != Nw_radii )
+        {
+            throw std::runtime_error(
+                "Vector data dimensions (Ns, Nt, Nw_radii) do not match generated point structure." );
+        }
+        // extent(3) is NumVecComponents, checked by template/view type
+        if ( vector_data_name.empty() )
+        {
+            throw std::runtime_error( "Vector data name must be provided if vector data is present." );
+        }
+    }
+
+    // --- 3. Calculate total points and cells ---
+    const long long num_total_points = static_cast< long long >( Ns ) * Nt * Nw_radii;
+    long long       num_cells        = 0;
+    if ( Nw_radii >= 2 )
+    { // Need at least 2 radial layers to form wedges
+        const long long num_quads_in_surface_plane = static_cast< long long >( Ns - 1 ) * ( Nt - 1 );
+        const long long num_wedge_layers           = static_cast< long long >( Nw_radii - 1 );
+        num_cells                                  = num_quads_in_surface_plane * 2 * num_wedge_layers;
+    }
+
+    // --- 4. Open VTK file and write header ---
+    std::ofstream vtk_file( filename );
+    if ( !vtk_file.is_open() )
+    {
+        throw std::runtime_error( "Failed to open file: " + filename );
+    }
+    vtk_file
+        << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+    vtk_file << "  <UnstructuredGrid>\n";
+    vtk_file << "    <Piece NumberOfPoints=\"" << num_total_points << "\" NumberOfCells=\"" << num_cells << "\">\n";
+
+    // --- 5. Points ---
+    vtk_file << "      <Points>\n";
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< PointRealT >()
+             << "\" Name=\"Coordinates\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+    vtk_file << std::fixed << std::setprecision( 10 );
+
+    PointRealT base_s_pt_coords[3]; // To store coords of one surface_points_host(s,t,*)
+    for ( int s_idx = 0; s_idx < Ns; ++s_idx )
+    {
+        for ( int t_idx = 0; t_idx < Nt; ++t_idx )
+        {
+            // Cache the base surface point coordinates
+            base_s_pt_coords[0] = surface_points_host( s_idx, t_idx, 0 );
+            base_s_pt_coords[1] = surface_points_host( s_idx, t_idx, 1 );
+            base_s_pt_coords[2] = surface_points_host( s_idx, t_idx, 2 );
+            for ( int w_rad_idx = 0; w_rad_idx < Nw_radii; ++w_rad_idx )
+            {
+                PointRealT current_radius_val = radii_host( w_rad_idx );
+                vtk_file << "          " << base_s_pt_coords[0] * current_radius_val << " "
+                         << base_s_pt_coords[1] * current_radius_val << " " << base_s_pt_coords[2] * current_radius_val
+                         << "\n";
+            }
+        }
+    }
+    vtk_file << "        </DataArray>\n";
+    vtk_file << "      </Points>\n";
+
+    // --- 6. Cells (Connectivity, Offsets, Types) ---
+    vtk_file << "      <Cells>\n";
+    std::vector< long long > connectivity_data;
+    if ( num_cells > 0 )
+    {
+        connectivity_data.reserve( num_cells * 6 ); //  6 indices per wedge
+
+        auto pt_gid = [&]( int s_surf_idx, int t_surf_idx, int w_rad_layer_idx ) {
+            return static_cast< long long >( s_surf_idx ) * ( Nt * Nw_radii ) +
+                   static_cast< long long >( t_surf_idx ) * Nw_radii + static_cast< long long >( w_rad_layer_idx );
+        };
+
+        for ( int s = 0; s < Ns - 1; ++s )
+        { // Iterate over quads in s-dim of surface
+            for ( int t = 0; t < Nt - 1; ++t )
+            { // Iterate over quads in t-dim of surface
+                for ( int w_rad_layer_idx = 0; w_rad_layer_idx < Nw_radii - 1; ++w_rad_layer_idx )
+                { // Iterate over wedge layers
+                    int base_rad_idx = w_rad_layer_idx;
+                    int top_rad_idx  = w_rad_layer_idx + 1;
+
+                    long long p00_base = pt_gid( s, t, base_rad_idx );
+                    long long p10_base = pt_gid( s + 1, t, base_rad_idx );
+                    long long p01_base = pt_gid( s, t + 1, base_rad_idx );
+                    long long p11_base = pt_gid( s + 1, t + 1, base_rad_idx );
+
+                    long long p00_top = pt_gid( s, t, top_rad_idx );
+                    long long p10_top = pt_gid( s + 1, t, top_rad_idx );
+                    long long p01_top = pt_gid( s, t + 1, top_rad_idx );
+                    long long p11_top = pt_gid( s + 1, t + 1, top_rad_idx );
+
+                    if ( split_type == DiagonalSplitType::FORWARD_SLASH )
+                    {
+                        // Wedge 1 from Tri 1: (p00, p10, p11)_base -> (p00, p10, p11)_top
+                        connectivity_data.push_back( p00_base );
+                        connectivity_data.push_back( p10_base );
+                        connectivity_data.push_back( p11_base );
+                        connectivity_data.push_back( p00_top );
+                        connectivity_data.push_back( p10_top );
+                        connectivity_data.push_back( p11_top );
+                        // Wedge 2 from Tri 2: (p00, p11, p01)_base -> (p00, p11, p01)_top
+                        connectivity_data.push_back( p00_base );
+                        connectivity_data.push_back( p11_base );
+                        connectivity_data.push_back( p01_base );
+                        connectivity_data.push_back( p00_top );
+                        connectivity_data.push_back( p11_top );
+                        connectivity_data.push_back( p01_top );
+                    }
+                    else
+                    { // BACKWARD_SLASH
+                        // Wedge 1 from Tri 1: (p00, p10, p01)_base -> (p00, p10, p01)_top
+                        connectivity_data.push_back( p00_base );
+                        connectivity_data.push_back( p10_base );
+                        connectivity_data.push_back( p01_base );
+                        connectivity_data.push_back( p00_top );
+                        connectivity_data.push_back( p10_top );
+                        connectivity_data.push_back( p01_top );
+                        // Wedge 2 from Tri 2: (p10, p11, p01)_base -> (p10, p11, p01)_top
+                        connectivity_data.push_back( p10_base );
+                        connectivity_data.push_back( p11_base );
+                        connectivity_data.push_back( p01_base );
+                        connectivity_data.push_back( p10_top );
+                        connectivity_data.push_back( p11_top );
+                        connectivity_data.push_back( p01_top );
+                    }
+                }
+            }
+        }
+    }
+    // Write Connectivity
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< long long >()
+             << "\" Name=\"connectivity\" format=\"ascii\">\n";
+    if ( !connectivity_data.empty() )
+    {
+        vtk_file << "          ";
+        for ( size_t k = 0; k < connectivity_data.size(); ++k )
+        {
+            vtk_file << connectivity_data[k] << ( ( k == connectivity_data.size() - 1 ) ? "" : " " );
+            if ( ( k + 1 ) % 6 == 0 && k < connectivity_data.size() - 1 )
+                vtk_file << "\n          ";
+        }
+        vtk_file << "\n";
+    }
+    vtk_file << "        </DataArray>\n";
+
+    // Write Offsets
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< long long >()
+             << "\" Name=\"offsets\" format=\"ascii\">\n";
+    if ( num_cells > 0 )
+    {
+        long long current_offset = 0;
+        for ( long long c = 0; c < num_cells; ++c )
+        {
+            current_offset += 6; // Each wedge: 6 points
+            vtk_file << "          " << current_offset << "\n";
+        }
+    }
+    vtk_file << "        </DataArray>\n";
+
+    // Write Types
+    vtk_file << "        <DataArray type=\"" << get_vtk_type_string< uint8_t >()
+             << "\" Name=\"types\" format=\"ascii\">\n";
+    if ( num_cells > 0 )
+    {
+        for ( long long c = 0; c < num_cells; ++c )
+        {
+            vtk_file << "          13\n"; // VTK_WEDGE cell type
+        }
+    }
+    vtk_file << "        </DataArray>\n";
+    vtk_file << "      </Cells>\n";
+
+    // --- 7. PointData (if vector data is provided) ---
+    if ( has_vector_data )
+    { // Implies NumVecComponents > 0
+        std::string point_data_attributes_str;
+        if ( NumVecComponents == 3 )
+            point_data_attributes_str = " Vectors=\"" + vector_data_name + "\"";
+        else if ( NumVecComponents == 1 )
+            point_data_attributes_str = " Scalars=\"" + vector_data_name + "\"";
+
+        vtk_file << "      <PointData" << point_data_attributes_str << ">\n";
+        vtk_file << "        <DataArray type=\"" << get_vtk_type_string< VectorRealT >() << "\" Name=\""
+                 << vector_data_name << "\" NumberOfComponents=\"" << NumVecComponents << "\" format=\"ascii\">\n";
+        vtk_file << std::fixed << std::setprecision( 10 );
+
+        // Iterate in the SAME order as points were written: s_idx, t_idx, w_rad_idx
+        for ( int s_idx = 0; s_idx < Ns; ++s_idx )
+        {
+            for ( int t_idx = 0; t_idx < Nt; ++t_idx )
+            {
+                for ( int w_rad_idx = 0; w_rad_idx < Nw_radii; ++w_rad_idx )
+                {
+                    vtk_file << "          ";
+                    for ( size_t comp = 0; comp < NumVecComponents; ++comp )
+                    {
+                        vtk_file << vector_data_host( s_idx, t_idx, w_rad_idx, comp )
+                                 << ( comp == NumVecComponents - 1 ? "" : " " );
+                    }
+                    vtk_file << "\n";
+                }
+            }
+        }
+        vtk_file << "        </DataArray>\n";
+        vtk_file << "      </PointData>\n";
+    }
+    else
+    {                                      // No vector data or NumVecComponents is 0
+        vtk_file << "      <PointData>\n"; // Empty PointData section
+        vtk_file << "      </PointData>\n";
+    }
+
+    // --- Footer ---
+    vtk_file << "    </Piece>\n";
+    vtk_file << "  </UnstructuredGrid>\n";
+    vtk_file << "</VTKFile>\n";
+    vtk_file.close();
+}
 } // namespace terra
