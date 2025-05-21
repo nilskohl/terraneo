@@ -1,7 +1,7 @@
 #pragma once
-#include "grid.hpp"
+#include "../grid/grid_types.hpp"
 
-namespace terra {
+namespace terra::vtk {
 
 #include <Kokkos_Core.hpp>
 #include <cmath>     // For std::floor
@@ -431,9 +431,9 @@ template <
     size_t NumVecComponents // Number of components in the vector data (can be 0 if no vector data via optional)
     >
 void write_surface_radial_extruded_to_wedge_vtu(
-    GridData2D< PointRealT, 3 >                                  surface_points_device_view,
-    GridDataScalar1D< PointRealT >                               radii_device_view,
-    std::optional< GridData3D< VectorRealT, NumVecComponents > > optional_vector_data_device_view,
+    grid::Grid2DDataVec< PointRealT, 3 >                                  surface_points_device_view,
+    grid::Grid1DDataScalar< PointRealT >                                  radii_device_view,
+    std::optional< grid::Grid3DDataVec< VectorRealT, NumVecComponents > > optional_vector_data_device_view,
     const std::string& vector_data_name, // Used only if vector_data_device_view has value & NumVecComponents > 0
     const std::string& filename,
     DiagonalSplitType  split_type )
@@ -474,12 +474,12 @@ void write_surface_radial_extruded_to_wedge_vtu(
              vector_data_host.extent( 2 ) != Nw_radii )
         {
             throw std::runtime_error(
-                "Vector data dimensions (Ns, Nt, Nw_radii) do not match generated point structure." );
+                "VTK: Vector data dimensions (Ns, Nt, Nw_radii) do not match generated point structure." );
         }
         // extent(3) is NumVecComponents, checked by template/view type
         if ( vector_data_name.empty() )
         {
-            throw std::runtime_error( "Vector data name must be provided if vector data is present." );
+            throw std::runtime_error( "VTK: Vector data name must be provided if vector data is present." );
         }
     }
 
@@ -689,4 +689,4 @@ void write_surface_radial_extruded_to_wedge_vtu(
     vtk_file << "</VTKFile>\n";
     vtk_file.close();
 }
-} // namespace terra
+} // namespace terra::vtk

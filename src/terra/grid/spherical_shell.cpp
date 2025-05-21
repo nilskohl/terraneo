@@ -1,9 +1,9 @@
 
-#include "spherical_shell_mesh.hpp"
+#include "spherical_shell.hpp"
 
-#include "point_3d.hpp"
+#include "../point_3d.hpp"
 
-namespace terra {
+namespace terra::grid {
 
 // Struct to hold the coordinates of the four base corners
 // and the number of intervals N = ntan - 1.
@@ -164,7 +164,7 @@ static Point3D compute_node_recursive( int i, int j, const BaseCorners& corners,
  * @return Kokkos::View<double**[3], Kokkos::HostSpace> Host view containing coordinates
  *         for the subdomain. Dimensions are ((i_end_incl - 1) - i_start, (j_end_incl - 1) - j_start).
  */
-GridData2D< double, 3 >
+Grid2DDataVec< double, 3 >
     compute_subdomain( const BaseCorners& corners, int i_start_incl, int i_end_incl, int j_start_incl, int j_end_incl )
 {
     const int i_start = i_start_incl;
@@ -188,7 +188,7 @@ GridData2D< double, 3 >
     const size_t subdomain_rows = i_end - i_start;
     const size_t subdomain_cols = j_end - j_start;
 
-    GridData2D< double, 3 > subdomain_coords( "subdomain_coords", subdomain_rows, subdomain_cols );
+    Grid2DDataVec< double, 3 > subdomain_coords( "subdomain_coords", subdomain_rows, subdomain_cols );
 
     MemoizationCache cache; // Each subdomain computation gets its own cache
 
@@ -211,7 +211,7 @@ GridData2D< double, 3 >
     return subdomain_coords;
 }
 
-static GridData2D< double, 3 > unit_sphere_single_shell_subdomain_coords(
+static Grid2DDataVec< double, 3 > unit_sphere_single_shell_subdomain_coords(
     int diamond_id,
     int ntan,
     int i_start_incl,
@@ -348,7 +348,7 @@ static GridData2D< double, 3 > unit_sphere_single_shell_subdomain_coords(
     return compute_subdomain( corners, i_start_incl, i_end_incl, j_start_incl, j_end_incl );
 }
 
-GridData2D< double, 3 > unit_sphere_single_shell_subdomain_coords(
+Grid2DDataVec< double, 3 > unit_sphere_single_shell_subdomain_coords(
     int diamond_id,
     int global_refinements,
     int num_subdomains_per_side,

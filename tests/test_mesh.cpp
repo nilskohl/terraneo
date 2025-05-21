@@ -3,10 +3,9 @@
 #include <iostream>
 #include <optional>
 
+#include "../src/terra/grid/spherical_shell_mesh.hpp"
+#include "../src/terra/vtk/vtk.hpp"
 #include "terra/point_3d.hpp"
-#include "terra/spherical_shell_mesh.hpp"
-#include "terra/vtk.hpp"
-#include "vtk.hpp"
 
 int main( int argc, char** argv )
 {
@@ -33,7 +32,7 @@ int main( int argc, char** argv )
         terra::write_rectilinear_to_triangular_vtu(
             mesh_view_partial_2, "mesh_view_partial_2.vtu", terra::DiagonalSplitType::BACKWARD_SLASH );
 
-        terra::GridDataScalar1D< double > radii( "radii", num_shells );
+        terra::Grid1DDataScalar< double > radii( "radii", num_shells );
         auto                              radii_host = Kokkos::create_mirror_view( radii );
         for ( int i = 0; i < num_shells; ++i )
         {
@@ -44,7 +43,7 @@ int main( int argc, char** argv )
         terra::write_surface_radial_extruded_to_wedge_vtu(
             mesh_view_full,
             radii,
-            std::optional< terra::GridData3D< double, 3 > >(),
+            std::optional< terra::Grid3DDataVec< double, 3 > >(),
             "data_name",
             "shell.vtu",
             terra::DiagonalSplitType::BACKWARD_SLASH );

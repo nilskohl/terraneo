@@ -1,4 +1,17 @@
 # Add test executable
+add_executable(test_interpolate test_interpolate.cpp)
+
+# Link Kokkos to the test target
+target_link_libraries(test_interpolate terra)
+
+# Include directories for tests
+target_include_directories(test_interpolate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Add a test
+add_test(NAME test_interpolate COMMAND test_interpolate)
+
+
+# Add test executable
 add_executable(test_mesh test_mesh.cpp)
 
 # Link Kokkos to the test target
