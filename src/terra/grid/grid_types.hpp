@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "../kokkos_wrapper.hpp"
+#include "../kokkos/kokkos_wrapper.hpp"
 #include "../types.hpp"
 
 

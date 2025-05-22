@@ -1,8 +1,13 @@
 add_library(terra)
 
+target_link_libraries(terra PUBLIC Kokkos::kokkos)
 target_include_directories(terra PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_link_libraries(terra Kokkos::kokkos)
+target_sources(terra
+        PRIVATE
+        types.hpp)
 
+add_subdirectory(dense)
 add_subdirectory(grid)
+add_subdirectory(kokkos)
 add_subdirectory(vtk)

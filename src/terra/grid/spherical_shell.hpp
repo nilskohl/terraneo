@@ -3,8 +3,8 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "../kokkos_wrapper.hpp"
-#include "../types.hpp"
+#include "../terra/kokkos/kokkos_wrapper.hpp"
+#include "dense/vec.hpp"
 #include "grid_types.hpp"
 
 namespace terra::grid {
@@ -51,13 +51,22 @@ class ThickSphericalShellSubdomainGrid
         shell_radii_ = shell_radii_from_vector( shell_radii );
     }
 
-    Grid2DDataVec< double, 3 > unit_sphere_coords() const { return unit_sphere_coords_; }
+    KOKKOS_INLINE_FUNCTION Grid2DDataVec< double, 3 > unit_sphere_coords() const { return unit_sphere_coords_; }
 
-    Grid1DDataScalar< double > shell_radii() const { return shell_radii_; }
+    KOKKOS_INLINE_FUNCTION Grid1DDataScalar< double > shell_radii() const { return shell_radii_; }
 
-    int size_x() const { return unit_sphere_coords_.extent( 0 ); }
-    int size_y() const { return unit_sphere_coords_.extent( 1 ); }
-    int size_r() const { return shell_radii_.extent( 0 ); }
+    KOKKOS_INLINE_FUNCTION dense::Vec< double, 3 > coords( const int x, const int y, const int r ) const
+    {
+        dense::Vec< double, 3 > coords;
+        coords( 0 ) = unit_sphere_coords_( x, y, 0 );
+        coords( 1 ) = unit_sphere_coords_( x, y, 1 );
+        coords( 2 ) = unit_sphere_coords_( x, y, 2 );
+        return coords * shell_radii_( r );
+    }
+
+    KOKKOS_INLINE_FUNCTION int size_x() const { return unit_sphere_coords_.extent( 0 ); }
+    KOKKOS_INLINE_FUNCTION int size_y() const { return unit_sphere_coords_.extent( 1 ); }
+    KOKKOS_INLINE_FUNCTION int size_r() const { return shell_radii_.extent( 0 ); }
 
   private:
     int lateral_refinement_level_;

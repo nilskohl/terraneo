@@ -1,6 +1,6 @@
 
 
-#include "terra/kokkos_wrapper.hpp"
+#include "../src/terra/kokkos/kokkos_wrapper.hpp"
 #include "terra/types.hpp"
 
 using terra::real_t;

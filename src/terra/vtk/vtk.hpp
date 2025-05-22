@@ -1,15 +1,15 @@
 #pragma once
-#include "../grid/grid_types.hpp"
 
-namespace terra::vtk {
-
-#include <Kokkos_Core.hpp>
-#include <cmath>     // For std::floor
-#include <fstream>   // For file output (std::ofstream)
-#include <iomanip>   // For std::fixed, std::setprecision
+#include <fstream>
+#include <iomanip> // For std::fixed, std::setprecision
+#include <iostream>
 #include <stdexcept> // For error handling (std::runtime_error)
 #include <string>    // For filenames (std::string)
 #include <vector>    // Can be useful for intermediate storage if needed
+
+#include "../grid/grid_types.hpp"
+
+namespace terra::vtk {
 
 // Define VTK cell type IDs for clarity
 constexpr int VTK_QUAD           = 9;
@@ -426,30 +426,34 @@ void write_rectilinear_to_triangular_vtu(
 }
 
 template <
-    typename PointRealT,    // Type for surface coordinates and radii elements
-    typename VectorRealT,   // Type for vector data components
-    size_t NumVecComponents // Number of components in the vector data (can be 0 if no vector data via optional)
+    typename PointRealT,      // Type for surface coordinates and radii elements
+    typename AttachedDataType // Number of components in the vector data (can be 0 if no vector data via optional)
     >
 void write_surface_radial_extruded_to_wedge_vtu(
-    grid::Grid2DDataVec< PointRealT, 3 >                                  surface_points_device_view,
-    grid::Grid1DDataScalar< PointRealT >                                  radii_device_view,
-    std::optional< grid::Grid3DDataVec< VectorRealT, NumVecComponents > > optional_vector_data_device_view,
+    grid::Grid2DDataVec< PointRealT, 3 > surface_points_device_view,
+    grid::Grid1DDataScalar< PointRealT > radii_device_view,
+    std::optional< AttachedDataType >    optional_attached_data_device_view,
     const std::string& vector_data_name, // Used only if vector_data_device_view has value & NumVecComponents > 0
     const std::string& filename,
     DiagonalSplitType  split_type )
 {
+    static_assert(
+        std::is_same_v< AttachedDataType, grid::Grid3DDataScalar< double > > ||
+        std::is_same_v< AttachedDataType, grid::Grid3DDataVec< double, 3 > > );
+
+    const bool has_attached_data  = optional_attached_data_device_view.has_value();
+    const int  is_scalar_data     = std::is_same_v< AttachedDataType, grid::Grid3DDataScalar< double > >;
+    const int  num_vec_components = has_attached_data ? optional_attached_data_device_view.value().extent( 3 ) : 1;
+
     // --- 1. Create host mirrors and copy data ---
     auto surface_points_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, surface_points_device_view );
     auto radii_host          = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, radii_device_view );
 
-    typename Kokkos::View< VectorRealT*** [NumVecComponents], Kokkos::LayoutRight, Kokkos::HostSpace >::HostMirror
-         vector_data_host;
-    bool has_vector_data = false;
-    if ( NumVecComponents > 0 && optional_vector_data_device_view.has_value() )
+    typename AttachedDataType::HostMirror vector_data_host;
+    if ( has_attached_data )
     {
         vector_data_host =
-            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, optional_vector_data_device_view.value() );
-        has_vector_data = true;
+            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, optional_attached_data_device_view.value() );
     }
     // Kokkos::fence(); // If using non-blocking deep_copy
 
@@ -468,7 +472,7 @@ void write_surface_radial_extruded_to_wedge_vtu(
     }
 
     // Validate vector data dimensions if provided
-    if ( has_vector_data )
+    if ( has_attached_data )
     { // Implies NumVecComponents > 0
         if ( vector_data_host.extent( 0 ) != Ns || vector_data_host.extent( 1 ) != Nt ||
              vector_data_host.extent( 2 ) != Nw_radii )
@@ -644,17 +648,21 @@ void write_surface_radial_extruded_to_wedge_vtu(
     vtk_file << "      </Cells>\n";
 
     // --- 7. PointData (if vector data is provided) ---
-    if ( has_vector_data )
-    { // Implies NumVecComponents > 0
+    if ( has_attached_data )
+    {
         std::string point_data_attributes_str;
-        if ( NumVecComponents == 3 )
-            point_data_attributes_str = " Vectors=\"" + vector_data_name + "\"";
-        else if ( NumVecComponents == 1 )
+        if ( is_scalar_data )
+        {
             point_data_attributes_str = " Scalars=\"" + vector_data_name + "\"";
+        }
+        else
+        {
+            point_data_attributes_str = " Vectors=\"" + vector_data_name + "\"";
+        }
 
         vtk_file << "      <PointData" << point_data_attributes_str << ">\n";
-        vtk_file << "        <DataArray type=\"" << get_vtk_type_string< VectorRealT >() << "\" Name=\""
-                 << vector_data_name << "\" NumberOfComponents=\"" << NumVecComponents << "\" format=\"ascii\">\n";
+        vtk_file << "        <DataArray type=\"" << get_vtk_type_string< double >() << "\" Name=\"" << vector_data_name
+                 << "\" NumberOfComponents=\"" << num_vec_components << "\" format=\"ascii\">\n";
         vtk_file << std::fixed << std::setprecision( 10 );
 
         // Iterate in the SAME order as points were written: s_idx, t_idx, w_rad_idx
@@ -665,11 +673,19 @@ void write_surface_radial_extruded_to_wedge_vtu(
                 for ( int w_rad_idx = 0; w_rad_idx < Nw_radii; ++w_rad_idx )
                 {
                     vtk_file << "          ";
-                    for ( size_t comp = 0; comp < NumVecComponents; ++comp )
+                    if constexpr ( is_scalar_data )
                     {
-                        vtk_file << vector_data_host( s_idx, t_idx, w_rad_idx, comp )
-                                 << ( comp == NumVecComponents - 1 ? "" : " " );
+                        vtk_file << vector_data_host( s_idx, t_idx, w_rad_idx ) << " ";
                     }
+                    else
+                    {
+                        for ( size_t comp = 0; comp < num_vec_components; ++comp )
+                        {
+                            vtk_file << vector_data_host( s_idx, t_idx, w_rad_idx, comp )
+                                     << ( comp == num_vec_components - 1 ? "" : " " );
+                        }
+                    }
+
                     vtk_file << "\n";
                 }
             }

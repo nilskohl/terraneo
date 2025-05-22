@@ -25,6 +25,19 @@ add_test(NAME test_mesh COMMAND test_mesh)
 
 
 # Add test executable
+add_executable(test_laplace test_laplace.cpp)
+
+# Link Kokkos to the test target
+target_link_libraries(test_laplace terra)
+
+# Include directories for tests
+target_include_directories(test_laplace PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Add a test
+add_test(NAME test_laplace COMMAND test_laplace)
+
+
+# Add test executable
 add_executable(test_kokkos_smoke test_kokkos_smoke.cpp)
 
 # Link Kokkos to the test target
