@@ -33,14 +33,19 @@ struct TestInterpolator
     }
 };
 
-struct BoundaryInterpolator
+struct SolutionInterpolator
 {
     ThickSphericalShellSubdomainGrid grid_;
     Grid3DDataScalar< double >       data_;
+    bool                             only_boundary_;
 
-    BoundaryInterpolator( const ThickSphericalShellSubdomainGrid& grid, const Grid3DDataScalar< double >& data )
+    SolutionInterpolator(
+        const ThickSphericalShellSubdomainGrid& grid,
+        const Grid3DDataScalar< double >&       data,
+        bool                                    only_boundary )
     : grid_( grid )
     , data_( data )
+    , only_boundary_( only_boundary )
     {}
 
     KOKKOS_INLINE_FUNCTION
@@ -48,9 +53,37 @@ struct BoundaryInterpolator
     {
         const dense::Vec< double, 3 > coords = grid_.coords( x, y, r );
         const double                  value  = coords( 0 );
-        if ( r == 0 || r == grid_.size_r() - 1 )
+
+        if ( !only_boundary_ || ( x == 0 || y == 0 || r == 0 || x == grid_.size_x() - 1 || y == grid_.size_y() - 1 ||
+                                  r == grid_.size_r() - 1 ) )
         {
             data_( x, y, r ) = value;
+        }
+    }
+};
+
+struct SetOnBoundary
+{
+    ThickSphericalShellSubdomainGrid grid_;
+    Grid3DDataScalar< double >       src_;
+    Grid3DDataScalar< double >       dst_;
+
+    SetOnBoundary(
+        const ThickSphericalShellSubdomainGrid& grid,
+        const Grid3DDataScalar< double >&       src,
+        const Grid3DDataScalar< double >&       dst )
+    : grid_( grid )
+    , src_( src )
+    , dst_( dst )
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int x, const int y, const int r ) const
+    {
+        if ( x == 0 || y == 0 || r == 0 || x == grid_.size_x() - 1 || y == grid_.size_y() - 1 ||
+             r == grid_.size_r() - 1 )
+        {
+            dst_( x, y, r ) = src_( x, y, r );
         }
     }
 };
@@ -60,14 +93,20 @@ struct LaplaceOperator
     ThickSphericalShellSubdomainGrid grid_;
     Grid3DDataScalar< double >       src_;
     Grid3DDataScalar< double >       dst_;
+    bool                             treat_boundary_;
+    bool                             diagonal_;
 
     LaplaceOperator(
         const ThickSphericalShellSubdomainGrid& grid,
         const Grid3DDataScalar< double >&       src,
-        const Grid3DDataScalar< double >&       dst )
+        const Grid3DDataScalar< double >&       dst,
+        const bool                              treat_boundary,
+        const bool                              diagonal )
     : grid_( grid )
     , src_( src )
     , dst_( dst )
+    , treat_boundary_( treat_boundary )
+    , diagonal_( diagonal )
     {}
 
     KOKKOS_INLINE_FUNCTION void operator()( const int x_cell, const int y_cell, const int r_cell ) const
@@ -429,20 +468,66 @@ struct LaplaceOperator
             }
         }
 
-        // std::cout << "A = " << A << std::endl;
-        dense::Vec< double, 8 > ones;
-        ones.fill( 1.0 );
-        dense::Vec< double, 8 > row_sum = A * ones;
-        // std::cout << "row_sum = " << row_sum << std::endl;
-        // std::cout << "|| row_sum || = " << row_sum.norm() << std::endl;
-
         // TODO: multiply with src in the correct order
         // TODO: check dirichlet/boundary flags before update
 
-        dense::Vec< double, 8 > dst = A * src;
+        // std::cout << A << std::endl;
 
-        std::cout << "src = " << src << std::endl;
-        std::cout << "dst = " << dst << std::endl;
+        // Later we will multiply all non-diagonal entries with row or column with that value.
+        dense::Mat< double, 8, 8 > boundary_mask;
+        boundary_mask.fill( 1.0 );
+
+        for ( int r = r_cell; r <= r_cell + 1; r++ )
+        {
+            for ( int y = y_cell; y <= y_cell + 1; y++ )
+            {
+                for ( int x = x_cell; x <= x_cell + 1; x++ )
+                {
+                    const double factor = ( x == 0 || y == 0 || r == 0 || x == grid_.size_x() - 1 ||
+                                            y == grid_.size_y() - 1 || r == grid_.size_r() - 1 ) ?
+                                              0.0 :
+                                              1.0;
+
+                    const int x_local = x - x_cell;
+                    const int y_local = y - y_cell;
+                    const int r_local = r - r_cell;
+
+                    const int diag_entry = 4 * r_local + 2 * y_local + x_local;
+
+                    for ( int i = 0; i < 8; i++ )
+                    {
+                        if ( i != diag_entry )
+                        {
+                            boundary_mask( i, diag_entry ) *= factor;
+                            boundary_mask( diag_entry, i ) *= factor;
+                        }
+                    }
+                }
+            }
+        }
+
+        if ( treat_boundary_ )
+        {
+            A.hadamard_product( boundary_mask );
+        }
+
+        if ( diagonal_ )
+        {
+            for ( int i = 0; i < 8; i++ )
+            {
+                for ( int j = 0; j < 8; j++ )
+                {
+                    if ( i != j )
+                    {
+                        A( i, j ) = 0.0;
+                    }
+                }
+            }
+        }
+
+        // std::cout << A << std::endl;
+
+        dense::Vec< double, 8 > dst = A * src;
 
         for ( int r = r_cell; r <= r_cell + 1; r++ )
         {
@@ -453,12 +538,32 @@ struct LaplaceOperator
                     const int x_local = x - x_cell;
                     const int y_local = y - y_cell;
                     const int r_local = r - r_cell;
+
                     Kokkos::atomic_add( &dst_( x, y, r ), dst( 4 * r_local + 2 * y_local + x_local ) );
                 }
             }
         }
     }
 };
+
+// x = x + wI * ( b - Ax )
+void richardson_step(
+    const ThickSphericalShellSubdomainGrid& grid,
+    const Grid3DDataScalar< double >&       x,
+    const Grid3DDataScalar< double >&       b,
+    const Grid3DDataScalar< double >&       tmp,
+    const double                            omega )
+{
+    // We need that in matvec - maybe resolved when stencils?
+    kernels::common::set_constant( tmp, 0.0 );
+
+    Kokkos::parallel_for(
+        "matvec",
+        Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x() - 1, grid.size_y() - 1, grid.size_r() - 1 } ),
+        LaplaceOperator( grid, x, tmp, true, false ) );
+
+    kernels::common::lincomb( x, 1.0, x, omega, b, -omega, tmp );
+}
 
 int main( int argc, char** argv )
 {
@@ -473,17 +578,62 @@ int main( int argc, char** argv )
 
         ThickSphericalShellSubdomainGrid grid( 3, 7, 1, 0, 0, radii );
 
-        // Set up boundary data.
+        // Some vectors.
+        // Default initialized to zero.
+        Grid3DDataScalar< double > u( "u", grid.size_x(), grid.size_y(), grid.size_r() );
         Grid3DDataScalar< double > g( "g", grid.size_x(), grid.size_y(), grid.size_r() );
+        Grid3DDataScalar< double > Adiagg( "Adiagg", grid.size_x(), grid.size_y(), grid.size_r() );
+        Grid3DDataScalar< double > tmp( "tmp", grid.size_x(), grid.size_y(), grid.size_r() );
+        Grid3DDataScalar< double > solution( "solution", grid.size_x(), grid.size_y(), grid.size_r() );
+        Grid3DDataScalar< double > error( "error", grid.size_x(), grid.size_y(), grid.size_r() );
+
+        // Kokkos::parallel_for(
+        //     "solution interpolation",
+        //     Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
+        //     TestInterpolator( grid, u ) );
+
+        // Set up solution data.
+        Kokkos::parallel_for(
+            "solution interpolation",
+            Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
+            SolutionInterpolator( grid, solution, false ) );
+
+        Kokkos::fence();
+
+        // Set up boundary data.
         Kokkos::parallel_for(
             "boundary interpolation",
             Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
-            BoundaryInterpolator( grid, g ) );
+            SolutionInterpolator( grid, g, true ) );
+
+        Kokkos::fence();
+
+        Kokkos::parallel_for(
+            "matvec",
+            Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x() - 1, grid.size_y() - 1, grid.size_r() - 1 } ),
+            LaplaceOperator( grid, g, Adiagg, false, true ) );
+
+        Kokkos::fence();
 
         // Set up the right-hand side.
+        Grid3DDataScalar< double > b( "b", grid.size_x(), grid.size_y(), grid.size_r() );
+
+        Kokkos::parallel_for(
+            "matvec",
+            Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x() - 1, grid.size_y() - 1, grid.size_r() - 1 } ),
+            LaplaceOperator( grid, g, b, false, false ) );
+
+        Kokkos::fence();
+
+        terra::kernels::common::scale( b, -1.0 );
+
+        Kokkos::parallel_for(
+            "set on boundary",
+            Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
+            SetOnBoundary( grid, Adiagg, b ) );
 
         // Set up the operator.
-
+#if 0
         Grid3DDataScalar< double > src( "src", grid.size_x(), grid.size_y(), grid.size_r() );
         Grid3DDataScalar< double > dst( "dst", grid.size_x(), grid.size_y(), grid.size_r() );
 
@@ -492,7 +642,7 @@ int main( int argc, char** argv )
             Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
             TestInterpolator( grid, src ) );
 
-        terra::kernels::common::set_scalar( dst, 0.0 );
+        terra::kernels::common::set_constant( dst, 0.0 );
 
         LaplaceOperator A( grid, src, dst );
 
@@ -500,10 +650,30 @@ int main( int argc, char** argv )
             "matvec",
             Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x() - 1, grid.size_y() - 1, grid.size_r() - 1 } ),
             A );
+#endif
 
         // Solve.
 
+        for ( int iter = 0; iter < 1000; iter++ )
+        {
+            std::cout << "iter = " << iter << std::endl;
+            richardson_step( grid, u, b, tmp, 0.3 );
+        }
+
+        Kokkos::fence();
+
         // Correct solution at the boundary.
+        // kernels::common::lincomb( u, 1.0, u, 1.0, g );
+        // Kokkos::parallel_for(
+        //     "set on boundary",
+        //     Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
+        //     SetOnBoundary( grid, g, u ) );
+
+        Kokkos::fence();
+
+        kernels::common::lincomb( error, 1.0, u, -1.0, solution );
+
+        Kokkos::fence();
 
         // Output VTK.
         terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
@@ -517,17 +687,25 @@ int main( int argc, char** argv )
         terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
             grid.unit_sphere_coords(),
             grid.shell_radii(),
-            std::optional( src ),
-            "src",
-            "src.vtu",
+            std::optional( u ),
+            "u",
+            "u.vtu",
             vtk::DiagonalSplitType::BACKWARD_SLASH );
 
         terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
             grid.unit_sphere_coords(),
             grid.shell_radii(),
-            std::optional( dst ),
-            "dst",
-            "dst.vtu",
+            std::optional( solution ),
+            "solution",
+            "solution.vtu",
+            vtk::DiagonalSplitType::BACKWARD_SLASH );
+
+        terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
+            grid.unit_sphere_coords(),
+            grid.shell_radii(),
+            std::optional( error ),
+            "error",
+            "error.vtu",
             vtk::DiagonalSplitType::BACKWARD_SLASH );
     }
     Kokkos::finalize();

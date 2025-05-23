@@ -6,12 +6,53 @@
 namespace terra::kernels::common {
 
 template < typename ScalarType >
-void set_scalar( const grid::Grid3DDataScalar< ScalarType >& x, ScalarType value )
+void set_constant( const grid::Grid3DDataScalar< ScalarType >& x, ScalarType value )
 {
     Kokkos::parallel_for(
-        "set_scalar (Grid3DDataScalar)",
+        "set_constant (Grid3DDataScalar)",
         Kokkos::MDRangePolicy( { 0, 0, 0 }, { x.extent( 0 ), x.extent( 1 ), x.extent( 2 ) } ),
         KOKKOS_LAMBDA( int i, int j, int k ) { x( i, j, k ) = value; } );
+}
+
+template < typename ScalarType >
+void scale( const grid::Grid3DDataScalar< ScalarType >& x, ScalarType value )
+{
+    Kokkos::parallel_for(
+        "scale (Grid3DDataScalar)",
+        Kokkos::MDRangePolicy( { 0, 0, 0 }, { x.extent( 0 ), x.extent( 1 ), x.extent( 2 ) } ),
+        KOKKOS_LAMBDA( int i, int j, int k ) { x( i, j, k ) *= value; } );
+}
+
+template < typename ScalarType >
+void lincomb(
+    const grid::Grid3DDataScalar< ScalarType >& y,
+    ScalarType                                  c_1,
+    const grid::Grid3DDataScalar< ScalarType >& x_1,
+    ScalarType                                  c_2,
+    const grid::Grid3DDataScalar< ScalarType >& x_2 )
+{
+    Kokkos::parallel_for(
+        "lincomb 2 args (Grid3DDataScalar)",
+        Kokkos::MDRangePolicy( { 0, 0, 0 }, { y.extent( 0 ), y.extent( 1 ), y.extent( 2 ) } ),
+        KOKKOS_LAMBDA( int i, int j, int k ) { y( i, j, k ) = c_1 * x_1( i, j, k ) + c_2 * x_2( i, j, k ); } );
+}
+
+template < typename ScalarType >
+void lincomb(
+    const grid::Grid3DDataScalar< ScalarType >& y,
+    ScalarType                                  c_1,
+    const grid::Grid3DDataScalar< ScalarType >& x_1,
+    ScalarType                                  c_2,
+    const grid::Grid3DDataScalar< ScalarType >& x_2,
+    ScalarType                                  c_3,
+    const grid::Grid3DDataScalar< ScalarType >& x_3 )
+{
+    Kokkos::parallel_for(
+        "lincomb 3 args (Grid3DDataScalar)",
+        Kokkos::MDRangePolicy( { 0, 0, 0 }, { y.extent( 0 ), y.extent( 1 ), y.extent( 2 ) } ),
+        KOKKOS_LAMBDA( int i, int j, int k ) {
+            y( i, j, k ) = c_1 * x_1( i, j, k ) + c_2 * x_2( i, j, k ) + c_3 * x_3( i, j, k );
+        } );
 }
 
 template < typename ScalarType >

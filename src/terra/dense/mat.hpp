@@ -45,6 +45,29 @@ struct Mat
         return *this;
     }
 
+    void fill( const T value )
+    {
+        for ( int i = 0; i < Rows; ++i )
+        {
+            for ( int j = 0; j < Cols; ++j )
+            {
+                data[i][j] = value;
+            }
+        }
+    }
+
+    Mat< double, Rows, Cols >& hadamard_product( const Mat& mat )
+    {
+        for ( int i = 0; i < Rows; ++i )
+        {
+            for ( int j = 0; j < Cols; ++j )
+            {
+                data[i][j] *= mat.data[i][j];
+            }
+        }
+        return *this;
+    }
+
     KOKKOS_INLINE_FUNCTION
     Mat() = default;
 };

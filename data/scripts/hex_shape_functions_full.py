@@ -107,7 +107,7 @@ grad_N_ref = [
 
 w = sp.symbols("www")
 # Gradient in physical coordinates
-grad_N_phys = [w * (JinvT @ g_ref).dot(JinvT @ h_ref) * sp.Abs(det(J)) for g_ref in grad_N_ref for h_ref in grad_N_ref]
+grad_N_phys = [w * (JinvT @ g_ref).dot(JinvT @ h_ref) * sp.Abs(det(J)) for g_ref in grad_N_ref for h_ref in grad_N_ref[0:1]]
 
 # Flatten everything BEFORE substitution
 exprs_all = [g for g in grad_N_phys]
@@ -148,7 +148,7 @@ for var, expr in repls:
 #         print(f"Jinv[{i}][{j}] = {sp.ccode(reduced[idx])};")
 
 print("\n// --- Shape function gradients ---")
-for a in range(8):
+for a in range(1):
     for i in range(8):
         idx = a * 8 + i
         print(f"dNdx({a}, {i}) = {sp.ccode(reduced[idx])};")
