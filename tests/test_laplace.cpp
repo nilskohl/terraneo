@@ -632,6 +632,7 @@ void all_diamonds()
     const auto solution = grid::shell::allocate_scalar_grid( "solution", domain );
     const auto error    = grid::shell::allocate_scalar_grid( "error", domain );
     const auto b        = grid::shell::allocate_scalar_grid( "b", domain );
+    const auto r        = grid::shell::allocate_scalar_grid( "r", domain );
 
     communication::SubdomainNeighborhoodSendBuffer send_buffers( domain );
     communication::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
@@ -696,6 +697,23 @@ void all_diamonds()
                 kernels::common::lincomb( error, 1.0, u, -1.0, solution );
                 const auto error_inf_norm = kernels::common::max_magnitude( error );
                 std::cout << ", error inf norm: " << error_inf_norm;
+
+                kernels::common::set_constant( tmp, 0.0 );
+
+                Kokkos::parallel_for(
+                    "matvec",
+                    grid::shell::local_domain_md_range_policy_cells( domain ),
+                    LaplaceOperator( subdomain_shell_coords, subdomain_radii, u, tmp, true, false ) );
+
+                communication::pack_and_send_local_subdomain_boundaries(
+                    domain, tmp, send_buffers, expected_recvs_requests, expected_recvs_metadata );
+                communication::recv_unpack_and_add_local_subdomain_boundaries(
+                    domain, tmp, recv_buffers, expected_recvs_requests, expected_recvs_metadata );
+
+                kernels::common::lincomb( r, 1.0, b, -1.0, tmp );
+
+                const auto residual_inf_norm = kernels::common::max_magnitude( r );
+                std::cout << ", residual inf norm: " << residual_inf_norm;
             }
             std::cout << std::endl;
         }
