@@ -1,16 +1,13 @@
 
 #include <optional>
 
-#include "../src/terra/grid/shell/spherical_shell.hpp"
-#include "../src/terra/kokkos/kokkos_wrapper.hpp"
-#include "communication/communication.hpp"
-#include "dense/mat.hpp"
-#include "kernels/common/interpolation.hpp"
-#include "kernels/common/vector_operations.hpp"
+#include "terra/communication/communication.hpp"
+#include "terra/dense/mat.hpp"
 #include "terra/grid/grid_types.hpp"
-#include "vtk/vtk.hpp"
-
-#define SINGLE_DIAMOND 0
+#include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/kernels/common/vector_operations.hpp"
+#include "terra/kokkos/kokkos_wrapper.hpp"
+#include "terra/vtk/vtk.hpp"
 
 using namespace terra;
 
@@ -47,14 +44,7 @@ struct SolutionInterpolator
         const double                  value  = coords( 0 ) * Kokkos::sin( coords( 1 ) ) * Kokkos::cos( coords( 2 ) );
         // const double value = coords( 0 );
 
-        if ( !only_boundary_ ||
-#if SINGLE_DIAMOND
-             ( x == 0 || y == 0 || r == 0 || x == grid_.size_x() - 1 || y == grid_.size_y() - 1 ||
-               r == grid_.size_r() - 1 )
-#else
-             ( r == 0 || r == radii_.extent( 1 ) - 1 )
-#endif
-        )
+        if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
             data_( local_subdomain_id, x, y, r ) = value;
         }
@@ -76,15 +66,7 @@ struct SetOnBoundary
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_idx, const int x, const int y, const int r ) const
     {
-        if (
-#if SINGLE_DIAMOND
-            ( x == 0 || y == 0 || r == 0 || x == grid_.size_x() - 1 || y == grid_.size_y() - 1 ||
-              r == grid_.size_r() - 1 )
-#else
-            ( r == 0 || r == num_shells_ - 1 )
-#endif
-        )
-
+        if ( ( r == 0 || r == num_shells_ - 1 ) )
         {
             dst_( local_subdomain_idx, x, y, r ) = src_( local_subdomain_idx, x, y, r );
         }
@@ -477,11 +459,6 @@ struct LaplaceOperator
             }
         }
 
-        // TODO: multiply with src in the correct order
-        // TODO: check dirichlet/boundary flags before update
-
-        // std::cout << A << std::endl;
-
         if ( treat_boundary_ )
         {
             // Later we will multiply all non-diagonal entries with row or column with that value.
@@ -494,14 +471,7 @@ struct LaplaceOperator
                 {
                     for ( int x = x_cell; x <= x_cell + 1; x++ )
                     {
-#if SINGLE_DIAMOND
-                        const double factor = ( x == 0 || y == 0 || r == 0 || x == grid_.size_x() - 1 ||
-                                                y == grid_.size_y() - 1 || r == grid_.size_r() - 1 ) ?
-                                                  0.0 :
-                                                  1.0;
-#else
                         const double factor = ( r == 0 || r == radii_.extent( 1 ) - 1 ) ? 0.0 : 1.0;
-#endif
 
                         const int x_local = x - x_cell;
                         const int y_local = y - y_cell;
@@ -537,8 +507,6 @@ struct LaplaceOperator
                 }
             }
         }
-
-        // std::cout << A << std::endl;
 
         dense::Vec< double, 8 > dst = A * src;
 
@@ -580,119 +548,6 @@ void richardson_step(
 
     kernels::common::lincomb( x, 1.0, x, omega, b, -omega, tmp );
 }
-#if 0
-void single_diamond()
-{
-    /**
-
-    Boundary handling notes.
-
-    Using inhom boundary conditions we approach the elimination as follows (for the moment).
-
-    Let A be the "Neumann" operator, i.e., we do not treat the boundaries any differently.
-
-    1. Interpolate Dirichlet boundary conditions into g.
-    2. Compute g_A <- A       * g.
-    3. Compute g_D <- diag(A) * g.
-    4. Set the rhs to b = f - g_A.
-    5. Set the rhs at the boundary nodes to g_D.
-    6. Solve
-            A_elim x = b
-       where A_elim is A but with all off-diagonal entries in the same row/col as a boundary node set to zero.
-       In a matrix-free context, we have to adapt the element matrix A_local accordingly by (symmetrically ) zeroing
-       out all the off-diagonals (row and col) that correspond to a boundary node. But we keep the diagonal intact.
-       We still have diag(A) == diag(A_elim).
-    7. x is the solution of the original problem. No boundary correction should be necessary.
-
-    **/
-
-    ThickSphericalShellSubdomainGrid grid( 3, 7, 1, 0, 0, grid::shell::uniform_shell_radii( 0.5, 1.0, 4 ) );
-
-    // Some vectors.
-    // Default initialized to zero.
-    Grid3DDataScalar< double > u( "u", grid.size_x(), grid.size_y(), grid.size_r() );
-    Grid3DDataScalar< double > g( "g", grid.size_x(), grid.size_y(), grid.size_r() );
-    Grid3DDataScalar< double > Adiagg( "Adiagg", grid.size_x(), grid.size_y(), grid.size_r() );
-    Grid3DDataScalar< double > tmp( "tmp", grid.size_x(), grid.size_y(), grid.size_r() );
-    Grid3DDataScalar< double > solution( "solution", grid.size_x(), grid.size_y(), grid.size_r() );
-    Grid3DDataScalar< double > error( "error", grid.size_x(), grid.size_y(), grid.size_r() );
-
-    // Set up solution data.
-    Kokkos::parallel_for(
-        "solution interpolation",
-        Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
-        SolutionInterpolator( grid, solution, false ) );
-
-    // Set up boundary data.
-    Kokkos::parallel_for(
-        "boundary interpolation",
-        Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
-        SolutionInterpolator( grid, g, true ) );
-
-    Kokkos::parallel_for(
-        "matvec",
-        Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x() - 1, grid.size_y() - 1, grid.size_r() - 1 } ),
-        LaplaceOperator( grid, g, Adiagg, false, true ) );
-
-    // Set up the right-hand side.
-    Grid3DDataScalar< double > b( "b", grid.size_x(), grid.size_y(), grid.size_r() );
-
-    Kokkos::parallel_for(
-        "matvec",
-        Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x() - 1, grid.size_y() - 1, grid.size_r() - 1 } ),
-        LaplaceOperator( grid, g, b, false, false ) );
-
-    terra::kernels::common::scale( b, -1.0 );
-
-    Kokkos::parallel_for(
-        "set on boundary",
-        Kokkos::MDRangePolicy( { 0, 0, 0 }, { grid.size_x(), grid.size_y(), grid.size_r() } ),
-        SetOnBoundary( grid, Adiagg, b ) );
-
-    // Solve.
-
-    for ( int iter = 0; iter < 1000; iter++ )
-    {
-        std::cout << "iter = " << iter << std::endl;
-        richardson_step( grid, u, b, tmp, 0.3 );
-    }
-
-    kernels::common::lincomb( error, 1.0, u, -1.0, solution );
-
-    // Output VTK.
-    terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
-        grid.unit_sphere_coords(),
-        grid.shell_radii(),
-        std::optional( g ),
-        "g",
-        "g.vtu",
-        vtk::DiagonalSplitType::BACKWARD_SLASH );
-
-    terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
-        grid.unit_sphere_coords(),
-        grid.shell_radii(),
-        std::optional( u ),
-        "u",
-        "u.vtu",
-        vtk::DiagonalSplitType::BACKWARD_SLASH );
-
-    terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
-        grid.unit_sphere_coords(),
-        grid.shell_radii(),
-        std::optional( solution ),
-        "solution",
-        "solution.vtu",
-        vtk::DiagonalSplitType::BACKWARD_SLASH );
-
-    terra::vtk::write_surface_radial_extruded_to_wedge_vtu(
-        grid.unit_sphere_coords(),
-        grid.shell_radii(),
-        std::optional( error ),
-        "error",
-        "error.vtu",
-        vtk::DiagonalSplitType::BACKWARD_SLASH );
-}
-#endif
 
 void single_apply()
 {
@@ -745,6 +600,29 @@ void single_apply()
 
 void all_diamonds()
 {
+    /**
+
+    Boundary handling notes.
+
+    Using inhom boundary conditions we approach the elimination as follows (for the moment).
+
+    Let A be the "Neumann" operator, i.e., we do not treat the boundaries any differently.
+
+    1. Interpolate Dirichlet boundary conditions into g.
+    2. Compute g_A <- A       * g.
+    3. Compute g_D <- diag(A) * g.
+    4. Set the rhs to b = f - g_A.
+    5. Set the rhs at the boundary nodes to g_D.
+    6. Solve
+            A_elim x = b
+       where A_elim is A but with all off-diagonal entries in the same row/col as a boundary node set to zero.
+       In a matrix-free context, we have to adapt the element matrix A_local accordingly by (symmetrically ) zeroing
+       out all the off-diagonals (row and col) that correspond to a boundary node. But we keep the diagonal intact.
+       We still have diag(A) == diag(A_elim).
+    7. x is the solution of the original problem. No boundary correction should be necessary.
+
+    **/
+
     const auto domain = grid::shell::DistributedDomain::create_uniform_single_subdomain( 4, 4, 0.5, 1.0 );
 
     const auto u        = grid::shell::allocate_scalar_grid( "u", domain );
