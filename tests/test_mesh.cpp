@@ -1,13 +1,10 @@
-#include <fstream> // For VTK output example
+#include <fstream>
 #include <iomanip>
-#include <iostream>
 #include <optional>
 
-#include "../src/terra/grid/shell/spherical_shell.hpp"
-#include "../src/terra/vtk/vtk.hpp"
-#include "kernels/common/interpolation.hpp"
-#include "kernels/common/vector_operations.hpp"
+#include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/point_3d.hpp"
+#include "terra/vtk/vtk.hpp"
 
 struct SomeInterpolator
 {
@@ -38,41 +35,32 @@ struct SomeInterpolator
 
 int main( int argc, char** argv )
 {
-    Kokkos::initialize( argc, argv );
-    {
-        const int    lateral_refinement_level = 0;
-        const double r_min                    = 0.5;
-        const double r_max                    = 1.0;
-        const int    num_shells               = 5;
-        const int    num_layers               = num_shells - 1;
+    MPI_Init( &argc, &argv );
+    Kokkos::ScopeGuard scope_guard( argc, argv );
 
-        terra::grid::shell::DomainInfo domain_info( lateral_refinement_level, r_min, r_max, num_layers );
-        const auto                     subdomain_infos = domain_info.all_subdomains();
+    const int    lateral_refinement_level = 4;
+    const int    radial_refinement_level  = 4;
+    const double r_min                    = 0.5;
+    const double r_max                    = 1.0;
 
-        const auto subdomain_shell_coords =
-            terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain_info, subdomain_infos );
-        const auto subdomain_radii = terra::grid::shell::subdomain_shell_radii( domain_info, subdomain_infos );
+    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain(
+        lateral_refinement_level, radial_refinement_level, r_min, r_max );
 
-        terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, "my_fancy_vtk.vtu", true );
+    const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
+    const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
 
-        terra::grid::Grid4DDataScalar< double > data(
-            "scalar_data",
-            subdomain_infos.size(),
-            domain_info.subdomain_num_nodes_per_side_laterally(),
-            domain_info.subdomain_num_nodes_per_side_laterally(),
-            domain_info.subdomain_num_nodes_radially() );
+    auto data = terra::grid::shell::allocate_scalar_grid( "scalar_data", domain );
 
-        Kokkos::parallel_for(
-            "some_interpolation",
-            Kokkos::MDRangePolicy(
-                { 0, 0, 0, 0 }, { data.extent( 0 ), data.extent( 1 ), data.extent( 2 ), data.extent( 3 ) } ),
-            SomeInterpolator( subdomain_shell_coords, subdomain_radii, data ) );
+    Kokkos::parallel_for(
+        "some_interpolation",
+        terra::grid::shell::local_domain_md_range_policy_nodes( domain ),
+        SomeInterpolator( subdomain_shell_coords, subdomain_radii, data ) );
 
-        vtk.add_scalar_field( data.label(), data );
+    terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, "my_fancy_vtk.vtu", true );
+    vtk.add_scalar_field( data.label(), data );
+    vtk.write();
 
-        vtk.write();
-    }
-    Kokkos::finalize();
+    MPI_Finalize();
 
     return 0;
 }

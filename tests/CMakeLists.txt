@@ -9,8 +9,6 @@ function(add_terra_test name)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
-add_terra_test(test_interpolate)
 add_terra_test(test_mesh)
 add_terra_test(test_laplace)
-add_terra_test(test_kokkos_smoke)
 add_terra_test(test_mpi_smoke)

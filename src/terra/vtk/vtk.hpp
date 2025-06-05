@@ -1,13 +1,14 @@
 #pragma once
 
 #include <fstream>
-#include <iomanip> // For std::fixed, std::setprecision
+#include <iomanip>
 #include <iostream>
-#include <stdexcept> // For error handling (std::runtime_error)
-#include <string>    // For filenames (std::string)
-#include <vector>    // Can be useful for intermediate storage if needed
+#include <stdexcept>
+#include <string>
+#include <variant>
+#include <vector>
 
-#include "../grid/grid_types.hpp"
+#include "terra/grid/grid_types.hpp"
 
 namespace terra::vtk {
 

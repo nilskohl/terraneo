@@ -33,6 +33,10 @@ int main( int argc, char** argv )
 
         for ( int i = 0; i < dst_host.extent( 0 ); i++ )
         {
+            if ( ( dst_host( i ) - i ) > 1e-16 )
+            {
+                throw std::logic_error( "Communication did not succeed." );
+            }
             std::cout << dst_host( i ) << std::endl;
         }
     }

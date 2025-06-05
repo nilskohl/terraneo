@@ -778,12 +778,11 @@ void all_diamonds()
 int main( int argc, char** argv )
 {
     MPI_Init( &argc, &argv );
-    Kokkos::initialize( argc, argv );
-    {
-        single_apply();
-        all_diamonds();
-    }
-    Kokkos::finalize();
+    Kokkos::ScopeGuard scope_guard( argc, argv );
+
+    single_apply();
+    all_diamonds();
+
     MPI_Finalize();
     return 0;
 }
