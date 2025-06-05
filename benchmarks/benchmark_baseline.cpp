@@ -133,35 +133,21 @@ BenchmarkData
     const int dofs = y.span();
 
     Kokkos::Timer timer;
-    double        duration = -1.0;
 
-    if ( benchmark == BenchmarkType::LINCOMB_1 )
+    Kokkos::fence();
+    timer.reset();
+
+    for ( int i = 0; i < executions; ++i )
     {
-        Kokkos::fence();
-        timer.reset();
-        for ( int i = 0; i < executions; ++i )
+        if ( benchmark == BenchmarkType::LINCOMB_1 )
         {
             lincomb( y, 42.0, x0 );
         }
-        Kokkos::fence();
-        duration = timer.seconds() / executions;
-    }
-    else if ( benchmark == BenchmarkType::LINCOMB_2 )
-    {
-        Kokkos::fence();
-        timer.reset();
-        for ( int i = 0; i < executions; ++i )
+        else if ( benchmark == BenchmarkType::LINCOMB_2 )
         {
             lincomb( y, 42.0, x0, 4711.0, x1 );
         }
-        Kokkos::fence();
-        duration = timer.seconds() / executions;
-    }
-    else if ( benchmark == BenchmarkType::STENCIL_INNER_CONSTANT_7 )
-    {
-        Kokkos::fence();
-        timer.reset();
-        for ( int i = 0; i < executions; ++i )
+        else if ( benchmark == BenchmarkType::STENCIL_INNER_CONSTANT_7 )
         {
             Kokkos::parallel_for(
                 "stencil",
@@ -169,23 +155,17 @@ BenchmarkData
                     { 0, 1, 1, 1 }, { y.extent( 0 ), y.extent( 1 ) - 1, y.extent( 2 ) - 1, y.extent( 3 ) - 1 } ),
                 ConstantStencilInner( x0, y ) );
         }
-        Kokkos::fence();
-        duration = timer.seconds() / executions;
-    }
-    else if ( benchmark == BenchmarkType::ELEMENTWISE_CONSTANT_MATVEC )
-    {
-        Kokkos::fence();
-        timer.reset();
-        for ( int i = 0; i < executions; ++i )
+        else if ( benchmark == BenchmarkType::ELEMENTWISE_CONSTANT_MATVEC )
         {
             Kokkos::parallel_for(
                 "elementwise",
                 terra::grid::shell::local_domain_md_range_policy_cells( domain ),
                 ConstantElementwise( x0, y ) );
         }
-        Kokkos::fence();
-        duration = timer.seconds() / executions;
     }
+
+    Kokkos::fence();
+    const double duration = timer.seconds() / executions;
 
     return BenchmarkData{ lateral_refinement_level, radial_refinement_level, dofs, duration };
 }
