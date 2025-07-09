@@ -11,7 +11,7 @@
 
 using terra::grid::shell::SubdomainNeighborhood;
 
-namespace terra::communication {
+namespace terra::communication::shell {
 
 constexpr int MPI_TAG_BOUNDARY_METADATA = 100;
 constexpr int MPI_TAG_BOUNDARY_DATA     = 101;
@@ -206,4 +206,4 @@ void recv_unpack_and_add_local_subdomain_boundaries(
     std::vector< std::array< int, 11 > >&   metadata_recv_buffers,
     CommuncationReduction                   reduction = CommuncationReduction::SUM );
 
-} // namespace terra::communication
+} // namespace terra::communication::shell

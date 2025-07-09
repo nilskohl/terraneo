@@ -1,7 +1,7 @@
 #include <fstream>
 #include <iomanip>
 
-#include "communication/communication.hpp"
+#include "../src/terra/communication/shell/communication.hpp"
 #include "kernels/common/vector_operations.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/vtk/vtk.hpp"
@@ -22,8 +22,8 @@ int main( int argc, char** argv )
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
     const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
 
-    terra::communication::SubdomainNeighborhoodSendBuffer send_buffers( domain );
-    terra::communication::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
+    terra::communication::shell::SubdomainNeighborhoodSendBuffer send_buffers( domain );
+    terra::communication::shell::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
 
     std::vector< std::array< int, 11 > > expected_recvs_metadata;
     std::vector< MPI_Request >           expected_recvs_requests;
@@ -41,16 +41,16 @@ int main( int argc, char** argv )
     }
 
     // Communicate and reduce with minimum.
-    terra::communication::pack_and_send_local_subdomain_boundaries(
+    terra::communication::shell::pack_and_send_local_subdomain_boundaries(
         domain, u, send_buffers, expected_recvs_requests, expected_recvs_metadata );
 
-    terra::communication::recv_unpack_and_add_local_subdomain_boundaries(
+    terra::communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
         domain,
         u,
         recv_buffers,
         expected_recvs_requests,
         expected_recvs_metadata,
-        terra::communication::CommuncationReduction::MIN );
+        terra::communication::shell::CommuncationReduction::MIN );
 
     // Set all nodes to 1 if the global_subdomain_id matches - 0 otherwise.
     for ( const auto& [subdomain_info, value] : domain.subdomains() )
@@ -85,16 +85,16 @@ int main( int argc, char** argv )
     std::cout << "sum_mag = " << sum_mag << std::endl;
 
     // Communicate and reduce with sum (nothing should change).
-    terra::communication::pack_and_send_local_subdomain_boundaries(
+    terra::communication::shell::pack_and_send_local_subdomain_boundaries(
         domain, u, send_buffers, expected_recvs_requests, expected_recvs_metadata );
 
-    terra::communication::recv_unpack_and_add_local_subdomain_boundaries(
+    terra::communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
         domain,
         u,
         recv_buffers,
         expected_recvs_requests,
         expected_recvs_metadata,
-        terra::communication::CommuncationReduction::SUM );
+        terra::communication::shell::CommuncationReduction::SUM );
 
     // Check global min/max/sum again. Sum should now be the same as if we count all vertices (including boundaries).
     min_mag = terra::kernels::common::min_magnitude( u );

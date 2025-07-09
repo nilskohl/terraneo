@@ -1317,11 +1317,11 @@ void single_apply()
 {
     const auto domain = grid::shell::DistributedDomain::create_uniform_single_subdomain( 3, 3, 0.5, 1.0 );
 
-    const auto src = grid::shell::allocate_scalar_grid( "src", domain );
-    const auto dst = grid::shell::allocate_scalar_grid( "dst", domain );
+    const auto src = grid::shell::allocate_scalar_grid< double >( "src", domain );
+    const auto dst = grid::shell::allocate_scalar_grid< double >( "dst", domain );
 
-    communication::SubdomainNeighborhoodSendBuffer send_buffers( domain );
-    communication::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
+    communication::shell::SubdomainNeighborhoodSendBuffer send_buffers( domain );
+    communication::shell::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
 
     std::vector< std::array< int, 11 > > expected_recvs_metadata;
     std::vector< MPI_Request >           expected_recvs_requests;
@@ -1344,13 +1344,13 @@ void single_apply()
 #endif
 
 #if 1
-    communication::pack_and_send_local_subdomain_boundaries(
+    communication::shell::pack_and_send_local_subdomain_boundaries(
         domain, dst, send_buffers, expected_recvs_requests, expected_recvs_metadata );
 
     MPI_Barrier( MPI_COMM_WORLD );
     Kokkos::fence();
 
-    communication::recv_unpack_and_add_local_subdomain_boundaries(
+    communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
         domain, dst, recv_buffers, expected_recvs_requests, expected_recvs_metadata );
 #endif
 
@@ -1391,20 +1391,20 @@ void all_diamonds()
 
     const auto domain = grid::shell::DistributedDomain::create_uniform_single_subdomain( 4, 4, 0.5, 1.0 );
 
-    const auto u        = grid::shell::allocate_scalar_grid( "u", domain );
-    const auto g        = grid::shell::allocate_scalar_grid( "g", domain );
-    const auto Adiagg   = grid::shell::allocate_scalar_grid( "Adiagg", domain );
-    const auto tmp      = grid::shell::allocate_scalar_grid( "tmp", domain );
-    const auto solution = grid::shell::allocate_scalar_grid( "solution", domain );
-    const auto error    = grid::shell::allocate_scalar_grid( "error", domain );
-    const auto b        = grid::shell::allocate_scalar_grid( "b", domain );
-    const auto r        = grid::shell::allocate_scalar_grid( "r", domain );
+    const auto u        = grid::shell::allocate_scalar_grid< double >( "u", domain );
+    const auto g        = grid::shell::allocate_scalar_grid< double >( "g", domain );
+    const auto Adiagg   = grid::shell::allocate_scalar_grid< double >( "Adiagg", domain );
+    const auto tmp      = grid::shell::allocate_scalar_grid< double >( "tmp", domain );
+    const auto solution = grid::shell::allocate_scalar_grid< double >( "solution", domain );
+    const auto error    = grid::shell::allocate_scalar_grid< double >( "error", domain );
+    const auto b        = grid::shell::allocate_scalar_grid< double >( "b", domain );
+    const auto r        = grid::shell::allocate_scalar_grid< double >( "r", domain );
 
     const int num_dofs = u.span();
     std::cout << "Num DoFs: " << num_dofs << std::endl;
 
-    communication::SubdomainNeighborhoodSendBuffer send_buffers( domain );
-    communication::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
+    communication::shell::SubdomainNeighborhoodSendBuffer send_buffers( domain );
+    communication::shell::SubdomainNeighborhoodRecvBuffer recv_buffers( domain );
 
     std::vector< std::array< int, 11 > > expected_recvs_metadata;
     std::vector< MPI_Request >           expected_recvs_requests;
@@ -1429,9 +1429,9 @@ void all_diamonds()
         grid::shell::local_domain_md_range_policy_cells( domain ),
         LaplaceOperator( subdomain_shell_coords, subdomain_radii, g, Adiagg, false, true ) );
 
-    communication::pack_and_send_local_subdomain_boundaries(
+    communication::shell::pack_and_send_local_subdomain_boundaries(
         domain, Adiagg, send_buffers, expected_recvs_requests, expected_recvs_metadata );
-    communication::recv_unpack_and_add_local_subdomain_boundaries(
+    communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
         domain, Adiagg, recv_buffers, expected_recvs_requests, expected_recvs_metadata );
 
     Kokkos::parallel_for(
@@ -1439,9 +1439,9 @@ void all_diamonds()
         grid::shell::local_domain_md_range_policy_cells( domain ),
         LaplaceOperator( subdomain_shell_coords, subdomain_radii, g, b, false, false ) );
 
-    communication::pack_and_send_local_subdomain_boundaries(
+    communication::shell::pack_and_send_local_subdomain_boundaries(
         domain, b, send_buffers, expected_recvs_requests, expected_recvs_metadata );
-    communication::recv_unpack_and_add_local_subdomain_boundaries(
+    communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
         domain, b, recv_buffers, expected_recvs_requests, expected_recvs_metadata );
 
     terra::kernels::common::scale( b, -1.0 );
@@ -1508,9 +1508,9 @@ void all_diamonds()
         Kokkos::fence();
         duration_matvec_sum += timer_matvec.seconds();
 
-        communication::pack_and_send_local_subdomain_boundaries(
+        communication::shell::pack_and_send_local_subdomain_boundaries(
             domain, tmp, send_buffers, expected_recvs_requests, expected_recvs_metadata );
-        communication::recv_unpack_and_add_local_subdomain_boundaries(
+        communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
             domain, tmp, recv_buffers, expected_recvs_requests, expected_recvs_metadata );
 
         kernels::common::lincomb( u, 1.0, u, omega, b, -omega, tmp );

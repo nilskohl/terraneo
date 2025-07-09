@@ -119,9 +119,9 @@ BenchmarkData
     const auto domain = DistributedDomain::create_uniform_single_subdomain(
         lateral_refinement_level, radial_refinement_level, 0.5, 1.0 );
 
-    const auto y  = allocate_scalar_grid( "y", domain );
-    const auto x0 = allocate_scalar_grid( "x0", domain );
-    const auto x1 = allocate_scalar_grid( "x1", domain );
+    const auto y  = allocate_scalar_grid< double >( "y", domain );
+    const auto x0 = allocate_scalar_grid< double >( "x0", domain );
+    const auto x1 = allocate_scalar_grid< double >( "x1", domain );
 
     set_constant( x0, 1.0 );
     set_constant( x1, 1.0 );

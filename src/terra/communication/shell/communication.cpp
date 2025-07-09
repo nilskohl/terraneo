@@ -1,7 +1,7 @@
 
 #include "communication.hpp"
 
-namespace terra::communication {
+namespace terra::communication::shell {
 
 SubdomainNeighborhoodSendBuffer::SubdomainNeighborhoodSendBuffer( const grid::shell::DistributedDomain& domain )
 {
@@ -506,4 +506,4 @@ void recv_unpack_and_add_local_subdomain_boundaries(
     }
 }
 
-} // namespace terra::communication
+} // namespace terra::communication::shell
