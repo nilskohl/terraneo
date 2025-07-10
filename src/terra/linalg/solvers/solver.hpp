@@ -7,6 +7,9 @@
 #include "terra/linalg/operator.hpp"
 #include "terra/linalg/vector.hpp"
 
+namespace terra::util {
+class Table;
+}
 namespace terra::linalg::solvers {
 
 template < typename T >
@@ -14,18 +17,18 @@ concept SolverLike = requires(
     // TODO: Cannot make solver const since we may have temporaries as members.
     T& self,
     // TODO: See OperatorLike for why A is not const.
-    typename T::OperatorType&                                            A,
-    typename T::OperatorType::SrcVectorType&                             x,
-    const typename T::OperatorType::DstVectorType&                       b,
-    const int                                                            level,
-    std::optional< std::reference_wrapper< IterativeSolverStatistics > > params ) {
+    typename T::OperatorType&                              A,
+    typename T::OperatorType::SrcVectorType&               x,
+    const typename T::OperatorType::DstVectorType&         b,
+    const int                                              level,
+    std::optional< std::reference_wrapper< util::Table > > statistics ) {
     // Require exposing the operator type.
     typename T::OperatorType;
 
     // Require that the operator type satisfy OperatorLike
     requires OperatorLike< typename T::OperatorType >;
 
-    { self.solve_impl( A, x, b, level, params ) } -> std::same_as< void >;
+    { self.solve_impl( A, x, b, level, statistics ) } -> std::same_as< void >;
 };
 
 template < SolverLike Solver >
@@ -36,12 +39,12 @@ using RHSOf = DstOf< typename Solver::OperatorType >;
 
 template < SolverLike Solver, OperatorLike Operator, VectorLike SolutionVector, VectorLike RHSVector >
 void solve(
-    Solver&                    solver,
-    Operator&                  A,
-    SolutionVector&            x,
-    const RHSVector&           b,
-    const int                  level,
-    IterativeSolverStatistics& statistics )
+    Solver&          solver,
+    Operator&        A,
+    SolutionVector&  x,
+    const RHSVector& b,
+    const int        level,
+    util::Table&     statistics )
 {
     solver.solve_impl( A, x, b, level, std::optional( std::reference_wrapper( statistics ) ) );
 }
@@ -64,17 +67,17 @@ class DummySolver
     using RHSVectorType      = DstOf< OperatorType >;
 
     void solve_impl(
-        const OperatorType&                                                  A,
-        SolutionVectorType&                                                  x,
-        const RHSVectorType&                                                 b,
-        const int                                                            level,
-        std::optional< std::reference_wrapper< IterativeSolverStatistics > > params ) const
+        const OperatorType&                                    A,
+        SolutionVectorType&                                    x,
+        const RHSVectorType&                                   b,
+        const int                                              level,
+        std::optional< std::reference_wrapper< util::Table > > statistics ) const
     {
         (void) A;
         (void) x;
         (void) b;
         (void) level;
-        (void) params;
+        (void) statistics;
     }
 };
 

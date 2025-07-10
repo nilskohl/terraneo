@@ -7,6 +7,7 @@
 #include "terra/linalg/solvers/iterative_solver_info.hpp"
 #include "terra/linalg/solvers/solver.hpp"
 #include "terra/linalg/vector.hpp"
+#include "util/table.hpp"
 
 namespace terra::linalg::solvers {
 
@@ -34,7 +35,8 @@ class PCG
          const RHSVectorType&             ap_tmp,
          const SolutionVectorType&        z_tmp,
          const PreconditionerT            preconditioner )
-    : params_( params )
+    : tag_( "pcg_solver" )
+    , params_( params )
     , r_( r_tmp )
     , p_( p_tmp )
     , ap_( ap_tmp )
@@ -42,12 +44,14 @@ class PCG
     , preconditioner_( preconditioner )
     {}
 
+    void set_tag( const std::string& tag ) { tag_ = tag; }
+
     void solve_impl(
-        OperatorType&                                                        A,
-        SolutionVectorType&                                                  x,
-        const RHSVectorType&                                                 b,
-        int                                                                  level,
-        std::optional< std::reference_wrapper< IterativeSolverStatistics > > params )
+        OperatorType&                                          A,
+        SolutionVectorType&                                    x,
+        const RHSVectorType&                                   b,
+        int                                                    level,
+        std::optional< std::reference_wrapper< util::Table > > statistics )
     {
         apply( A, x, r_, level );
 
@@ -60,12 +64,21 @@ class PCG
         // TODO: should this be dot(z, z) instead or dot(r, r)?
         const ScalarType initial_residual = dot( r_, r_, level );
 
+        if ( statistics.has_value() )
+        {
+            statistics->get().add_row(
+                { { "tag", tag_ },
+                  { "iteration", 0 },
+                  { "relative_residual", 1.0 },
+                  { "absolute_residual", initial_residual } } );
+        }
+
         if ( std::sqrt( initial_residual ) < params_.absolute_residual_tolerance() )
         {
             return;
         }
 
-        for ( int iteration = 0; iteration < params_.max_iterations(); ++iteration )
+        for ( int iteration = 1; iteration <= params_.max_iterations(); ++iteration )
         {
             const ScalarType alpha_num = dot( z_, r_, level );
 
@@ -81,6 +94,15 @@ class PCG
             const ScalarType absolute_residual = dot( r_, r_, level );
 
             const ScalarType relative_residual = std::sqrt( absolute_residual ) / std::sqrt( initial_residual );
+
+            if ( statistics.has_value() )
+            {
+                statistics->get().add_row(
+                    { { "tag", tag_ },
+                      { "iteration", iteration },
+                      { "relative_residual", relative_residual },
+                      { "absolute_residual", absolute_residual } } );
+            }
 
             if ( relative_residual <= params_.relative_residual_tolerance() )
             {
@@ -102,6 +124,8 @@ class PCG
     }
 
   private:
+    std::string tag_;
+
     IterativeSolverParameters params_;
 
     RHSVectorType      r_;

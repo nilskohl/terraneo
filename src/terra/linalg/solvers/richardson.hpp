@@ -21,11 +21,11 @@ class Richardson
     {}
 
     void solve_impl(
-        OperatorType&                                                        A,
-        SolutionVectorType&                                                  x,
-        const RHSVectorType&                                                 b,
-        int                                                                  level,
-        std::optional< std::reference_wrapper< IterativeSolverStatistics > > params )
+        OperatorType&                                          A,
+        SolutionVectorType&                                    x,
+        const RHSVectorType&                                   b,
+        int                                                    level,
+        std::optional< std::reference_wrapper< util::Table > > statistics )
     {
         for ( int iteration = 0; iteration < params_.max_iterations(); ++iteration )
         {

@@ -17,11 +17,11 @@ class IdentitySolver
     using RHSVectorType      = DstOf< OperatorType >;
 
     void solve_impl(
-        const OperatorType&                                                  A,
-        SolutionVectorType&                                                  x,
-        const RHSVectorType&                                                 b,
-        const int                                                            level,
-        std::optional< std::reference_wrapper< IterativeSolverStatistics > > params ) const
+        const OperatorType&                                    A,
+        SolutionVectorType&                                    x,
+        const RHSVectorType&                                   b,
+        const int                                              level,
+        std::optional< std::reference_wrapper< util::Table > > params ) const
     {
         assign( x, b, level );
         (void) A;

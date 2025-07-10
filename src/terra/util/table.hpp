@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <ctime>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <optional>
@@ -21,7 +22,6 @@ class Table
 
     Table( bool print_on_add = false )
     : print_on_add_( print_on_add )
-    , next_id_( 1 )
     {
         columns_.insert( "id" );
         columns_.insert( "timestamp" );
@@ -30,9 +30,7 @@ class Table
     void add_row( const Row& row_data )
     {
         Row row;
-
-        // Auto id and timestamp
-        row["id"]        = next_id_++;
+        row["id"]        = global_id_counter++;
         row["timestamp"] = current_timestamp();
 
         for ( const auto& [key, value] : row_data )
@@ -41,35 +39,86 @@ class Table
             columns_.insert( key );
         }
 
-        rows_.emplace_back( std::move( row ) );
-
         if ( print_on_add_ )
         {
-            // print_last_row();
-            print_pretty( { rows_.back() }, std::cout );
+            for ( const auto& [key, val] : row )
+            {
+                std::cout << key << ": " << value_to_string( val ) << ", ";
+            }
+            std::cout << std::endl;
         }
+
+        rows_.emplace_back( std::move( row ) );
     }
 
-    void print_csv( std::ostream& os = std::cout ) const
+    Table select( const std::vector< std::string >& selected_columns ) const
     {
-        print_header( os, "," );
+        Table result( false );
+        result.columns_ = { "id", "timestamp" }; // always keep these
+        for ( const auto& col : selected_columns )
+        {
+            result.columns_.insert( col );
+        }
+
         for ( const auto& row : rows_ )
         {
-            bool first = true;
-            for ( const auto& col : columns_ )
+            Row new_row;
+            for ( const auto& col : result.columns_ )
             {
-                if ( !first )
-                    os << ",";
-                os << value_to_string( get_or_none( row, col ) );
-                first = false;
+                new_row[col] = get_or_none( row, col );
             }
-            os << "\n";
+            result.rows_.push_back( std::move( new_row ) );
         }
+
+        return result;
     }
 
-    void print_pretty( std::ostream& os = std::cout ) const { print_pretty( rows_, os ); }
+    Table query_not_none( const std::string& column ) const
+    {
+        Table result( false );
+        result.columns_ = columns_;
+        for ( const auto& row : rows_ )
+        {
+            auto it = row.find( column );
+            if ( it != row.end() && !std::holds_alternative< std::monostate >( it->second ) )
+            {
+                result.rows_.push_back( row );
+            }
+        }
+        return result;
+    }
 
-    void print_pretty( const std::vector< Row >& rows, std::ostream& os = std::cout ) const
+    Table query_equals( const std::string& column, const Value& value ) const
+    {
+        Table result( false );
+        result.columns_ = columns_;
+        for ( const auto& row : rows_ )
+        {
+            auto it = row.find( column );
+            if ( it != row.end() && it->second == value )
+            {
+                result.rows_.push_back( row );
+            }
+        }
+        return result;
+    }
+
+    Table query_where( const std::string& column, std::function< bool( const Value& ) > predicate ) const
+    {
+        Table result( false );
+        result.columns_ = columns_;
+        for ( const auto& row : rows_ )
+        {
+            auto it = row.find( column );
+            if ( it != row.end() && predicate( it->second ) )
+            {
+                result.rows_.push_back( row );
+            }
+        }
+        return result;
+    }
+
+    const Table& print_pretty( std::ostream& os = std::cout ) const
     {
         std::unordered_map< std::string, size_t > widths;
         for ( const auto& col : columns_ )
@@ -77,7 +126,7 @@ class Table
             widths[col] = col.size();
         }
 
-        for ( const auto& row : rows )
+        for ( const auto& row : rows_ )
         {
             for ( const auto& col : columns_ )
             {
@@ -97,36 +146,41 @@ class Table
         os << "|";
         for ( const auto& col : columns_ )
         {
-            os << " " << std::setw( widths[col] ) << std::left << col << " |";
+            os << " " << std::setw( widths[col] ) << std::right << col << " |";
         }
         os << "\n";
         sep();
 
-        for ( const auto& row : rows )
+        for ( const auto& row : rows_ )
         {
             os << "|";
             for ( const auto& col : columns_ )
             {
-                os << " " << std::setw( widths[col] ) << std::left << value_to_string( get_or_none( row, col ) )
+                os << " " << std::setw( widths[col] ) << std::right << value_to_string( get_or_none( row, col ) )
                    << " |";
             }
             os << "\n";
         }
         sep();
+        return *this;
     }
 
-    std::vector< Row > query_not_none( const std::string& column ) const
+    const Table& print_csv( std::ostream& os = std::cout ) const
     {
-        std::vector< Row > result;
+        print_header( os, "," );
         for ( const auto& row : rows_ )
         {
-            auto it = row.find( column );
-            if ( it != row.end() && !std::holds_alternative< std::monostate >( it->second ) )
+            bool first = true;
+            for ( const auto& col : columns_ )
             {
-                result.push_back( row );
+                if ( !first )
+                    os << ",";
+                os << value_to_string( get_or_none( row, col ) );
+                first = false;
             }
+            os << "\n";
         }
-        return result;
+        return *this;
     }
 
     void set_print_on_add( bool enabled ) { print_on_add_ = enabled; }
@@ -137,41 +191,13 @@ class Table
         columns_.clear();
         columns_.insert( "id" );
         columns_.insert( "timestamp" );
-        next_id_ = 1;
     }
 
     size_t row_count() const { return rows_.size(); }
     size_t column_count() const { return columns_.size(); }
 
-  private:
-    std::vector< Row >      rows_;
-    std::set< std::string > columns_;
-    bool                    print_on_add_;
-    int                     next_id_;
-
-    std::string current_timestamp() const
-    {
-        using namespace std::chrono;
-        auto        now = system_clock::now();
-        std::time_t t   = system_clock::to_time_t( now );
-        std::tm     buf;
-#ifdef _WIN32
-        localtime_s( &buf, &t );
-#else
-        localtime_r( &t, &buf );
-#endif
-        char str[32];
-        std::strftime( str, sizeof( str ), "%Y-%m-%d %H:%M:%S", &buf );
-        return std::string( str );
-    }
-
-    Value get_or_none( const Row& row, const std::string& col ) const
-    {
-        auto it = row.find( col );
-        return ( it != row.end() ) ? it->second : std::monostate{};
-    }
-
-    std::string value_to_string( const Value& v ) const
+    // Utility accessors
+    static std::string value_to_string( const Value& v )
     {
         return std::visit(
             []( const auto& val ) -> std::string {
@@ -191,8 +217,12 @@ class Table
                 else if constexpr ( std::is_same_v< T, double > )
                 {
                     std::ostringstream ss;
-                    ss << std::fixed << std::setprecision( 3 ) << val;
+                    ss << std::scientific << std::setprecision( 3 ) << val;
                     return ss.str();
+                }
+                else if constexpr ( std::is_same_v< T, std::string > )
+                {
+                    return val;
                 }
                 else
                 {
@@ -202,17 +232,32 @@ class Table
             v );
     }
 
-    void print_header( std::ostream& os, const std::string& sep ) const
+    static Value get_or_none( const Row& row, const std::string& col )
     {
-        bool first = true;
-        for ( const auto& col : columns_ )
-        {
-            if ( !first )
-                os << sep;
-            os << col;
-            first = false;
-        }
-        os << "\n";
+        auto it = row.find( col );
+        return ( it != row.end() ) ? it->second : std::monostate{};
+    }
+
+  private:
+    std::vector< Row >      rows_;
+    std::set< std::string > columns_;
+    bool                    print_on_add_;
+    inline static int       global_id_counter = 1;
+
+    static std::string current_timestamp()
+    {
+        using namespace std::chrono;
+        auto        now = system_clock::now();
+        std::time_t t   = system_clock::to_time_t( now );
+        std::tm     buf;
+#ifdef _WIN32
+        localtime_s( &buf, &t );
+#else
+        localtime_r( &t, &buf );
+#endif
+        char str[32];
+        std::strftime( str, sizeof( str ), "%Y-%m-%d %H:%M:%S", &buf );
+        return std::string( str );
     }
 
     void print_last_row() const
@@ -231,5 +276,20 @@ class Table
             std::cout << "\n";
         }
     }
+
+    void print_header( std::ostream& os, const std::string& sep ) const
+    {
+        bool first = true;
+        for ( const auto& col : columns_ )
+        {
+            if ( !first )
+                os << sep;
+            os << col;
+            first = false;
+        }
+        os << "\n";
+    }
 };
+
+;
 } // namespace terra::util

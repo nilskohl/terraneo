@@ -171,10 +171,11 @@ double test( int level, util::Table& table )
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
     linalg::solvers::PCG< Laplace > pcg( solver_params, tmp, Adiagg, error, r );
+    pcg.set_tag( "pcg_solver_level_" + std::to_string( level ) );
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( pcg, A, u, b, level );
+    linalg::solvers::solve( pcg, A, u, b, level, table );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
@@ -223,8 +224,9 @@ int main( int argc, char** argv )
         prev_l2_error = l2_error;
     }
 
-    table.print_pretty( table.query_not_none( "order" ) );
-    table.print_pretty( table.query_not_none( "dofs" ) );
+    table.query_not_none( "order" ).print_pretty();
+    table.query_not_none( "dofs" ).print_pretty();
+    table.query_equals( "tag", "pcg_solver_level_4" ).select( { "iteration", "relative_residual" } ).print_pretty();
 
     MPI_Finalize();
     return 0;
