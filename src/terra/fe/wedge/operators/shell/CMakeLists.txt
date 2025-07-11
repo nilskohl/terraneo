@@ -1,4 +1,5 @@
 target_sources(terra
         PRIVATE
-        laplace.hpp)
+        laplace.hpp
+        mass.hpp)
 

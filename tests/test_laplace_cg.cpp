@@ -6,6 +6,7 @@
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/solvers/richardson.hpp"
 #include "terra/dense/mat.hpp"
+#include "terra/fe/wedge/operators/shell/mass.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
@@ -45,13 +46,41 @@ struct SolutionInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        const double                  value  = coords( 0 ) * Kokkos::sin( coords( 1 ) ) * Kokkos::sinh( coords( 2 ) );
-        // const double value = coords( 0 );
+        // const double                  value  = coords( 0 ) * Kokkos::sin( coords( 1 ) ) * Kokkos::sinh( coords( 2 ) );
+        const double value = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
 
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
             data_( local_subdomain_id, x, y, r ) = value;
         }
+    }
+};
+
+struct RHSInterpolator
+{
+    Grid3DDataVec< double, 3 > grid_;
+    Grid2DDataScalar< double > radii_;
+    Grid4DDataScalar< double > data_;
+    bool                       only_boundary_;
+
+    RHSInterpolator(
+        const Grid3DDataVec< double, 3 >& grid,
+        const Grid2DDataScalar< double >& radii,
+        const Grid4DDataScalar< double >& data )
+    : grid_( grid )
+    , radii_( radii )
+    , data_( data )
+
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
+    {
+        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+
+        // const double value = coords( 0 );
+        const double value = ( 3.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
+        data_( local_subdomain_id, x, y, r ) = value;
     }
 };
 
@@ -144,6 +173,10 @@ double test( int level, util::Table& table )
     Laplace A_neumann( domain, subdomain_shell_coords, subdomain_radii, false, false );
     Laplace A_neumann_diag( domain, subdomain_shell_coords, subdomain_radii, false, true );
 
+    using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
+
+    Mass M( domain, subdomain_shell_coords, subdomain_radii, false );
+
     // Set up solution data.
     Kokkos::parallel_for(
         "solution interpolation",
@@ -156,10 +189,18 @@ double test( int level, util::Table& table )
         local_domain_md_range_policy_nodes( domain ),
         SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data( level ), true ) );
 
-    linalg::apply( A_neumann_diag, g, Adiagg, level );
-    linalg::apply( A_neumann, g, b, level );
+    // Set up rhs data.
+    Kokkos::parallel_for(
+        "rhs interpolation",
+        local_domain_md_range_policy_nodes( domain ),
+        RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data( level ) ) );
 
-    linalg::lincomb( b, { -1.0 }, { b }, level );
+    linalg::apply( M, tmp, b, level );
+
+    linalg::apply( A_neumann_diag, g, Adiagg, level );
+    linalg::apply( A_neumann, g, tmp, level );
+
+    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp }, level );
 
     Kokkos::parallel_for(
         "set on boundary",
@@ -223,9 +264,9 @@ int main( int argc, char** argv )
         prev_l2_error = l2_error;
     }
 
-    table.query_not_none( "order" ).print_pretty();
-    table.query_not_none( "dofs" ).print_pretty();
-    table.query_equals( "tag", "pcg_solver_level_4" ).select( { "iteration", "relative_residual" } ).print_pretty();
+    table.query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
+    table.query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
+    // table.query_equals( "tag", "pcg_solver_level_4" ).select( { "iteration", "relative_residual" } ).print_pretty();
 
     MPI_Finalize();
     return 0;
