@@ -104,9 +104,9 @@ class VectorLaplace
 
         // Compute lateral part of Jacobian.
 
-        constexpr auto nq = quad_felippa_1x1_nq;
-        constexpr auto qp = quad_felippa_1x1_qp;
-        constexpr auto qw = quad_felippa_1x1_qw;
+        constexpr auto nq = quad_felippa_1x1_num_quad_points;
+        constexpr auto qp = quad_felippa_1x1_quad_points;
+        constexpr auto qw = quad_felippa_1x1_quad_weights;
 
         dense::Mat< double, 3, 3 > jac_lat_inv_t[num_wedges][nq] = {};
         double                     det_jac_lat[num_wedges][nq]   = {};

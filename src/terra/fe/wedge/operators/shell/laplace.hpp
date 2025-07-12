@@ -76,93 +76,57 @@ class Laplace
     {
         // First all the r-independent stuff.
         // Gather surface points for each wedge.
-        constexpr int num_wedges = 2;
 
-        dense::Vec< double, 3 > wedge_phy_surf[num_wedges][3] = {};
-        wedge_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
+        dense::Vec< double, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
+        wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
 
         // Compute lateral part of Jacobian.
 
-        constexpr auto nq = quad_felippa_1x1_nq;
-        constexpr auto qp = quad_felippa_1x1_qp;
-        constexpr auto qw = quad_felippa_1x1_qw;
+        constexpr auto num_quad_points = quad_felippa_1x1_num_quad_points;
+        constexpr auto quad_points     = quad_felippa_1x1_quad_points;
+        constexpr auto quad_weights    = quad_felippa_1x1_quad_weights;
 
-        dense::Mat< double, 3, 3 > jac_lat_inv_t[num_wedges][nq] = {};
-        double                     det_jac_lat[num_wedges][nq]   = {};
+        dense::Mat< double, 3, 3 > jac_lat_inv_t[num_wedges_per_hex_cell][num_quad_points] = {};
+        double                     det_jac_lat[num_wedges_per_hex_cell][num_quad_points]   = {};
 
-        for ( int wedge = 0; wedge < num_wedges; wedge++ )
-        {
-            for ( int q = 0; q < nq; q++ )
-            {
-                const auto jac_lat = wedge::jac_lat(
-                    wedge_phy_surf[wedge][0],
-                    wedge_phy_surf[wedge][1],
-                    wedge_phy_surf[wedge][2],
-                    qp[q]( 0 ),
-                    qp[q]( 1 ) );
+        jacobian_lat_inverse_transposed_and_determinant( jac_lat_inv_t, det_jac_lat, wedge_phy_surf, quad_points );
 
-                det_jac_lat[wedge][q] = Kokkos::abs( jac_lat.det() );
+        dense::Vec< double, 3 > g_rad[num_wedges_per_hex_cell][num_nodes_per_wedge][num_quad_points] = {};
+        dense::Vec< double, 3 > g_lat[num_wedges_per_hex_cell][num_nodes_per_wedge][num_quad_points] = {};
 
-                jac_lat_inv_t[wedge][q] = jac_lat.inv().transposed();
-            }
-        }
-
-        constexpr int num_nodes_per_wedge = 6;
-
-        dense::Vec< double, 3 > g_rad[num_wedges][num_nodes_per_wedge][nq] = {};
-        dense::Vec< double, 3 > g_lat[num_wedges][num_nodes_per_wedge][nq] = {};
-
-        for ( int wedge = 0; wedge < num_wedges; wedge++ )
-        {
-            for ( int node_idx = 0; node_idx < num_nodes_per_wedge; node_idx++ )
-            {
-                for ( int q = 0; q < nq; q++ )
-                {
-                    g_rad[wedge][node_idx][q] =
-                        jac_lat_inv_t[wedge][q] *
-                        dense::Vec< double, 3 >{
-                            grad_shape_lat_xi_wedge_node( node_idx ) * shape_rad_wedge_node( node_idx, qp[q] ),
-                            grad_shape_lat_eta_wedge_node( node_idx ) * shape_rad_wedge_node( node_idx, qp[q] ),
-                            0.0 };
-
-                    g_lat[wedge][node_idx][q] =
-                        jac_lat_inv_t[wedge][q] *
-                        dense::Vec< double, 3 >{ 0.0, 0.0, shape_lat_wedge_node( node_idx, qp[q] ) };
-                }
-            }
-        }
+        lateral_parts_of_grad_phi( g_rad, g_lat, jac_lat_inv_t, quad_points );
 
         // Only now we introduce radially dependent terms.
         const double r_1 = radii_( local_subdomain_id, r_cell );
         const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // For now, compute the local element matrix. We'll improve that later.
-        dense::Mat< double, 6, 6 > A[num_wedges] = {};
+        dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};
 
-        for ( int wedge = 0; wedge < num_wedges; wedge++ )
+        // TODO: this can be absorbed into g_lat.
+        // TODO: ALSO we can sometimes avoid division if we pull the r^2 and grad_r out of the determinant and replace
+        //       the prefactors for the g_lat and g_rad but this is very form-specific.
+        const double grad_r     = grad_forward_map_rad( r_1, r_2 );
+        const double grad_r_inv = 1.0 / grad_r;
+
+        for ( int q = 0; q < num_quad_points; q++ )
         {
-            for ( int q = 0; q < nq; q++ )
+            // TODO: We could precompute that per quadrature point and store in a View globally to avoid the division.
+            const double r     = forward_map_rad( r_1, r_2, quad_points[q]( 2 ) );
+            const double r_inv = 1.0 / r;
+
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
-                const double r = fe::wedge::forward_map_rad( r_1, r_2, qp[q]( 2 ) );
-                // TODO: we can precompute that per quadrature point to avoid the division.
-                const double r_inv = 1.0 / r;
-
-                const double grad_r = fe::wedge::grad_forward_map_rad( r_1, r_2 );
-                // TODO: we can precompute that per quadrature point to avoid the division.
-                const double grad_r_inv = 1.0 / grad_r;
-
                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
                 {
                     for ( int j = 0; j < num_nodes_per_wedge; j++ )
                     {
-                        const dense::Vec< double, 3 > grad_i =
-                            r_inv * g_rad[wedge][i][q] +
-                            grad_shape_rad_wedge_node( i ) * grad_r_inv * g_lat[wedge][i][q];
-                        const dense::Vec< double, 3 > grad_j =
-                            r_inv * g_rad[wedge][j][q] +
-                            grad_shape_rad_wedge_node( j ) * grad_r_inv * g_lat[wedge][j][q];
+                        const auto grad_i = grad_shape_full( g_rad, g_lat, r_inv, grad_r_inv, wedge, i, q );
+                        const auto grad_j = grad_shape_full( g_rad, g_lat, r_inv, grad_r_inv, wedge, j, q );
 
-                        A[wedge]( i, j ) += qw[q] * ( grad_i.dot( grad_j ) * r * r * grad_r * det_jac_lat[wedge][q] );
+                        const auto det = det_full( det_jac_lat, r, grad_r, wedge, q );
+
+                        A[wedge]( i, j ) += quad_weights[q] * ( grad_i.dot( grad_j ) * det );
                     }
                 }
             }
@@ -170,7 +134,7 @@ class Laplace
 
         if ( treat_boundary_ )
         {
-            for ( int wedge = 0; wedge < num_wedges; wedge++ )
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
                 dense::Mat< double, 6, 6 > boundary_mask;
                 boundary_mask.fill( 1.0 );
@@ -214,10 +178,10 @@ class Laplace
             A[1] = A[1].diagonal();
         }
 
-        dense::Vec< double, 6 > src[num_wedges];
+        dense::Vec< double, 6 > src[num_wedges_per_hex_cell];
         extract_local_wedge_scalar_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, src_ );
 
-        dense::Vec< double, 6 > dst[num_wedges];
+        dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
 
         dst[0] = A[0] * src[0];
         dst[1] = A[1] * src[1];

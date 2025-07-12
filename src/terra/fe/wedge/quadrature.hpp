@@ -20,19 +20,20 @@ namespace terra::fe::wedge {
 ///   -1 <= Z <= 1
 ///
 
-constexpr int                     quad_felippa_1x1_nq                      = 1;
-constexpr dense::Vec< double, 3 > quad_felippa_1x1_qp[quad_felippa_1x1_nq] = { { 1.0 / 3.0, 1.0 / 3.0, 0.0 } };
-constexpr double                  quad_felippa_1x1_qw[quad_felippa_1x1_nq] = { 1.0 };
+constexpr int                     quad_felippa_1x1_num_quad_points                               = 1;
+constexpr dense::Vec< double, 3 > quad_felippa_1x1_quad_points[quad_felippa_1x1_num_quad_points] = {
+    { 1.0 / 3.0, 1.0 / 3.0, 0.0 } };
+constexpr double quad_felippa_1x1_quad_weights[quad_felippa_1x1_num_quad_points] = { 1.0 };
 
-constexpr int                     quad_felippa_3x2_nq                      = 6;
-constexpr dense::Vec< double, 3 > quad_felippa_3x2_qp[quad_felippa_3x2_nq] = {
+constexpr int                     quad_felippa_3x2_num_quad_points                               = 6;
+constexpr dense::Vec< double, 3 > quad_felippa_3x2_quad_points[quad_felippa_3x2_num_quad_points] = {
     { { 0.6666666666666666, 0.1666666666666667, -0.5773502691896257 } },
     { { 0.1666666666666667, 0.6666666666666666, -0.5773502691896257 } },
     { { 0.1666666666666667, 0.1666666666666667, -0.5773502691896257 } },
     { { 0.6666666666666666, 0.1666666666666667, 0.5773502691896257 } },
     { { 0.1666666666666667, 0.6666666666666666, 0.5773502691896257 } },
     { { 0.1666666666666667, 0.1666666666666667, 0.5773502691896257 } } };
-constexpr double quad_felippa_3x2_qw[quad_felippa_3x2_nq] = {
+constexpr double quad_felippa_3x2_quad_weights[quad_felippa_3x2_num_quad_points] = {
     0.1666666666666667,
     0.1666666666666667,
     0.1666666666666667,

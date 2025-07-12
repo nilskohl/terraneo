@@ -101,9 +101,9 @@ class Mass
 
         // Compute lateral part of Jacobian.
 
-        constexpr auto nq = quad_felippa_3x2_nq;
-        constexpr auto qp = quad_felippa_3x2_qp;
-        constexpr auto qw = quad_felippa_3x2_qw;
+        constexpr auto nq = quad_felippa_3x2_num_quad_points;
+        constexpr auto qp = quad_felippa_3x2_quad_points;
+        constexpr auto qw = quad_felippa_3x2_quad_weights;
 
         double det_jac_lat[num_wedges][nq] = {};
 
