@@ -54,41 +54,6 @@ void wedge_surface_physical_coords(
     wedge_surf_phy_coords[1][2] = quad_surface_coords[1][0];
 }
 
-/// @brief Evaluate the lateral shape function of a specific wedge node index at a quadrature point.
-KOKKOS_INLINE_FUNCTION
-constexpr double shape_lat_wedge_node( const int node_idx, const dense::Vec< double, 3 >& quad_point )
-{
-    return shape_lat( quad_point( 0 ), quad_point( 1 ) )( node_idx % 3 );
-}
-
-/// @brief Evaluate the radial shape function of a specific wedge node index at a quadrature point.
-KOKKOS_INLINE_FUNCTION
-constexpr double shape_rad_wedge_node( const int node_idx, const dense::Vec< double, 3 >& quad_point )
-{
-    return shape_rad( quad_point( 2 ) )( node_idx / 3 );
-}
-
-/// @brief Evaluate the (constant) gradient in xi direction of the lateral shape function of a specific wedge node index.
-KOKKOS_INLINE_FUNCTION
-constexpr double grad_shape_lat_xi_wedge_node( const int node_idx )
-{
-    return grad_shape_lat_xi()( node_idx % 3 );
-}
-
-/// @brief Evaluate the (constant) gradient in eta direction of the lateral shape function of a specific wedge node index.
-KOKKOS_INLINE_FUNCTION
-constexpr double grad_shape_lat_eta_wedge_node( const int node_idx )
-{
-    return grad_shape_lat_eta()( node_idx % 3 );
-}
-
-/// @brief Evaluate the (constant) gradient of the radial shape function of a specific wedge node index.
-KOKKOS_INLINE_FUNCTION
-constexpr double grad_shape_rad_wedge_node( const int node_idx )
-{
-    return grad_shape_rad()( node_idx / 3 );
-}
-
 /// @brief Computes the transposed inverse of the Jacobian of the lateral forward map from the reference triangle
 ///        to the triangle on the unit sphere and the absolute determinant of that Jacobian at the passed quadrature
 ///        points.
@@ -190,13 +155,14 @@ KOKKOS_INLINE_FUNCTION constexpr void lateral_parts_of_grad_phi(
                 g_rad[wedge][node_idx][q] =
                     jac_lat_inv_t[wedge][q] *
                     dense::Vec< double, 3 >{
-                        grad_shape_lat_xi_wedge_node( node_idx ) * shape_rad_wedge_node( node_idx, quad_points[q] ),
-                        grad_shape_lat_eta_wedge_node( node_idx ) * shape_rad_wedge_node( node_idx, quad_points[q] ),
+                        grad_shape_lat_xi( node_idx ) * shape_rad( node_idx, quad_points[q]( 2 ) ),
+                        grad_shape_lat_eta( node_idx ) * shape_rad( node_idx, quad_points[q]( 2 ) ),
                         0.0 };
 
                 g_lat[wedge][node_idx][q] =
                     jac_lat_inv_t[wedge][q] *
-                    dense::Vec< double, 3 >{ 0.0, 0.0, shape_lat_wedge_node( node_idx, quad_points[q] ) };
+                    dense::Vec< double, 3 >{
+                        0.0, 0.0, shape_lat( node_idx, quad_points[q]( 0 ), quad_points[q]( 1 ) ) };
             }
         }
     }
@@ -224,7 +190,7 @@ KOKKOS_INLINE_FUNCTION constexpr dense::Vec< double, 3 > grad_shape_full(
     const int                     quad_point_idx )
 {
     return r_inv * g_rad[wedge_idx][node_idx][quad_point_idx] +
-           grad_shape_rad_wedge_node( node_idx ) * grad_r_inv * g_lat[wedge_idx][node_idx][quad_point_idx];
+           grad_shape_rad( node_idx ) * grad_r_inv * g_lat[wedge_idx][node_idx][quad_point_idx];
 }
 
 /// @brief Computes |det(J)|.

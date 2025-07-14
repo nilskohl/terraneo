@@ -1116,9 +1116,7 @@ struct LaplaceOperatorWedge
 
         constexpr int num_nodes_per_wedge = 6;
 
-        // Let's now gather all the shape functions and gradients we need.
-        double shape_lat[num_wedges][num_nodes_per_wedge][nq] = {};
-        double shape_rad[num_wedges][num_nodes_per_wedge][nq] = {};
+        // Let's now gather all the shape function gradients we need.
 
         double grad_shape_lat_xi[num_wedges][num_nodes_per_wedge]  = {};
         double grad_shape_lat_eta[num_wedges][num_nodes_per_wedge] = {};
@@ -1128,15 +1126,9 @@ struct LaplaceOperatorWedge
         {
             for ( int node_idx = 0; node_idx < num_nodes_per_wedge; node_idx++ )
             {
-                for ( int q = 0; q < nq; q++ )
-                {
-                    shape_lat[wedge][node_idx][q] = fe::wedge::shape_lat( qp[q]( 0 ), qp[q]( 1 ) )( node_idx % 3 );
-                    shape_rad[wedge][node_idx][q] = fe::wedge::shape_rad( qp[q]( 2 ) )( node_idx / 3 );
-                }
-
-                grad_shape_lat_xi[wedge][node_idx]  = fe::wedge::grad_shape_lat_xi()( node_idx % 3 );
-                grad_shape_lat_eta[wedge][node_idx] = fe::wedge::grad_shape_lat_eta()( node_idx % 3 );
-                grad_shape_rad[wedge][node_idx]     = fe::wedge::grad_shape_rad()( node_idx / 3 );
+                grad_shape_lat_xi[wedge][node_idx]  = fe::wedge::grad_shape_lat_xi( node_idx );
+                grad_shape_lat_eta[wedge][node_idx] = fe::wedge::grad_shape_lat_eta( node_idx );
+                grad_shape_rad[wedge][node_idx]     = fe::wedge::grad_shape_rad( node_idx );
             }
         }
 
@@ -1149,14 +1141,16 @@ struct LaplaceOperatorWedge
             {
                 for ( int q = 0; q < nq; q++ )
                 {
-                    g_rad[wedge][node_idx][q] = jac_lat_inv_t[wedge][q] *
-                                                dense::Vec< double, 3 >{
-                                                    grad_shape_lat_xi[wedge][node_idx] * shape_rad[wedge][node_idx][q],
-                                                    grad_shape_lat_eta[wedge][node_idx] * shape_rad[wedge][node_idx][q],
-                                                    0.0 };
+                    g_rad[wedge][node_idx][q] =
+                        jac_lat_inv_t[wedge][q] *
+                        dense::Vec< double, 3 >{
+                            grad_shape_lat_xi[wedge][node_idx] * fe::wedge::shape_rad( node_idx, qp[q] ),
+                            grad_shape_lat_eta[wedge][node_idx] * fe::wedge::shape_rad( node_idx, qp[q] ),
+                            0.0 };
 
                     g_lat[wedge][node_idx][q] =
-                        jac_lat_inv_t[wedge][q] * dense::Vec< double, 3 >{ 0.0, 0.0, shape_lat[wedge][node_idx][q] };
+                        jac_lat_inv_t[wedge][q] *
+                        dense::Vec< double, 3 >{ 0.0, 0.0, fe::wedge::shape_lat( node_idx, qp[q] ) };
                 }
             }
         }
@@ -1448,13 +1442,13 @@ struct LaplaceOperatorWedgeOptimized
             {
                 for ( int q = 0; q < nq; q++ )
                 {
-                    shape_lat[wedge][node_idx][q] = fe::wedge::shape_lat( qp[q]( 0 ), qp[q]( 1 ) )( node_idx % 3 );
-                    shape_rad[wedge][node_idx][q] = fe::wedge::shape_rad( qp[q]( 2 ) )( node_idx / 3 );
+                    shape_lat[wedge][node_idx][q] = fe::wedge::shape_lat( node_idx, qp[q] );
+                    shape_rad[wedge][node_idx][q] = fe::wedge::shape_rad( node_idx, qp[q] );
                 }
 
-                grad_shape_lat_xi[wedge][node_idx]  = fe::wedge::grad_shape_lat_xi()( node_idx % 3 );
-                grad_shape_lat_eta[wedge][node_idx] = fe::wedge::grad_shape_lat_eta()( node_idx % 3 );
-                grad_shape_rad[wedge][node_idx]     = fe::wedge::grad_shape_rad()( node_idx / 3 );
+                grad_shape_lat_xi[wedge][node_idx]  = fe::wedge::grad_shape_lat_xi( node_idx );
+                grad_shape_lat_eta[wedge][node_idx] = fe::wedge::grad_shape_lat_eta( node_idx );
+                grad_shape_rad[wedge][node_idx]     = fe::wedge::grad_shape_rad( node_idx );
             }
         }
 
@@ -1753,12 +1747,12 @@ struct LaplaceOperatorWedgePrecomp
             {
                 for ( int q = 0; q < nq; q++ )
                 {
-                    shape_lat[wedge][node_idx][q] = fe::wedge::shape_lat( qp[q]( 0 ), qp[q]( 1 ) )( node_idx % 3 );
-                    shape_rad[wedge][node_idx][q] = fe::wedge::shape_rad( qp[q]( 2 ) )( node_idx / 3 );
+                    shape_lat[wedge][node_idx][q] = fe::wedge::shape_lat( node_idx, qp[q] );
+                    shape_rad[wedge][node_idx][q] = fe::wedge::shape_rad( node_idx, qp[q] );
                 }
 
-                grad_shape_lat_xi[wedge][node_idx]  = fe::wedge::grad_shape_lat_xi()( node_idx % 3 );
-                grad_shape_lat_eta[wedge][node_idx] = fe::wedge::grad_shape_lat_eta()( node_idx % 3 );
+                grad_shape_lat_xi[wedge][node_idx]  = fe::wedge::grad_shape_lat_xi( node_idx );
+                grad_shape_lat_eta[wedge][node_idx] = fe::wedge::grad_shape_lat_eta( node_idx );
             }
         }
 
@@ -1840,8 +1834,8 @@ struct LaplaceOperatorWedgePrecomp
                 {
                     for ( int j = 0; j < num_nodes_per_wedge; j++ )
                     {
-                        const double grad_shape_rad_i = fe::wedge::grad_shape_rad()( i / 3 );
-                        const double grad_shape_rad_j = fe::wedge::grad_shape_rad()( j / 3 );
+                        const double grad_shape_rad_i = fe::wedge::grad_shape_rad( i );
+                        const double grad_shape_rad_j = fe::wedge::grad_shape_rad( j );
 
                         const dense::Vec< double, 3 > grad_i =
                             r_inv * g_rad[wedge][i][q] + grad_shape_rad_i * grad_r_inv * g_lat[wedge][i][q];

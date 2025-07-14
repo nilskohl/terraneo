@@ -104,10 +104,8 @@ class VectorMass
                 {
                     for ( int j = 0; j < num_nodes_per_wedge; j++ )
                     {
-                        const double shape_i =
-                            shape_lat_wedge_node( i, quad_points[q] ) * shape_rad_wedge_node( i, quad_points[q] );
-                        const double shape_j =
-                            shape_lat_wedge_node( j, quad_points[q] ) * shape_rad_wedge_node( j, quad_points[q] );
+                        const double shape_i = shape( i, quad_points[q] );
+                        const double shape_j = shape( j, quad_points[q] );
 
                         A[wedge]( i, j ) +=
                             quad_weights[q] * ( shape_i * shape_j * r * r * grad_r * det_jac_lat[wedge][q] );

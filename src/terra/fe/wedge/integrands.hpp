@@ -13,16 +13,34 @@
 ///
 ///   0 <= xi + eta <= 1
 ///
+/// Node enumeration:
+///   r_node_idx = r_cell_idx + 1 (outer)
+///
+///   6--7
+///   |\ |
+///   | \|
+///   4--5
+///
+///   r_node_idx = r_cell_idx (inner)
+///
+///   2--3
+///   |\ |
+///   | \|
+///   0--1
+///
+///  Element 0 = (0, 1, 2, 4, 5, 6)
+///  Element 1 = (3, 2, 1, 7, 6, 5)
+///
 /// Enumeration of shape functions:
 ///
 ///   N_lat:
-///     N_lat_1 = N_lat_4 = 1 - xi - eta
-///     N_lat_2 = N_lat_5 = xi
-///     N_lat_3 = N_lat_6 = eta
+///     N_lat_0 = N_lat_3 = 1 - xi - eta
+///     N_lat_1 = N_lat_4 = xi
+///     N_lat_2 = N_lat_5 = eta
 ///
 ///   N_rad:
-///     N_rad_1 = N_rad_2 = N_rad_3 = 0.5 ( 1 - zeta )
-///     N_rad_4 = N_rad_5 = N_rad_6 = 0.5 ( 1 + zeta )
+///     N_rad_0 = N_rad_1 = N_rad_2 = 0.5 ( 1 - zeta )
+///     N_rad_3 = N_rad_4 = N_rad_5 = 0.5 ( 1 + zeta )
 ///
 ///   N_i = N_lat_i * N_rad_i
 ///
@@ -32,34 +50,81 @@
 ///   p1_phy, p2_phy, p3_phy       coords of triangle on unit sphere
 namespace terra::fe::wedge {
 
+/// @brief Radial shape function.
+///
+/// N_rad_0 = N_rad_1 = N_rad_2 = 0.5 ( 1 - zeta )
+/// N_rad_3 = N_rad_4 = N_rad_5 = 0.5 ( 1 + zeta )
 KOKKOS_INLINE_FUNCTION
-constexpr dense::Vec< double, 2 > shape_rad( const double zeta )
+constexpr double shape_rad( const int node_idx, const double zeta )
 {
-    return dense::Vec< double, 2 >{ 0.5 * ( 1 - zeta ), 0.5 * ( 1 + zeta ) };
+    const double N_rad[2] = { 0.5 * ( 1 - zeta ), 0.5 * ( 1 + zeta ) };
+    return N_rad[node_idx / 3];
+}
+
+/// @brief Radial shape function.
+///
+/// N_rad_0 = N_rad_1 = N_rad_2 = 0.5 ( 1 - zeta )
+/// N_rad_3 = N_rad_4 = N_rad_5 = 0.5 ( 1 + zeta )
+KOKKOS_INLINE_FUNCTION
+constexpr double shape_rad( const int node_idx, const dense::Vec< double, 3 >& xi_eta_zeta )
+{
+    return shape_rad( node_idx, xi_eta_zeta( 2 ) );
+}
+
+/// @brief Lateral shape function.
+///
+/// N_rad_0 = N_rad_1 = N_rad_2 = 0.5 ( 1 - zeta )
+/// N_rad_3 = N_rad_4 = N_rad_5 = 0.5 ( 1 + zeta )
+KOKKOS_INLINE_FUNCTION
+constexpr double shape_lat( const int node_idx, const double xi, const double eta )
+{
+    const double N_lat[3] = { 1.0 - xi - eta, xi, eta };
+    return N_lat[node_idx % 3];
+}
+
+/// @brief Lateral shape function.
+///
+/// N_rad_0 = N_rad_1 = N_rad_2 = 0.5 ( 1 - zeta )
+/// N_rad_3 = N_rad_4 = N_rad_5 = 0.5 ( 1 + zeta )
+KOKKOS_INLINE_FUNCTION
+constexpr double shape_lat( const int node_idx, const dense::Vec< double, 3 >& xi_eta_zeta )
+{
+    return shape_lat( node_idx, xi_eta_zeta( 0 ), xi_eta_zeta( 1 ) );
+}
+
+/// @brief (Tensor-product) Shape function N_j = N_lat_j * N_rad_j.
+KOKKOS_INLINE_FUNCTION
+constexpr double shape( const int node_idx, const double xi, const double eta, const double zeta )
+{
+    return shape_lat( node_idx, xi, eta ) * shape_rad( node_idx, zeta );
+}
+
+/// @brief (Tensor-product) Shape function N_j = N_lat_j * N_rad_j.
+KOKKOS_INLINE_FUNCTION
+constexpr double shape( const int node_idx, const dense::Vec< double, 3 >& xi_eta_zeta )
+{
+    return shape_lat( node_idx, xi_eta_zeta ) * shape_rad( node_idx, xi_eta_zeta );
 }
 
 KOKKOS_INLINE_FUNCTION
-constexpr dense::Vec< double, 3 > shape_lat( const double xi, const double eta )
+constexpr double grad_shape_rad( const int node_idx )
 {
-    return dense::Vec< double, 3 >{ 1.0 - xi - eta, xi, eta };
+    constexpr double grad_N_rad[2] = { -0.5, 0.5 };
+    return grad_N_rad[node_idx / 3];
 }
 
 KOKKOS_INLINE_FUNCTION
-constexpr dense::Vec< double, 2 > grad_shape_rad()
+constexpr double grad_shape_lat_xi( const int node_idx )
 {
-    return dense::Vec< double, 2 >{ -0.5, 0.5 };
+    constexpr double grad_N_lat_xi[3] = { -1.0, 1.0, 0.0 };
+    return grad_N_lat_xi[node_idx % 3];
 }
 
 KOKKOS_INLINE_FUNCTION
-constexpr dense::Vec< double, 3 > grad_shape_lat_xi()
+constexpr double grad_shape_lat_eta( const int node_idx )
 {
-    return dense::Vec< double, 3 >{ -1.0, 1.0, 0.0 };
-}
-
-KOKKOS_INLINE_FUNCTION
-constexpr dense::Vec< double, 3 > grad_shape_lat_eta()
-{
-    return dense::Vec< double, 3 >{ -1.0, 0.0, 1.0 };
+    constexpr double grad_N_lat_eta[3] = { -1.0, 0.0, 1.0 };
+    return grad_N_lat_eta[node_idx % 3];
 }
 
 KOKKOS_INLINE_FUNCTION
