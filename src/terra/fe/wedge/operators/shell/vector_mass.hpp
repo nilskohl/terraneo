@@ -71,96 +71,46 @@ class VectorMass
     {
         // First all the r-independent stuff.
         // Gather surface points for each wedge.
-        constexpr int num_wedges = 2;
 
-        // Extract vertex positions of quad
-        // (0, 0), (1, 0), (0, 1), (1, 1).
-        dense::Vec< double, 3 > quad_surface_coords[2][2];
-
-        for ( int x = x_cell; x <= x_cell + 1; x++ )
-        {
-            for ( int y = y_cell; y <= y_cell + 1; y++ )
-            {
-                for ( int d = 0; d < 3; d++ )
-                {
-                    quad_surface_coords[x - x_cell][y - y_cell]( d ) = grid_( local_subdomain_id, x, y, d );
-                }
-            }
-        }
-
-        // Sort coords for the two wedge surfaces.
-        dense::Vec< double, 3 > wedge_phy_surf[num_wedges][3] = {};
-
-        wedge_phy_surf[0][0] = quad_surface_coords[0][0];
-        wedge_phy_surf[0][1] = quad_surface_coords[1][0];
-        wedge_phy_surf[0][2] = quad_surface_coords[0][1];
-
-        wedge_phy_surf[1][0] = quad_surface_coords[1][1];
-        wedge_phy_surf[1][1] = quad_surface_coords[0][1];
-        wedge_phy_surf[1][2] = quad_surface_coords[1][0];
+        dense::Vec< double, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
+        wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
 
         // Compute lateral part of Jacobian.
 
-        constexpr auto nq = quad_felippa_3x2_num_quad_points;
-        constexpr auto qp = quad_felippa_3x2_quad_points;
-        constexpr auto qw = quad_felippa_3x2_quad_weights;
+        constexpr auto num_quad_points = quad_felippa_3x2_num_quad_points;
+        constexpr auto quad_points     = quad_felippa_3x2_quad_points;
+        constexpr auto quad_weights    = quad_felippa_3x2_quad_weights;
 
-        double det_jac_lat[num_wedges][nq] = {};
+        double det_jac_lat[num_wedges_per_hex_cell][num_quad_points] = {};
 
-        for ( int wedge = 0; wedge < num_wedges; wedge++ )
-        {
-            for ( int q = 0; q < nq; q++ )
-            {
-                const auto jac_lat = wedge::jac_lat(
-                    wedge_phy_surf[wedge][0],
-                    wedge_phy_surf[wedge][1],
-                    wedge_phy_surf[wedge][2],
-                    qp[q]( 0 ),
-                    qp[q]( 1 ) );
-
-                det_jac_lat[wedge][q] = Kokkos::abs( jac_lat.det() );
-            }
-        }
-
-        constexpr int num_nodes_per_wedge = 6;
-
-        // Let's now gather all the shape functions and gradients we need.
-        double shape_lat[num_wedges][num_nodes_per_wedge][nq] = {};
-        double shape_rad[num_wedges][num_nodes_per_wedge][nq] = {};
-
-        for ( int wedge = 0; wedge < num_wedges; wedge++ )
-        {
-            for ( int node_idx = 0; node_idx < num_nodes_per_wedge; node_idx++ )
-            {
-                for ( int q = 0; q < nq; q++ )
-                {
-                    shape_lat[wedge][node_idx][q] = wedge::shape_lat( qp[q]( 0 ), qp[q]( 1 ) )( node_idx % 3 );
-                    shape_rad[wedge][node_idx][q] = wedge::shape_rad( qp[q]( 2 ) )( node_idx / 3 );
-                }
-            }
-        }
+        jacobian_lat_determinant( det_jac_lat, wedge_phy_surf, quad_points );
 
         // Only now we introduce radially dependent terms.
         const double r_1 = radii_( local_subdomain_id, r_cell );
         const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // For now, compute the local element matrix. We'll improve that later.
-        dense::Mat< double, 6, 6 > A[num_wedges] = {};
+        dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};
 
-        for ( int wedge = 0; wedge < num_wedges; wedge++ )
+        const double grad_r = grad_forward_map_rad( r_1, r_2 );
+
+        for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
-            for ( int q = 0; q < nq; q++ )
+            for ( int q = 0; q < num_quad_points; q++ )
             {
-                const double r      = forward_map_rad( r_1, r_2, qp[q]( 2 ) );
-                const double grad_r = grad_forward_map_rad( r_1, r_2 );
+                const double r = forward_map_rad( r_1, r_2, quad_points[q]( 2 ) );
 
                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
                 {
                     for ( int j = 0; j < num_nodes_per_wedge; j++ )
                     {
-                        const double shape_i = shape_lat[wedge][i][q] * shape_rad[wedge][i][q];
-                        const double shape_j = shape_lat[wedge][j][q] * shape_rad[wedge][j][q];
-                        A[wedge]( i, j ) += qw[q] * ( shape_i * shape_j * r * r * grad_r * det_jac_lat[wedge][q] );
+                        const double shape_i =
+                            shape_lat_wedge_node( i, quad_points[q] ) * shape_rad_wedge_node( i, quad_points[q] );
+                        const double shape_j =
+                            shape_lat_wedge_node( j, quad_points[q] ) * shape_rad_wedge_node( j, quad_points[q] );
+
+                        A[wedge]( i, j ) +=
+                            quad_weights[q] * ( shape_i * shape_j * r * r * grad_r * det_jac_lat[wedge][q] );
                     }
                 }
             }
@@ -168,57 +118,21 @@ class VectorMass
 
         if ( diagonal_ )
         {
-            for ( int wedge = 0; wedge < num_wedges; wedge++ )
-            {
-                for ( int i = 0; i < 6; i++ )
-                {
-                    for ( int j = 0; j < 6; j++ )
-                    {
-                        if ( i != j )
-                        {
-                            A[wedge]( i, j ) = 0.0;
-                        }
-                    }
-                }
-            }
+            A[0] = A[0].diagonal();
+            A[1] = A[1].diagonal();
         }
 
         for ( int d = 0; d < VecDim; d++ )
         {
-            dense::Vec< double, 6 > src[num_wedges];
+            dense::Vec< double, 6 > src[num_wedges_per_hex_cell];
+            extract_local_wedge_vector_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, d, src_ );
 
-            src[0]( 0 ) = src_( local_subdomain_id, x_cell, y_cell, r_cell, d );
-            src[0]( 1 ) = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell, d );
-            src[0]( 2 ) = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell, d );
-            src[0]( 3 ) = src_( local_subdomain_id, x_cell, y_cell, r_cell + 1, d );
-            src[0]( 4 ) = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d );
-            src[0]( 5 ) = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d );
-
-            src[1]( 0 ) = src_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, d );
-            src[1]( 1 ) = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell, d );
-            src[1]( 2 ) = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell, d );
-            src[1]( 3 ) = src_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, d );
-            src[1]( 4 ) = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d );
-            src[1]( 5 ) = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d );
-
-            dense::Vec< double, 6 > dst[num_wedges];
+            dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
 
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];
 
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell, d ), dst[0]( 0 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell, d ), dst[0]( 1 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell, d ), dst[0]( 2 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell + 1, d ), dst[0]( 3 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d ), dst[0]( 4 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d ), dst[0]( 5 ) );
-
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, d ), dst[1]( 0 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell, d ), dst[1]( 1 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell, d ), dst[1]( 2 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, d ), dst[1]( 3 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d ), dst[1]( 4 ) );
-            Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d ), dst[1]( 5 ) );
+            atomically_add_local_wedge_vector_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, d, dst );
         }
     }
 };
