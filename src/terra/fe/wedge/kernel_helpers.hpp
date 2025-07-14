@@ -294,6 +294,55 @@ void extract_local_wedge_scalar_coefficients(
     local_coefficients[1]( 5 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 );
 }
 
+/// @brief Extracts the local vector coefficients for the two wedges of a hex cell from the global coefficient vector.
+///
+/// r = r_cell + 1 (outer)
+/// 6--7
+/// |\ |
+/// | \|
+/// 4--5
+///
+/// r = r_cell (inner)
+/// 2--3
+/// |\ |
+/// | \|
+/// 0--1
+///
+/// v0 = (0, 1, 2, 4, 5, 6)
+/// v1 = (3, 2, 1, 7, 6, 5)
+///
+/// @param local_coefficients  [out] the local coefficient vector
+/// @param local_subdomain_id  [in]  shell subdomain id on this process
+/// @param x_cell              [in]  hex cell x-coordinate
+/// @param y_cell              [in]  hex cell y-coordinate
+/// @param r_cell              [in]  hex cell r-coordinate
+/// @param d                   [in]  vector-element of the vector-valued global view
+/// @param global_coefficients [in]  the global coefficient vector
+template < int VecDim >
+KOKKOS_INLINE_FUNCTION void extract_local_wedge_vector_coefficients(
+    dense::Vec< double, 6 > ( &local_coefficients )[2],
+    const int                                    local_subdomain_id,
+    const int                                    x_cell,
+    const int                                    y_cell,
+    const int                                    r_cell,
+    const int                                    d,
+    const grid::Grid4DDataVec< double, VecDim >& global_coefficients )
+{
+    local_coefficients[0]( 0 ) = global_coefficients( local_subdomain_id, x_cell, y_cell, r_cell, d );
+    local_coefficients[0]( 1 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell, d );
+    local_coefficients[0]( 2 ) = global_coefficients( local_subdomain_id, x_cell, y_cell + 1, r_cell, d );
+    local_coefficients[0]( 3 ) = global_coefficients( local_subdomain_id, x_cell, y_cell, r_cell + 1, d );
+    local_coefficients[0]( 4 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d );
+    local_coefficients[0]( 5 ) = global_coefficients( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d );
+
+    local_coefficients[1]( 0 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, d );
+    local_coefficients[1]( 1 ) = global_coefficients( local_subdomain_id, x_cell, y_cell + 1, r_cell, d );
+    local_coefficients[1]( 2 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell, d );
+    local_coefficients[1]( 3 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, d );
+    local_coefficients[1]( 4 ) = global_coefficients( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d );
+    local_coefficients[1]( 5 ) = global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d );
+}
+
 /// @brief Performs an atomic add of the two local wedge coefficient vectors of a hex cell into the global coefficient
 /// vector.
 ///
@@ -347,6 +396,63 @@ void atomically_add_local_wedge_scalar_coefficients(
         &global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell ), local_coefficients[1]( 0 ) );
     Kokkos::atomic_add(
         &global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1 ), local_coefficients[1]( 3 ) );
+}
+
+/// @brief Performs an atomic add of the two local wedge coefficient vectors of a hex cell into the global coefficient
+/// vector.
+///
+/// r = r_cell + 1 (outer)
+/// 6--7
+/// |\ |
+/// | \|
+/// 4--5
+///
+/// r = r_cell (inner)
+/// 2--3
+/// |\ |
+/// | \|
+/// 0--1
+///
+/// v0 = (0, 1, 2, 4, 5, 6)
+/// v1 = (3, 2, 1, 7, 6, 5)
+///
+/// @param global_coefficients [inout] the global coefficient vector
+/// @param local_subdomain_id  [in]    shell subdomain id on this process
+/// @param x_cell              [in]    hex cell x-coordinate
+/// @param y_cell              [in]    hex cell y-coordinate
+/// @param r_cell              [in]    hex cell r-coordinate
+/// @param d                   [in]    vector-element of the vector-valued global view
+/// @param local_coefficients  [in]    the local coefficient vector
+template < int VecDim >
+KOKKOS_INLINE_FUNCTION void atomically_add_local_wedge_vector_coefficients(
+    const grid::Grid4DDataVec< double, VecDim >& global_coefficients,
+    const int                                    local_subdomain_id,
+    const int                                    x_cell,
+    const int                                    y_cell,
+    const int                                    r_cell,
+    const int                                    d,
+    const dense::Vec< double, 6 > ( &local_coefficients )[2] )
+{
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell, y_cell, r_cell, d ), local_coefficients[0]( 0 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell, d ),
+        local_coefficients[0]( 1 ) + local_coefficients[1]( 2 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell, y_cell + 1, r_cell, d ),
+        local_coefficients[0]( 2 ) + local_coefficients[1]( 1 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell, y_cell, r_cell + 1, d ), local_coefficients[0]( 3 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, d ),
+        local_coefficients[0]( 4 ) + local_coefficients[1]( 5 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, d ),
+        local_coefficients[0]( 5 ) + local_coefficients[1]( 4 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, d ), local_coefficients[1]( 0 ) );
+    Kokkos::atomic_add(
+        &global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, d ), local_coefficients[1]( 3 ) );
 }
 
 } // namespace terra::fe::wedge
