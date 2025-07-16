@@ -20,24 +20,44 @@ namespace terra::fe::wedge {
 ///   -1 <= Z <= 1
 ///
 
-constexpr int                     quad_felippa_1x1_num_quad_points                               = 1;
-constexpr dense::Vec< double, 3 > quad_felippa_1x1_quad_points[quad_felippa_1x1_num_quad_points] = {
-    { 1.0 / 3.0, 1.0 / 3.0, 0.0 } };
-constexpr double quad_felippa_1x1_quad_weights[quad_felippa_1x1_num_quad_points] = { 1.0 };
+constexpr int quad_felippa_1x1_num_quad_points = 1;
 
-constexpr int                     quad_felippa_3x2_num_quad_points                               = 6;
-constexpr dense::Vec< double, 3 > quad_felippa_3x2_quad_points[quad_felippa_3x2_num_quad_points] = {
-    { { 0.6666666666666666, 0.1666666666666667, -0.5773502691896257 } },
-    { { 0.1666666666666667, 0.6666666666666666, -0.5773502691896257 } },
-    { { 0.1666666666666667, 0.1666666666666667, -0.5773502691896257 } },
-    { { 0.6666666666666666, 0.1666666666666667, 0.5773502691896257 } },
-    { { 0.1666666666666667, 0.6666666666666666, 0.5773502691896257 } },
-    { { 0.1666666666666667, 0.1666666666666667, 0.5773502691896257 } } };
-constexpr double quad_felippa_3x2_quad_weights[quad_felippa_3x2_num_quad_points] = {
-    0.1666666666666667,
-    0.1666666666666667,
-    0.1666666666666667,
-    0.1666666666666667,
-    0.1666666666666667,
-    0.1666666666666667 };
+KOKKOS_INLINE_FUNCTION
+constexpr void
+    quad_felippa_1x1_quad_points( dense::Vec< double, 3 > ( &quad_points )[quad_felippa_1x1_num_quad_points] )
+{
+    quad_points[0] = { 1.0 / 3.0, 1.0 / 3.0, 0.0 };
+}
+
+KOKKOS_INLINE_FUNCTION
+constexpr void quad_felippa_1x1_quad_weights( double ( &quad_weights )[quad_felippa_1x1_num_quad_points] )
+{
+    quad_weights[0] = 1.0;
+}
+
+constexpr int quad_felippa_3x2_num_quad_points = 6;
+
+KOKKOS_INLINE_FUNCTION
+constexpr void
+    quad_felippa_3x2_quad_points( dense::Vec< double, 3 > ( &quad_points )[quad_felippa_3x2_num_quad_points] )
+{
+    quad_points[0] = { 0.6666666666666666, 0.1666666666666667, -0.5773502691896257 };
+    quad_points[1] = { 0.1666666666666667, 0.6666666666666666, -0.5773502691896257 };
+    quad_points[2] = { 0.1666666666666667, 0.1666666666666667, -0.5773502691896257 };
+    quad_points[3] = { 0.6666666666666666, 0.1666666666666667, 0.5773502691896257 };
+    quad_points[4] = { 0.1666666666666667, 0.6666666666666666, 0.5773502691896257 };
+    quad_points[5] = { 0.1666666666666667, 0.1666666666666667, 0.5773502691896257 };
+}
+
+KOKKOS_INLINE_FUNCTION
+constexpr void quad_felippa_3x2_quad_weights( double ( &quad_weights )[quad_felippa_3x2_num_quad_points] )
+{
+    quad_weights[0] = 0.1666666666666667;
+    quad_weights[1] = 0.1666666666666667;
+    quad_weights[2] = 0.1666666666666667;
+    quad_weights[3] = 0.1666666666666667;
+    quad_weights[4] = 0.1666666666666667;
+    quad_weights[5] = 0.1666666666666667;
+}
+
 } // namespace terra::fe::wedge

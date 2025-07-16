@@ -95,8 +95,12 @@ class LaplaceSimple
 
         // Quadrature points.
         constexpr auto num_quad_points = quad_felippa_1x1_num_quad_points;
-        constexpr auto quad_points     = quad_felippa_1x1_quad_points;
-        constexpr auto quad_weights    = quad_felippa_1x1_quad_weights;
+
+        dense::Vec< double, 3 > quad_points[num_quad_points];
+        double quad_weights[num_quad_points];
+
+        quad_felippa_1x1_quad_points( quad_points );
+        quad_felippa_1x1_quad_weights(quad_weights);
 
         // Compute the local element matrix.
         dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};

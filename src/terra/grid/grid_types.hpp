@@ -79,11 +79,6 @@ constexpr int grid_data_vec_dim()
         return 3;
     }
 
-    else
-    {
-        static_assert( false );
-    }
-
     return -1;
 }
 
