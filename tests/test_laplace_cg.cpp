@@ -3,6 +3,7 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/laplace.hpp"
+#include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/solvers/richardson.hpp"
 #include "terra/dense/mat.hpp"
@@ -167,7 +168,7 @@ double test( int level, util::Table& table )
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
     const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
 
-    using Laplace = fe::wedge::operators::shell::Laplace< ScalarType >;
+    using Laplace = fe::wedge::operators::shell::LaplaceSimple< ScalarType >;
 
     Laplace A( domain, subdomain_shell_coords, subdomain_radii, true, false );
     Laplace A_neumann( domain, subdomain_shell_coords, subdomain_radii, false, false );

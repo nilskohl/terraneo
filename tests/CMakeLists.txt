@@ -25,7 +25,7 @@ add_terra_test(test_laplace)
 add_terra_test(test_laplace_cg)
 add_terra_test(test_laplace_minres)
 add_terra_test(test_mpi_smoke)
-add_terra_test(test_stokes_schur_cg)
+add_terra_test(test_stokes_minres)
 add_terra_test(test_vector_laplace_cg)
 
 # Adding target for all the tests.

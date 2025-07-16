@@ -15,6 +15,18 @@ struct Vec
     KOKKOS_INLINE_FUNCTION
     constexpr const T& operator()( int i ) const { return data[i]; }
 
+    template < int SliceSize >
+    KOKKOS_INLINE_FUNCTION constexpr Vec< T, SliceSize > slice( const int start )
+    {
+        Vec< T, SliceSize > result;
+        for ( int i = 0; i < SliceSize; ++i )
+        {
+            result( i ) = data[i + start];
+        }
+        return result;
+    }
+
+    KOKKOS_INLINE_FUNCTION
     void fill( const T value )
     {
         for ( int i = 0; i < N; ++i )
@@ -94,10 +106,8 @@ struct Vec
     }
 };
 
-
 template < typename T, int N >
-KOKKOS_INLINE_FUNCTION
-constexpr Vec< T, N > operator*( const Vec< T, N >& v, const T scalar ) noexcept
+KOKKOS_INLINE_FUNCTION constexpr Vec< T, N > operator*( const Vec< T, N >& v, const T scalar ) noexcept
 {
     Vec< T, N > result{};
     for ( int i = 0; i < N; ++i )
@@ -106,8 +116,7 @@ constexpr Vec< T, N > operator*( const Vec< T, N >& v, const T scalar ) noexcept
 }
 
 template < typename T, int N >
-KOKKOS_INLINE_FUNCTION
-constexpr Vec< T, N > operator*( const T scalar, const Vec< T, N >& v ) noexcept
+KOKKOS_INLINE_FUNCTION constexpr Vec< T, N > operator*( const T scalar, const Vec< T, N >& v ) noexcept
 {
     Vec< T, N > result{};
     for ( int i = 0; i < N; ++i )

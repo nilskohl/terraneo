@@ -45,6 +45,17 @@ struct Mat
     }
 
     KOKKOS_INLINE_FUNCTION
+    constexpr static Mat diagonal_from_vec( const Vec< T, Rows >& diagonal )
+    {
+        Mat mat;
+        for ( int i = 0; i < Rows; ++i )
+        {
+            mat( i, i ) = diagonal( i );
+        }
+        return mat;
+    }
+
+    KOKKOS_INLINE_FUNCTION
     T& operator()( int i, int j ) { return data[i][j]; }
 
     KOKKOS_INLINE_FUNCTION

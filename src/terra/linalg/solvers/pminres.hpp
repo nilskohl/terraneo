@@ -146,10 +146,7 @@ class PMINRES
 
             eta = -s_j_plus_1 * eta;
 
-            apply( A, x, az_, level );
-            lincomb( az_, { 1.0, -1.0 }, { b, az_ }, level );
-
-            const ScalarType absolute_residual = std::sqrt( dot( az_, az_, level ) );
+            const ScalarType absolute_residual = std::abs( eta );
             const ScalarType relative_residual = absolute_residual / initial_residual;
 
             if ( statistics.has_value() )

@@ -2181,7 +2181,7 @@ void all_diamonds()
             if ( comp_norm )
             {
                 kernels::common::lincomb( error, 0.0, 1.0, u, -1.0, solution );
-                const auto error_inf_norm = kernels::common::max_magnitude( error );
+                const auto error_inf_norm = kernels::common::max_abs_entry( error );
                 std::cout << ", error inf norm: " << error_inf_norm;
 
                 kernels::common::set_constant( tmp, 0.0 );
@@ -2199,7 +2199,7 @@ void all_diamonds()
 
                 kernels::common::lincomb( r, 0.0, 1.0, b, -1.0, tmp );
 
-                const auto residual_inf_norm = kernels::common::max_magnitude( r );
+                const auto residual_inf_norm = kernels::common::max_abs_entry( r );
                 std::cout << ", residual inf norm: " << residual_inf_norm;
             }
             std::cout << std::endl;

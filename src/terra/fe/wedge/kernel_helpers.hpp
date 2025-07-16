@@ -397,7 +397,7 @@ KOKKOS_INLINE_FUNCTION void atomically_add_local_wedge_vector_coefficients(
     const int                                    y_cell,
     const int                                    r_cell,
     const int                                    d,
-    const dense::Vec< double, 6 > ( &local_coefficients )[2] )
+    const dense::Vec< double, 6 >                local_coefficients[2] )
 {
     Kokkos::atomic_add(
         &global_coefficients( local_subdomain_id, x_cell, y_cell, r_cell, d ), local_coefficients[0]( 0 ) );
@@ -419,6 +419,16 @@ KOKKOS_INLINE_FUNCTION void atomically_add_local_wedge_vector_coefficients(
         &global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, d ), local_coefficients[1]( 0 ) );
     Kokkos::atomic_add(
         &global_coefficients( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, d ), local_coefficients[1]( 3 ) );
+}
+
+KOKKOS_INLINE_FUNCTION
+constexpr int fine_lateral_wedge_idx( const int x_cell, const int y_cell, const int wedge_idx )
+{
+    // wedge, y, x
+    constexpr int indices[2][2][2] = { { { 0, 1 }, { 2, 3 } }, { { 3, 2 }, { 1, 0 } } };
+    const int     x_mod            = x_cell % 2;
+    const int     y_mod            = y_cell % 2;
+    return indices[wedge_idx][y_mod][x_mod];
 }
 
 } // namespace terra::fe::wedge

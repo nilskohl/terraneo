@@ -223,12 +223,12 @@ double test( int level, util::Table& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
-    linalg::solvers::PMINRES< Laplace > pcg( solver_params, tmp, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6, tmp_7 );
-    pcg.set_tag( "pminres_solver_level_" + std::to_string( level ) );
+    linalg::solvers::PMINRES< Laplace > pminres( solver_params, tmp, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6, tmp_7 );
+    pminres.set_tag( "pminres_solver_level_" + std::to_string( level ) );
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( pcg, A, u, b, level, table );
+    linalg::solvers::solve( pminres, A, u, b, level, table );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 

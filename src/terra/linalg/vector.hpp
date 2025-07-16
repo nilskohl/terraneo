@@ -9,6 +9,7 @@ concept VectorLike = requires(
     T&                                           self,
     const std::vector< typename T::ScalarType >& c,
     const T&                                     x,
+    T&                                           x_non_const,
     const std::vector< T >&                      xx,
     const typename T::ScalarType                 c0,
     const int                                    level ) {
@@ -22,22 +23,28 @@ concept VectorLike = requires(
     { self_const.dot_impl( x, level ) } -> std::same_as< typename T::ScalarType >;
 
     // Required max magnitude
-    { self_const.max_magnitude_impl( level ) } -> std::same_as< typename T::ScalarType >;
+    { self_const.max_abs_entry_impl( level ) } -> std::same_as< typename T::ScalarType >;
 
     // Required nan check
     { self_const.has_nan_impl( level ) } -> std::same_as< bool >;
+
+    // Required swap operation
+    { self.swap_impl( x_non_const ) } -> std::same_as< void >;
 };
 
 template < typename T >
-concept Block2VectorLike = VectorLike< T > && requires( const T& self_const ) {
+concept Block2VectorLike = VectorLike< T > && requires( const T& self_const, T& self ) {
     typename T::Block1Type;
     typename T::Block2Type;
 
     requires VectorLike< typename T::Block1Type >;
     requires VectorLike< typename T::Block2Type >;
 
-    { self_const.block_1() } -> std::same_as< typename T::Block1Type >;
-    { self_const.block_2() } -> std::same_as< typename T::Block2Type >;
+    { self_const.block_1() } -> std::same_as< const typename T::Block1Type& >;
+    { self_const.block_2() } -> std::same_as< const typename T::Block2Type& >;
+
+    { self.block_1() } -> std::same_as< typename T::Block1Type& >;
+    { self.block_2() } -> std::same_as< typename T::Block2Type& >;
 };
 
 template < VectorLike Vector >
@@ -81,13 +88,19 @@ ScalarOf< Vector > dot( const Vector& y, const Vector& x, const int level )
 template < VectorLike Vector >
 ScalarOf< Vector > inf_norm( const Vector& y, const int level )
 {
-    return y.max_magnitude_impl( level );
+    return y.max_abs_entry_impl( level );
 }
 
 template < VectorLike Vector >
 bool has_nan( const Vector& y, const int level )
 {
     return y.has_nan_impl( level );
+}
+
+template < VectorLike Vector >
+void swap( Vector& x, Vector& y )
+{
+    y.swap_impl( x );
 }
 
 namespace detail {
@@ -117,7 +130,7 @@ class DummyVector
         return 0;
     }
 
-    ScalarType max_magnitude_impl( const int level ) const
+    ScalarType max_abs_entry_impl( const int level ) const
     {
         (void) level;
         return 0;
@@ -128,6 +141,8 @@ class DummyVector
         (void) level;
         return false;
     }
+
+    void swap_impl( DummyVector< ScalarType >& other ) { (void) other; }
 };
 
 template < typename ScalarT >
@@ -158,7 +173,7 @@ class DummyBlock2Vector
         return 0;
     }
 
-    ScalarType max_magnitude_impl( const int level ) const
+    ScalarType max_abs_entry_impl( const int level ) const
     {
         (void) level;
         return 0;
@@ -170,8 +185,13 @@ class DummyBlock2Vector
         return false;
     }
 
-    DummyVector< ScalarType > block_1() const { return block_1_; }
-    DummyVector< ScalarType > block_2() const { return block_2_; }
+    void swap_impl( DummyBlock2Vector& other ) { (void) other; }
+
+    const DummyVector< ScalarType >& block_1() const { return block_1_; }
+    const DummyVector< ScalarType >& block_2() const { return block_2_; }
+
+    DummyVector< ScalarType >& block_1() { return block_1_; }
+    DummyVector< ScalarType >& block_2() { return block_2_; }
 
   private:
     DummyVector< ScalarType > block_1_;

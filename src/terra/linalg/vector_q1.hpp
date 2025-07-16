@@ -125,12 +125,18 @@ class VectorQ1Scalar
         return kernels::common::masked_dot_product( grid_data( level ), x.grid_data( level ), mask_data( level ) );
     }
 
-    ScalarType max_magnitude_impl( const int level ) const
+    ScalarType max_abs_entry_impl( const int level ) const
     {
-        return kernels::common::max_magnitude( grid_data( level ) );
+        return kernels::common::max_abs_entry( grid_data( level ) );
     }
 
     bool has_nan_impl( const int level ) const { return kernels::common::has_nan( grid_data( level ) ); }
+
+    void swap_impl( VectorQ1Scalar& other )
+    {
+        grid_data_.swap( other.grid_data_ );
+        mask_data_.swap( other.mask_data_ );
+    }
 
     void add_grid_data( const grid::Grid4DDataScalar< ScalarType >& grid_data, int level )
     {
@@ -223,12 +229,18 @@ class VectorQ1Vec
         return kernels::common::masked_dot_product( grid_data( level ), x.grid_data( level ), mask_data( level ) );
     }
 
-    ScalarType max_magnitude_impl( const int level ) const
+    ScalarType max_abs_entry_impl( const int level ) const
     {
-        return kernels::common::max_magnitude( grid_data( level ) );
+        return kernels::common::max_abs_entry( grid_data( level ) );
     }
 
     bool has_nan_impl( const int level ) const { return kernels::common::has_nan( grid_data( level ) ); }
+
+    void swap_impl( VectorQ1Vec& other )
+    {
+        grid_data_.swap( other.grid_data_ );
+        mask_data_.swap( other.mask_data_ );
+    }
 
     void add_grid_data( const grid::Grid4DDataVec< ScalarType, VecDim >& grid_data, int level )
     {
@@ -244,7 +256,7 @@ class VectorQ1Vec
     {
         if ( !grid_data_.contains( level ) )
         {
-            throw std::runtime_error( "VectorQ1Scalar::grid_data: level not found" );
+            throw std::runtime_error( "VectorQ1Vec::grid_data: level not found" );
         }
         return grid_data_.at( level );
     }
@@ -262,6 +274,8 @@ class VectorQ1Vec
     std::map< int, grid::Grid4DDataVec< ScalarType, VecDim > > grid_data_;
     std::map< int, grid::Grid4DDataScalar< unsigned char > >   mask_data_;
 };
+
+static_assert( VectorLike< VectorQ1Vec< double, 3 > > );
 
 template < typename ValueType >
 VectorQ1Scalar< ValueType > allocate_vector_q1_scalar(

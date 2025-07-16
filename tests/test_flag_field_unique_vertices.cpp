@@ -75,8 +75,8 @@ int main( int argc, char** argv )
     }
 
     // Check global min/max/sum.
-    auto min_mag = terra::kernels::common::min_magnitude( u );
-    auto max_mag = terra::kernels::common::max_magnitude( u );
+    auto min_mag = terra::kernels::common::min_abs_entry( u );
+    auto max_mag = terra::kernels::common::max_abs_entry( u );
     auto sum_mag = terra::kernels::common::sum_of_absolutes( u );
 
     std::cout << "Before comm" << std::endl;
@@ -97,8 +97,8 @@ int main( int argc, char** argv )
         terra::communication::shell::CommuncationReduction::SUM );
 
     // Check global min/max/sum again. Sum should now be the same as if we count all vertices (including boundaries).
-    min_mag = terra::kernels::common::min_magnitude( u );
-    max_mag = terra::kernels::common::max_magnitude( u );
+    min_mag = terra::kernels::common::min_abs_entry( u );
+    max_mag = terra::kernels::common::max_abs_entry( u );
     sum_mag = terra::kernels::common::sum_of_absolutes( u );
 
     std::cout << "After comm" << std::endl;
@@ -107,8 +107,8 @@ int main( int argc, char** argv )
     std::cout << "sum_mag = " << sum_mag << std::endl;
 
     // Check global min/max/sum again. Sum should now be the same as if we count all vertices (including boundaries).
-    min_mag = terra::kernels::common::min_magnitude( ones );
-    max_mag = terra::kernels::common::max_magnitude( ones );
+    min_mag = terra::kernels::common::min_abs_entry( ones );
+    max_mag = terra::kernels::common::max_abs_entry( ones );
     sum_mag = terra::kernels::common::sum_of_absolutes( ones );
 
     std::cout << "Ones" << std::endl;
@@ -118,8 +118,8 @@ int main( int argc, char** argv )
 
     terra::kernels::common::lincomb( error, 0.0, 1.0, u, -1.0, ones );
 
-    min_mag = terra::kernels::common::min_magnitude( error );
-    max_mag = terra::kernels::common::max_magnitude( error );
+    min_mag = terra::kernels::common::min_abs_entry( error );
+    max_mag = terra::kernels::common::max_abs_entry( error );
     sum_mag = terra::kernels::common::sum_of_absolutes( error );
 
     std::cout << "Error" << std::endl;

@@ -11,7 +11,7 @@
 
 namespace terra::fe::wedge::operators::shell {
 
-template < typename ScalarT, int VecDim >
+template < typename ScalarT, int VecDim = 3 >
 class VectorMass
 {
   public:
@@ -48,22 +48,33 @@ class VectorMass
     , recv_buffers_( domain )
     {}
 
-    void apply_impl( const SrcVectorType& src, DstVectorType& dst, int level )
+    void apply_impl(
+        const SrcVectorType&                    src,
+        DstVectorType&                          dst,
+        int                                     level,
+        const linalg::OperatorApplyMode         operator_apply_mode,
+        const linalg::OperatorCommunicationMode operator_communication_mode )
     {
-        assign( dst, 0, level );
+        if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
+        {
+            assign( dst, 0, level );
+        }
 
         src_ = src.grid_data( level );
         dst_ = dst.grid_data( level );
 
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
 
-        std::vector< std::array< int, 11 > > expected_recvs_metadata;
-        std::vector< MPI_Request >           expected_recvs_requests;
+        if ( operator_communication_mode == linalg::OperatorCommunicationMode::CommunicateAdditively )
+        {
+            std::vector< std::array< int, 11 > > expected_recvs_metadata;
+            std::vector< MPI_Request >           expected_recvs_requests;
 
-        communication::shell::pack_and_send_local_subdomain_boundaries(
-            domain_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
-        communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-            domain_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+            communication::shell::pack_and_send_local_subdomain_boundaries(
+                domain_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
+            communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
+                domain_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+        }
     }
 
     KOKKOS_INLINE_FUNCTION void

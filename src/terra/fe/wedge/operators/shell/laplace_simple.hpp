@@ -5,6 +5,7 @@
 #include "dense/vec.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/kernel_helpers.hpp"
+#include "fe/wedge/quadrature.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
@@ -12,12 +13,12 @@
 
 namespace terra::fe::wedge::operators::shell {
 
-template < typename ScalarT, int VecDim >
-class VectorLaplace
+template < typename ScalarT >
+class LaplaceSimple
 {
   public:
-    using SrcVectorType = linalg::VectorQ1Vec< double, VecDim >;
-    using DstVectorType = linalg::VectorQ1Vec< double, VecDim >;
+    using SrcVectorType = linalg::VectorQ1Scalar< double >;
+    using DstVectorType = linalg::VectorQ1Scalar< double >;
     using ScalarType    = ScalarT;
 
   private:
@@ -29,14 +30,14 @@ class VectorLaplace
     bool treat_boundary_;
     bool diagonal_;
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< double, VecDim > send_buffers_;
-    communication::shell::SubdomainNeighborhoodRecvBuffer< double, VecDim > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendBuffer< double > send_buffers_;
+    communication::shell::SubdomainNeighborhoodRecvBuffer< double > recv_buffers_;
 
-    grid::Grid4DDataVec< ScalarType, VecDim > src_;
-    grid::Grid4DDataVec< ScalarType, VecDim > dst_;
+    grid::Grid4DDataScalar< ScalarType > src_;
+    grid::Grid4DDataScalar< ScalarType > dst_;
 
   public:
-    VectorLaplace(
+    LaplaceSimple(
         const grid::shell::DistributedDomain&   domain,
         const grid::Grid3DDataVec< double, 3 >& grid,
         const grid::Grid2DDataScalar< double >& radii,
@@ -53,11 +54,11 @@ class VectorLaplace
     {}
 
     void apply_impl(
-        const SrcVectorType&            src,
-        DstVectorType&                  dst,
-        int                             level,
-        const linalg::OperatorApplyMode operator_apply_mode,
-        const linalg::OperatorCommunicationMode operator_communication_mode)
+        const SrcVectorType&                    src,
+        DstVectorType&                          dst,
+        int                                     level,
+        const linalg::OperatorApplyMode         operator_apply_mode,
+        const linalg::OperatorCommunicationMode operator_communication_mode )
     {
         if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
         {
@@ -79,65 +80,47 @@ class VectorLaplace
             communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
                 domain_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
         }
-
     }
 
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
-        // First all the r-independent stuff.
         // Gather surface points for each wedge.
-
         dense::Vec< double, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
         wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
 
-        // Compute lateral part of Jacobian.
+        // Gather wedge radii.
+        const double r_1 = radii_( local_subdomain_id, r_cell );
+        const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
+        // Quadrature points.
         constexpr auto num_quad_points = quad_felippa_1x1_num_quad_points;
         constexpr auto quad_points     = quad_felippa_1x1_quad_points;
         constexpr auto quad_weights    = quad_felippa_1x1_quad_weights;
 
-        dense::Mat< double, 3, 3 > jac_lat_inv_t[num_wedges_per_hex_cell][num_quad_points] = {};
-        double                     det_jac_lat[num_wedges_per_hex_cell][num_quad_points]   = {};
-
-        jacobian_lat_inverse_transposed_and_determinant( jac_lat_inv_t, det_jac_lat, wedge_phy_surf, quad_points );
-
-        dense::Vec< double, 3 > g_rad[num_wedges_per_hex_cell][num_nodes_per_wedge][num_quad_points] = {};
-        dense::Vec< double, 3 > g_lat[num_wedges_per_hex_cell][num_nodes_per_wedge][num_quad_points] = {};
-
-        lateral_parts_of_grad_phi( g_rad, g_lat, jac_lat_inv_t, quad_points );
-
-        // Only now we introduce radially dependent terms.
-        const double r_1 = radii_( local_subdomain_id, r_cell );
-        const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
-
-        // For now, compute the local element matrix. We'll improve that later.
+        // Compute the local element matrix.
         dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};
-
-        // TODO: this can be absorbed into g_lat.
-        // TODO: ALSO we can sometimes avoid division if we pull the r^2 and grad_r out of the determinant and replace
-        //       the prefactors for the g_lat and g_rad but this is very form-specific.
-        const double grad_r     = grad_forward_map_rad( r_1, r_2 );
-        const double grad_r_inv = 1.0 / grad_r;
 
         for ( int q = 0; q < num_quad_points; q++ )
         {
-            // TODO: We could precompute that per quadrature point and store in a View globally to avoid the division.
-            const double r     = forward_map_rad( r_1, r_2, quad_points[q]( 2 ) );
-            const double r_inv = 1.0 / r;
+            const auto w = quad_weights[q];
 
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
+                const auto J                = jac( wedge_phy_surf[wedge], r_1, r_2, quad_points[q] );
+                const auto det              = Kokkos::abs( J.det() );
+                const auto J_inv_transposed = J.inv().transposed();
+
                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
                 {
+                    const auto grad_i = grad_shape( i, quad_points[q] );
+
                     for ( int j = 0; j < num_nodes_per_wedge; j++ )
                     {
-                        const auto grad_i = grad_shape_full( g_rad, g_lat, r_inv, grad_r_inv, wedge, i, q );
-                        const auto grad_j = grad_shape_full( g_rad, g_lat, r_inv, grad_r_inv, wedge, j, q );
+                        const auto grad_j = grad_shape( j, quad_points[q] );
 
-                        const auto det = det_full( det_jac_lat, r, grad_r, wedge, q );
-
-                        A[wedge]( i, j ) += quad_weights[q] * ( grad_i.dot( grad_j ) * det );
+                        A[wedge]( i, j ) +=
+                            w * ( ( J_inv_transposed * grad_i ).dot( J_inv_transposed * grad_j ) * det );
                     }
                 }
             }
@@ -189,21 +172,18 @@ class VectorLaplace
             A[1] = A[1].diagonal();
         }
 
-        for ( int d = 0; d < VecDim; d++ )
-        {
-            dense::Vec< double, 6 > src[num_wedges_per_hex_cell];
-            extract_local_wedge_vector_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, d, src_ );
+        dense::Vec< double, 6 > src[num_wedges_per_hex_cell];
+        extract_local_wedge_scalar_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, src_ );
 
-            dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
+        dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
 
-            dst[0] = A[0] * src[0];
-            dst[1] = A[1] * src[1];
+        dst[0] = A[0] * src[0];
+        dst[1] = A[1] * src[1];
 
-            atomically_add_local_wedge_vector_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, d, dst );
-        }
+        atomically_add_local_wedge_scalar_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, dst );
     }
 };
 
-static_assert( linalg::OperatorLike< VectorLaplace< double, 3 > > );
+static_assert( linalg::OperatorLike< Laplace< double > > );
 
 } // namespace terra::fe::wedge::operators::shell

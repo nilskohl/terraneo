@@ -171,7 +171,7 @@ BenchmarkData
     const bool print_derived_value = false;
     if ( print_derived_value )
     {
-        const auto mm = terra::kernels::common::max_magnitude( y );
+        const auto mm = terra::kernels::common::max_abs_entry( y );
         std::cout << "Printing some derived value to ensure nothing is optimized out: " << mm << std::endl;
     }
 
