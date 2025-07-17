@@ -1,137 +1,99 @@
-#include <fstream>
-#include <iomanip>
-
-#include "../src/terra/communication/shell/communication.hpp"
 #include "kernels/common/grid_operations.hpp"
+#include "linalg/vector_q1.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/vtk/vtk.hpp"
+#include "util/init.hpp"
+
+/// For dot products to work correctly, we need to properly define vertex ownership.
+/// Neighboring subdomains share vertices, and to uniquely mark them, we create a mask View, that is either 1 or 0
+/// at each vertex, such that each logically identical vertex is only marked 1 exactly once.
+///
+/// This test checks some properties to ensure this is implemented correctly.
+void test( const int level )
+{
+    // The refinement level defines the number of unknowns (for equal refinement in all directions).
+
+    const int number_of_nodes_along_each_diamond_edge = ( 1 << level ) + 1;
+
+    const int number_of_nodes =
+        ( 10 * ( number_of_nodes_along_each_diamond_edge - 1 ) * ( number_of_nodes_along_each_diamond_edge - 1 ) + 2 ) *
+        number_of_nodes_along_each_diamond_edge;
+
+    const auto domain =
+        terra::grid::shell::DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+
+    auto mask_data = terra::grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
+    terra::linalg::setup_mask_data( domain, mask_data );
+
+    // Summing up all the mask entries should be equal to the number of nodes.
+    // First casting to larger type to enable adding those up.
+
+    auto mask_data_long = terra::grid::shell::allocate_scalar_grid< long >( "mask_data_long", domain );
+    terra::kernels::common::cast( mask_data_long, mask_data );
+    const auto number_of_nodes_mask = terra::kernels::common::sum_of_absolutes( mask_data_long );
+
+    std::cout << "Level:                                      " << level << std::endl;
+    std::cout << "Number of nodes (analytical):               " << number_of_nodes << std::endl;
+    std::cout << "Number of nodes (mask):                     " << number_of_nodes_mask << std::endl;
+
+    if ( number_of_nodes_mask != number_of_nodes )
+    {
+        throw std::logic_error( "Number of nodes does not match number of mask entries." );
+    }
+
+    const auto min_mask = terra::kernels::common::min_abs_entry( mask_data_long );
+    const auto max_mask = terra::kernels::common::max_abs_entry( mask_data_long );
+
+    if ( min_mask != 0 || max_mask != 1 )
+    {
+        throw std::logic_error( "Mask entries are not in [0, 1]." );
+    }
+
+    // Now we can also test additive communication of the mask. This should set all entries to one.
+    terra::communication::shell::send_recv( domain, mask_data_long );
+
+    const auto min_mask_after = terra::kernels::common::min_abs_entry( mask_data_long );
+    const auto max_mask_after = terra::kernels::common::max_abs_entry( mask_data_long );
+
+    if ( min_mask_after != 1 || max_mask_after != 1 )
+    {
+        throw std::logic_error( "Mask entries are not 1 (after communication)." );
+    }
+
+    // Now we check if the sum is equal to the actual number of allocated nodes ("with overlap").
+    const auto sum_mask_after = terra::kernels::common::sum_of_absolutes( mask_data_long );
+
+    const auto number_of_nodes_with_overlap = number_of_nodes_along_each_diamond_edge *
+                                              number_of_nodes_along_each_diamond_edge *
+                                              number_of_nodes_along_each_diamond_edge * 10;
+
+    std::cout << "Number of nodes (with overlap, analytical): " << number_of_nodes_with_overlap << std::endl;
+    std::cout << "Number of nodes (with overlap, mask):       " << sum_mask_after << std::endl;
+
+    if ( sum_mask_after != ( number_of_nodes_along_each_diamond_edge * number_of_nodes_along_each_diamond_edge *
+                             number_of_nodes_along_each_diamond_edge * 10 ) )
+    {
+        throw std::logic_error( "Sum of mask entries does not match (after communication)." );
+    }
+
+    std::cout << std::endl;
+}
 
 int main( int argc, char** argv )
 {
-    MPI_Init( &argc, &argv );
-    Kokkos::ScopeGuard scope_guard( argc, argv );
+    terra::util::TerraScopeGuard guard( &argc, &argv );
 
-    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain( 4, 4, 0.5, 1.0 );
-
-    const auto u     = terra::grid::shell::allocate_scalar_grid< double >( "u", domain );
-    const auto ones  = terra::grid::shell::allocate_scalar_grid< double >( "ones", domain );
-    const auto error = terra::grid::shell::allocate_scalar_grid< double >( "error", domain );
-
-    terra::kernels::common::set_constant( ones, 1.0 );
-
-    const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
-    const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
-
-    terra::communication::shell::SubdomainNeighborhoodSendBuffer< double > send_buffers( domain );
-    terra::communication::shell::SubdomainNeighborhoodRecvBuffer< double > recv_buffers( domain );
-
-    std::vector< std::array< int, 11 > > expected_recvs_metadata;
-    std::vector< MPI_Request >           expected_recvs_requests;
-
-    // Interpolate the unique subdomain ID.
-    for ( const auto& [subdomain_info, value] : domain.subdomains() )
+    try
     {
-        const auto& [local_subdomain_id, neighborhood] = value;
-
-        const auto global_subdomain_id = subdomain_info.global_id();
-
-        terra::kernels::common::set_constant(
-            terra::grid::Grid3DDataScalar< double >( u, local_subdomain_id, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL ),
-            (double) global_subdomain_id );
+        for ( int level = 0; level < 5; level++ )
+        {
+            test( level );
+        }
+    }
+    catch ( const std::exception& e )
+    {
+        return EXIT_FAILURE;
     }
 
-    // Communicate and reduce with minimum.
-    terra::communication::shell::pack_and_send_local_subdomain_boundaries(
-        domain, u, send_buffers, expected_recvs_requests, expected_recvs_metadata );
-
-    terra::communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-        domain,
-        u,
-        recv_buffers,
-        expected_recvs_requests,
-        expected_recvs_metadata,
-        terra::communication::shell::CommuncationReduction::MIN );
-
-    // Set all nodes to 1 if the global_subdomain_id matches - 0 otherwise.
-    for ( const auto& [subdomain_info, value] : domain.subdomains() )
-    {
-        const auto& [local_subdomain_id, neighborhood] = value;
-
-        const auto global_subdomain_id = subdomain_info.global_id();
-
-        Kokkos::parallel_for(
-            "set_flags",
-            Kokkos::MDRangePolicy( { 0, 0, 0 }, { u.extent( 1 ), u.extent( 2 ), u.extent( 3 ) } ),
-            KOKKOS_LAMBDA( const int x, const int y, const int r ) {
-                if ( u( local_subdomain_id, x, y, r ) == (double) global_subdomain_id )
-                {
-                    u( local_subdomain_id, x, y, r ) = 1.0;
-                }
-                else
-                {
-                    u( local_subdomain_id, x, y, r ) = 0.0;
-                }
-            } );
-    }
-
-    // Check global min/max/sum.
-    min_mag = terra::kernels::common::min_abs_entry( u );
-    max_mag = terra::kernels::common::max_abs_entry( u );
-    sum_mag = terra::kernels::common::sum_of_absolutes( u );
-
-    std::cout << "Before comm" << std::endl;
-    std::cout << "min_mag = " << min_mag << std::endl;
-    std::cout << "max_mag = " << max_mag << std::endl;
-    std::cout << "sum_mag = " << sum_mag << std::endl;
-
-    // Communicate and reduce with sum (nothing should change).
-    terra::communication::shell::pack_and_send_local_subdomain_boundaries(
-        domain, u, send_buffers, expected_recvs_requests, expected_recvs_metadata );
-
-    terra::communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-        domain,
-        u,
-        recv_buffers,
-        expected_recvs_requests,
-        expected_recvs_metadata,
-        terra::communication::shell::CommuncationReduction::SUM );
-
-    // Check global min/max/sum again. Sum should now be the same as if we count all vertices (including boundaries).
-    min_mag = terra::kernels::common::min_abs_entry( u );
-    max_mag = terra::kernels::common::max_abs_entry( u );
-    sum_mag = terra::kernels::common::sum_of_absolutes( u );
-
-    std::cout << "After comm" << std::endl;
-    std::cout << "min_mag = " << min_mag << std::endl;
-    std::cout << "max_mag = " << max_mag << std::endl;
-    std::cout << "sum_mag = " << sum_mag << std::endl;
-
-    // Check global min/max/sum again. Sum should now be the same as if we count all vertices (including boundaries).
-    min_mag = terra::kernels::common::min_abs_entry( ones );
-    max_mag = terra::kernels::common::max_abs_entry( ones );
-    sum_mag = terra::kernels::common::sum_of_absolutes( ones );
-
-    std::cout << "Ones" << std::endl;
-    std::cout << "min_mag = " << min_mag << std::endl;
-    std::cout << "max_mag = " << max_mag << std::endl;
-    std::cout << "sum_mag = " << sum_mag << std::endl;
-
-    terra::kernels::common::lincomb( error, 0.0, 1.0, u, -1.0, ones );
-
-    min_mag = terra::kernels::common::min_abs_entry( error );
-    max_mag = terra::kernels::common::max_abs_entry( error );
-    sum_mag = terra::kernels::common::sum_of_absolutes( error );
-
-    std::cout << "Error" << std::endl;
-    std::cout << "min_mag = " << min_mag << std::endl;
-    std::cout << "max_mag = " << max_mag << std::endl;
-    std::cout << "sum_mag = " << sum_mag << std::endl;
-
-    terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, "test_flag_field_unique_vertices.vtu", true );
-    vtk.add_scalar_field( u );
-    vtk.write();
-
-    MPI_Finalize();
-
-    return 0;
+    return EXIT_SUCCESS;
 }

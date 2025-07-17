@@ -17,6 +17,7 @@
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
 #include "terra/vtk/vtk.hpp"
+#include "util/init.hpp"
 #include "util/table.hpp"
 
 using namespace terra;
@@ -207,7 +208,7 @@ struct SetOnBoundary
     }
 };
 
-double test( int level, util::Table& table )
+std::pair< double, double > test( int level, util::Table& table )
 {
     /**
 
@@ -421,39 +422,53 @@ double test( int level, util::Table& table )
         vtk_coarse.write();
     }
 
-    return l2_error_velocity;
+    return { l2_error_velocity, l2_error_pressure };
 }
 
 int main( int argc, char** argv )
 {
-    MPI_Init( &argc, &argv );
-    Kokkos::ScopeGuard scope_guard( argc, argv );
+    util::TerraScopeGuard scope_guard( &argc, &argv );
 
     util::Table table( false );
 
-    double prev_l2_error = 1.0;
+    double prev_l2_error_vel = 1.0;
+    double prev_l2_error_pre = 1.0;
 
-    for ( int level = 1; level < 6; ++level )
+    for ( int level = 1; level < 5; ++level )
     {
         std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;
         timer.reset();
-        double     l2_error   = test( level, table );
-        const auto time_total = timer.seconds();
+        const auto [l2_error_vel, l2_error_pre] = test( level, table );
+        const auto time_total                   = timer.seconds();
         table.add_row( { { "level", level }, { "time_total", time_total } } );
 
-        if ( level > 1 )
+        if ( level > 2 )
         {
-            table.add_row( { { "level", level }, { "order_vel", prev_l2_error / l2_error } } );
+            const double order_vel = prev_l2_error_vel / l2_error_vel;
+            const double order_pre = prev_l2_error_pre / l2_error_pre;
+
+            std::cout << "order_vel = " << order_vel << std::endl;
+            std::cout << "order_pre = " << order_pre << std::endl;
+
+            if ( order_vel < 3.8 )
+            {
+                return EXIT_FAILURE;
+            }
+
+            if ( order_vel < 3.3 )
+            {
+                return EXIT_FAILURE;
+            }
+
+            table.add_row( { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
         }
-        prev_l2_error = l2_error;
+        prev_l2_error_vel = l2_error_vel;
+        prev_l2_error_pre = l2_error_pre;
     }
 
-    // table.print_pretty();
-    table.query_not_none( "order_vel" ).select( { "level", "order_vel" } ).print_pretty();
+    table.query_not_none( "order_vel" ).select( { "level", "order_vel", "order_pre" } ).print_pretty();
     table.query_not_none( "dofs_vel" ).select( { "level", "dofs_vel", "l2_error_vel", "l2_error_pre" } ).print_pretty();
-    // table.query_equals( "tag", "pminres_solver_level_4" ).select( { "iteration", "relative_residual" } ).print_pretty();
 
-    MPI_Finalize();
     return 0;
 }

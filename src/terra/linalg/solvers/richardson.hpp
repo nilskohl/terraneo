@@ -14,8 +14,8 @@ class Richardson
     using SolutionVectorType = SrcOf< OperatorType >;
     using RHSVectorType      = DstOf< OperatorType >;
 
-    Richardson( const IterativeSolverParameters& params, const double omega, const RHSVectorType& r_tmp )
-    : params_( params )
+    Richardson( const int iterations, const double omega, const RHSVectorType& r_tmp )
+    : iterations_( iterations )
     , omega_( omega )
     , r_( r_tmp )
     {}
@@ -27,7 +27,7 @@ class Richardson
         int                                                    level,
         std::optional< std::reference_wrapper< util::Table > > statistics )
     {
-        for ( int iteration = 0; iteration < params_.max_iterations(); ++iteration )
+        for ( int iteration = 0; iteration < iterations_; ++iteration )
         {
             assign( r_, 0, level );
             apply( A, x, r_, level );
@@ -36,9 +36,9 @@ class Richardson
     }
 
   private:
-    IterativeSolverParameters params_;
-    double                    omega_;
-    RHSVectorType             r_;
+    int           iterations_;
+    double        omega_;
+    RHSVectorType r_;
 };
 
 static_assert( SolverLike< Richardson< linalg::detail::DummyConcreteOperator > > );

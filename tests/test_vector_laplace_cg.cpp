@@ -14,6 +14,7 @@
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
 #include "terra/vtk/vtk.hpp"
+#include "util/init.hpp"
 #include "util/table.hpp"
 
 using namespace terra;
@@ -234,7 +235,7 @@ double test( int level, util::Table& table )
     linalg::lincomb( error, { 1.0, -1.0 }, { u, solution }, level );
     const auto l2_error = std::sqrt( dot( error, error, level ) / num_dofs );
 
-    if ( true )
+    if ( false )
     {
         vtk::VTKOutput vtk_after(
             subdomain_shell_coords,
@@ -257,14 +258,13 @@ double test( int level, util::Table& table )
 
 int main( int argc, char** argv )
 {
-    MPI_Init( &argc, &argv );
-    Kokkos::ScopeGuard scope_guard( argc, argv );
+    util::TerraScopeGuard scope_guard( &argc, &argv );
 
     util::Table table;
 
     double prev_l2_error = 1.0;
 
-    for ( int level = 0; level < 6; ++level )
+    for ( int level = 0; level < 5; ++level )
     {
         Kokkos::Timer timer;
         timer.reset();
@@ -272,8 +272,15 @@ int main( int argc, char** argv )
         const auto time_total = timer.seconds();
         table.add_row( { { "level", level }, { "time_total", time_total } } );
 
-        if ( level > 0 )
+        if ( level > 1 )
         {
+            const double order = prev_l2_error / l2_error;
+            std::cout << "order = " << order << std::endl;
+            if ( order < 3.9 )
+            {
+                return EXIT_FAILURE;
+            }
+
             table.add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
         }
         prev_l2_error = l2_error;
@@ -281,8 +288,5 @@ int main( int argc, char** argv )
 
     table.query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
     table.query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
-    // table.query_equals( "tag", "pcg_solver_level_4" ).select( { "iteration", "relative_residual" } ).print_pretty();
-
-    MPI_Finalize();
     return 0;
 }

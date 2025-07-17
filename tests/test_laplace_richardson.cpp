@@ -13,6 +13,7 @@
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
 #include "terra/vtk/vtk.hpp"
+#include "util/init.hpp"
 #include "util/table.hpp"
 
 using namespace terra;
@@ -209,9 +210,7 @@ double test( int level, util::Table& table )
         SetOnBoundary(
             Adiagg.grid_data( level ), b.grid_data( level ), domain.domain_info().subdomain_num_nodes_radially() ) );
 
-    linalg::solvers::IterativeSolverParameters solver_params{ 1000, 1e-12, 1e-12 };
-
-    linalg::solvers::Richardson< Laplace > richardson( solver_params, 0.666, r );
+    linalg::solvers::Richardson< Laplace > richardson( 1000, 0.666, r );
 
     Kokkos::fence();
     timer.reset();
@@ -242,8 +241,7 @@ double test( int level, util::Table& table )
 
 int main( int argc, char** argv )
 {
-    MPI_Init( &argc, &argv );
-    Kokkos::ScopeGuard scope_guard( argc, argv );
+    util::TerraScopeGuard scope_guard( &argc, &argv );
 
     util::Table table;
 
@@ -251,15 +249,21 @@ int main( int argc, char** argv )
 
     for ( int level = 0; level < 4; ++level )
     {
-        std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;
         timer.reset();
         double     l2_error   = test( level, table );
         const auto time_total = timer.seconds();
         table.add_row( { { "level", level }, { "time_total", time_total } } );
 
-        if ( level > 0 )
+        if ( level > 1 )
         {
+            const double order = prev_l2_error / l2_error;
+            std::cout << "order = " << order << std::endl;
+            if ( order < 3.9 )
+            {
+                return EXIT_FAILURE;
+            }
+
             table.add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
         }
         prev_l2_error = l2_error;
@@ -267,8 +271,4 @@ int main( int argc, char** argv )
 
     table.query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
     table.query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
-    // table.query_equals( "tag", "pcg_solver_level_4" ).select( { "iteration", "relative_residual" } ).print_pretty();
-
-    MPI_Finalize();
-    return 0;
 }

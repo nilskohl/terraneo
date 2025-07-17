@@ -4,6 +4,7 @@
 
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/vtk/vtk.hpp"
+#include "util/init.hpp"
 
 struct SomeInterpolator
 {
@@ -12,9 +13,9 @@ struct SomeInterpolator
     terra::grid::Grid4DDataScalar< double > scalar_data_;
 
     SomeInterpolator(
-        terra::grid::Grid3DDataVec< double, 3 > shell_coords,
-        terra::grid::Grid2DDataScalar< double > radii,
-        terra::grid::Grid4DDataScalar< double > scalar_data )
+        const terra::grid::Grid3DDataVec< double, 3 >& shell_coords,
+        const terra::grid::Grid2DDataScalar< double >& radii,
+        const terra::grid::Grid4DDataScalar< double >& scalar_data )
     : shell_coords_( shell_coords )
     , radii_( radii )
     , scalar_data_( scalar_data )
@@ -34,13 +35,12 @@ struct SomeInterpolator
 
 int main( int argc, char** argv )
 {
-    MPI_Init( &argc, &argv );
-    Kokkos::ScopeGuard scope_guard( argc, argv );
+    terra::util::TerraScopeGuard scope_guard( &argc, &argv );
 
-    const int    lateral_refinement_level = 4;
-    const int    radial_refinement_level  = 4;
-    const double r_min                    = 0.5;
-    const double r_max                    = 1.0;
+    constexpr int    lateral_refinement_level = 4;
+    constexpr int    radial_refinement_level  = 4;
+    constexpr double r_min                    = 0.5;
+    constexpr double r_max                    = 1.0;
 
     const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain(
         lateral_refinement_level, radial_refinement_level, r_min, r_max );
@@ -58,8 +58,6 @@ int main( int argc, char** argv )
     terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, "my_fancy_vtk.vtu", true );
     vtk.add_scalar_field( data );
     vtk.write();
-
-    MPI_Finalize();
 
     return 0;
 }
