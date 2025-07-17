@@ -389,7 +389,7 @@ std::pair< double, double > test( int level, util::Table& table )
           { "inf_res_vel", inf_residual_vel },
           { "inf_res_pre", inf_residual_pre } } );
 
-    if ( true )
+    if ( false )
     {
         vtk::VTKOutput vtk_fine(
             subdomain_fine_shell_coords,
