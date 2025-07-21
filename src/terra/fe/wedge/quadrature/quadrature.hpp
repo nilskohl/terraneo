@@ -1,24 +1,31 @@
 
 #pragma once
 
-namespace terra::fe::wedge {
-
-/// Quadrature rules for wedge.
+/// @namespace terra::fe::wedge::quadrature
+/// @brief Quadrature rules for the reference wedge.
+///
 /// Taken from https://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_wedge/quadrature_rules_wedge.html
 ///
 /// Reference:
+/// \code
 ///   Carlos Felippa,
 ///   A compendium of FEM integration formulas for symbolic work,
 ///   Engineering Computation,
 ///   Volume 21, Number 8, 2004, pages 867-890.
+/// \endcode
 ///
 /// Reference wedge:
 ///
-///   0 <= X
-///   0 <= Y
-///   X + Y <= 1
-///   -1 <= Z <= 1
+/// \f[
+/// \begin{align}
+///   0 \leq X \\
+///   0 \leq Y \\
+///   X + Y \leq 1 \\
+///   -1 \leq Z \leq 1
+/// \end{align}
+/// \f]
 ///
+namespace terra::fe::wedge::quadrature {
 
 constexpr int quad_felippa_1x1_num_quad_points = 1;
 
@@ -60,4 +67,6 @@ constexpr void quad_felippa_3x2_quad_weights( double ( &quad_weights )[quad_feli
     quad_weights[5] = 0.1666666666666667;
 }
 
-} // namespace terra::fe::wedge
+
+
+} // namespace terra::fe::wedge::quadrature

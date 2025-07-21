@@ -11,10 +11,12 @@ constexpr int num_nodes_per_wedge         = 6;
 ///
 /// Useful for wedge-based kernels that update two wedges that make up a hex cell at once.
 ///
+/// \code
 /// 2--3
 /// |\ |
 /// | \|   =>  [(p0, p1, p2), (p3, p2, p1)]
 /// 0--1
+/// \endcode
 ///
 /// @param wedge_surf_phy_coords [out] first dim: wedge/triangle index, second dim: vertex index
 /// @param lateral_grid          [in]  the unit sphere vertex coordinates
@@ -119,8 +121,10 @@ KOKKOS_INLINE_FUNCTION constexpr void jacobian_lat_determinant(
 
 /// @brief Computes the radially independent parts of the physical shape function gradients
 ///
+/// \code
 ///   g_rad_j = jac_lat_inv_t * ( (∂/∂xi N_lat_j) N_rad_j, (∂/∂eta N_lat_j) N_rad_j, 0       )^T
 ///   g_lat_j = jac_lat_inv_t * (                       0,                        0, N_lat_j )^T
+/// \endcode
 ///
 /// where j is a node of the wedge. Computes those for all 6 nodes j = 0, ..., 5 of a wedge.
 ///
@@ -128,11 +132,15 @@ KOKKOS_INLINE_FUNCTION constexpr void jacobian_lat_determinant(
 ///
 /// From thes we can later compute
 ///
+/// \code
 ///   jac_inv_t * grad_N_j
+/// \endcode
 ///
 /// via
 ///
+/// \code
 ///   jac_inv_t * grad_N_j = (1 / r(zeta)) g_rad_j + (∂ N_rad_j / ∂zeta) * (1 / (∂r / ∂zeta)) * g_lat_j
+/// \endcode
 ///
 /// @param g_rad         [out] g_rad - see above
 /// @param g_lat         [out] g_lat - see above
@@ -215,6 +223,7 @@ KOKKOS_INLINE_FUNCTION constexpr double det_full(
 
 /// @brief Extracts the local vector coefficients for the two wedges of a hex cell from the global coefficient vector.
 ///
+/// \code
 /// r = r_cell + 1 (outer)
 /// 6--7
 /// |\ |
@@ -229,6 +238,7 @@ KOKKOS_INLINE_FUNCTION constexpr double det_full(
 ///
 /// v0 = (0, 1, 2, 4, 5, 6)
 /// v1 = (3, 2, 1, 7, 6, 5)
+/// \endcode
 ///
 /// @param local_coefficients  [out] the local coefficient vector
 /// @param local_subdomain_id  [in]  shell subdomain id on this process
@@ -262,6 +272,7 @@ void extract_local_wedge_scalar_coefficients(
 
 /// @brief Extracts the local vector coefficients for the two wedges of a hex cell from the global coefficient vector.
 ///
+/// \code
 /// r = r_cell + 1 (outer)
 /// 6--7
 /// |\ |
@@ -276,6 +287,7 @@ void extract_local_wedge_scalar_coefficients(
 ///
 /// v0 = (0, 1, 2, 4, 5, 6)
 /// v1 = (3, 2, 1, 7, 6, 5)
+/// \endcode
 ///
 /// @param local_coefficients  [out] the local coefficient vector
 /// @param local_subdomain_id  [in]  shell subdomain id on this process
@@ -312,6 +324,7 @@ KOKKOS_INLINE_FUNCTION void extract_local_wedge_vector_coefficients(
 /// @brief Performs an atomic add of the two local wedge coefficient vectors of a hex cell into the global coefficient
 /// vector.
 ///
+/// \code
 /// r = r_cell + 1 (outer)
 /// 6--7
 /// |\ |
@@ -326,6 +339,7 @@ KOKKOS_INLINE_FUNCTION void extract_local_wedge_vector_coefficients(
 ///
 /// v0 = (0, 1, 2, 4, 5, 6)
 /// v1 = (3, 2, 1, 7, 6, 5)
+/// \endcode
 ///
 /// @param global_coefficients [inout] the global coefficient vector
 /// @param local_subdomain_id  [in]    shell subdomain id on this process
@@ -367,6 +381,7 @@ void atomically_add_local_wedge_scalar_coefficients(
 /// @brief Performs an atomic add of the two local wedge coefficient vectors of a hex cell into the global coefficient
 /// vector.
 ///
+/// \code
 /// r = r_cell + 1 (outer)
 /// 6--7
 /// |\ |
@@ -381,6 +396,7 @@ void atomically_add_local_wedge_scalar_coefficients(
 ///
 /// v0 = (0, 1, 2, 4, 5, 6)
 /// v1 = (3, 2, 1, 7, 6, 5)
+/// \endcode
 ///
 /// @param global_coefficients [inout] the global coefficient vector
 /// @param local_subdomain_id  [in]    shell subdomain id on this process

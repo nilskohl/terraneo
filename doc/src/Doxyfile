@@ -540,13 +540,13 @@ EXTRACT_ALL            = YES
 # be included in the documentation.
 # The default value is: NO.
 
-EXTRACT_PRIVATE        = YES
+EXTRACT_PRIVATE        = NO
 
 # If the EXTRACT_PRIV_VIRTUAL tag is set to YES, documented private virtual
 # methods of a class will be included in the documentation.
 # The default value is: NO.
 
-EXTRACT_PRIV_VIRTUAL   = YES
+EXTRACT_PRIV_VIRTUAL   = NO
 
 # If the EXTRACT_PACKAGE tag is set to YES, all members with package or internal
 # scope will be included in the documentation.
@@ -1863,7 +1863,7 @@ FORMULA_MACROFILE      =
 # The default value is: NO.
 # This tag requires that the tag GENERATE_HTML is set to YES.
 
-USE_MATHJAX            = NO
+USE_MATHJAX            = YES
 
 # With MATHJAX_VERSION it is possible to specify the MathJax version to be used.
 # Note that the different versions of MathJax have different requirements with

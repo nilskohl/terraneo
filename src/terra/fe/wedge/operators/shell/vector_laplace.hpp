@@ -93,13 +93,13 @@ class VectorLaplace
 
         // Compute lateral part of Jacobian.
 
-        constexpr auto num_quad_points = quad_felippa_1x1_num_quad_points;
+        constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
 
         dense::Vec< double, 3 > quad_points[num_quad_points];
         double quad_weights[num_quad_points];
 
-        quad_felippa_1x1_quad_points( quad_points );
-        quad_felippa_1x1_quad_weights(quad_weights);
+        quadrature::quad_felippa_1x1_quad_points( quad_points );
+        quadrature::quad_felippa_1x1_quad_weights(quad_weights);
 
         dense::Mat< double, 3, 3 > jac_lat_inv_t[num_wedges_per_hex_cell][num_quad_points] = {};
         double                     det_jac_lat[num_wedges_per_hex_cell][num_quad_points]   = {};

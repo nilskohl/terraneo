@@ -1,11 +1,11 @@
 
 #pragma once
 
+#include "../../quadrature/quadrature.hpp"
 #include "communication/shell/communication.hpp"
 #include "dense/vec.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/kernel_helpers.hpp"
-#include "fe/wedge/quadrature.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
@@ -94,13 +94,13 @@ class Divergence
         const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // Quadrature points.
-        constexpr auto num_quad_points = quad_felippa_1x1_num_quad_points;
+        constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
 
         dense::Vec< double, 3 > quad_points[num_quad_points];
         double quad_weights[num_quad_points];
 
-        quad_felippa_1x1_quad_points( quad_points );
-        quad_felippa_1x1_quad_weights(quad_weights);
+        quadrature::quad_felippa_1x1_quad_points( quad_points );
+        quadrature::quad_felippa_1x1_quad_weights(quad_weights);
 
         const int fine_radial_wedge_index = r_cell % 2;
 
