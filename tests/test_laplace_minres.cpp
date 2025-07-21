@@ -154,14 +154,11 @@ double test( int level, util::Table& table )
     auto b        = linalg::allocate_vector_q1_scalar< ScalarType >( "b", domain, level );
     auto r        = linalg::allocate_vector_q1_scalar< ScalarType >( "r", domain, level );
 
-    auto mask_data      = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
-    auto mask_data_long = grid::shell::allocate_scalar_grid< long >( "mask_data_double", domain );
+    auto mask_data = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
 
     linalg::setup_mask_data( domain, mask_data );
 
-    kernels::common::cast( mask_data_long, mask_data );
-
-    const auto num_dofs = kernels::common::dot_product( mask_data_long, mask_data_long );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
 
     u.add_mask_data( mask_data, level );
     g.add_mask_data( mask_data, level );

@@ -268,20 +268,14 @@ std::pair< double, double > test( int level, util::Table& table )
     auto tmp_5 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_5", domain_fine, domain_coarse, level );
     auto tmp_6 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_6", domain_fine, domain_coarse, level );
 
-    auto mask_data_fine      = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain_fine );
-    auto mask_data_fine_long = grid::shell::allocate_scalar_grid< long >( "mask_data_double", domain_fine );
-
-    auto mask_data_coarse      = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain_coarse );
-    auto mask_data_coarse_long = grid::shell::allocate_scalar_grid< long >( "mask_data_double", domain_coarse );
+    auto mask_data_fine   = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain_fine );
+    auto mask_data_coarse = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain_coarse );
 
     linalg::setup_mask_data( domain_fine, mask_data_fine );
     linalg::setup_mask_data( domain_coarse, mask_data_coarse );
 
-    kernels::common::cast( mask_data_fine_long, mask_data_fine );
-    kernels::common::cast( mask_data_coarse_long, mask_data_coarse );
-
-    const auto num_dofs_velocity = 3 * kernels::common::dot_product( mask_data_fine_long, mask_data_fine_long );
-    const auto num_dofs_pressure = kernels::common::dot_product( mask_data_coarse_long, mask_data_coarse_long );
+    const auto num_dofs_velocity = 3 * kernels::common::count_masked< long >( mask_data_fine, grid::mask_owned() );
+    const auto num_dofs_pressure = kernels::common::count_masked< long >( mask_data_coarse, grid::mask_owned() );
 
     w.add_mask_data( mask_data_fine, mask_data_coarse, level );
     b.add_mask_data( mask_data_fine, mask_data_coarse, level );
@@ -361,11 +355,11 @@ std::pair< double, double > test( int level, util::Table& table )
 
     const double avg_pressure_solution =
         kernels::common::masked_sum(
-            solution.block_2().grid_data( level ), solution.block_2().mask_data( level ), grid::shell::mask_owned() ) /
+            solution.block_2().grid_data( level ), solution.block_2().mask_data( level ), grid::mask_owned() ) /
         num_dofs_pressure;
     const double avg_pressure_approximation =
         kernels::common::masked_sum(
-            w.block_2().grid_data( level ), w.block_2().mask_data( level ), grid::shell::mask_owned() ) /
+            w.block_2().grid_data( level ), w.block_2().mask_data( level ), grid::mask_owned() ) /
         num_dofs_pressure;
 
     linalg::lincomb( solution.block_2(), { 1.0 }, { solution.block_2() }, -avg_pressure_solution, level );

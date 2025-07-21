@@ -2,7 +2,7 @@
 
 #include "../../kokkos/kokkos_wrapper.hpp"
 #include "grid/grid_types.hpp"
-#include "terra/util/bit_masks.hpp"
+#include "terra/util/bit_masking.hpp"
 
 namespace terra::kernels::common {
 
@@ -311,6 +311,28 @@ ScalarType sum_of_absolutes( const grid::Grid4DDataScalar< ScalarType >& x )
     Kokkos::fence();
 
     return sum_abs;
+}
+
+template < typename ScalarType, typename MaskType >
+ScalarType count_masked( const grid::Grid4DDataScalar< MaskType >& mask, const util::MaskAndValue& mask_and_value )
+{
+    auto count = static_cast< ScalarType >( 0 );
+
+    Kokkos::parallel_reduce(
+        "masked_sum",
+        Kokkos::MDRangePolicy(
+            { 0, 0, 0, 0 }, { mask.extent( 0 ), mask.extent( 1 ), mask.extent( 2 ), mask.extent( 3 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, ScalarType& local_sum ) {
+            const ScalarType mask_val = util::check_bits( mask( local_subdomain, i, j, k ), mask_and_value ) ?
+                                            static_cast< ScalarType >( 1 ) :
+                                            static_cast< ScalarType >( 0 );
+            local_sum                 = local_sum + mask_val;
+        },
+        Kokkos::Sum< ScalarType >( count ) );
+
+    Kokkos::fence();
+
+    return count;
 }
 
 template < typename ScalarType, typename MaskType >

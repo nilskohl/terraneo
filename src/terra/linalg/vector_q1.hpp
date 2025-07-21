@@ -5,7 +5,8 @@
 #include "communication/shell/communication.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "kernels/common/grid_operations.hpp"
-#include "terra/grid/shell/mask_types.hpp"
+#include "terra/grid/bit_masks.hpp"
+#include "terra/grid/shell/bit_masks.hpp"
 #include "vector.hpp"
 
 namespace terra::linalg {
@@ -64,11 +65,11 @@ inline void
             KOKKOS_LAMBDA( const int x, const int y, const int r ) {
                 if ( tmp_data_for_global_subdomain_indices( local_subdomain_id, x, y, r ) == global_subdomain_id )
                 {
-                    util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_owned() );
+                    util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::mask_owned() );
                 }
                 else
                 {
-                    util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_non_owned() );
+                    util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::mask_non_owned() );
                 }
             } );
 
@@ -158,7 +159,7 @@ class VectorQ1Scalar
     ScalarType dot_impl( const VectorQ1Scalar& x, const int level ) const
     {
         return kernels::common::masked_dot_product(
-            grid_data( level ), x.grid_data( level ), mask_data( level ), grid::shell::mask_owned() );
+            grid_data( level ), x.grid_data( level ), mask_data( level ), grid::mask_owned() );
     }
 
     ScalarType max_abs_entry_impl( const int level ) const
@@ -262,7 +263,7 @@ class VectorQ1Vec
 
     ScalarType dot_impl( const VectorQ1Vec& x, const int level ) const
     {
-        return kernels::common::masked_dot_product( grid_data( level ), x.grid_data( level ), mask_data( level ), grid::shell::mask_owned() );
+        return kernels::common::masked_dot_product( grid_data( level ), x.grid_data( level ), mask_data( level ), grid::mask_owned() );
     }
 
     ScalarType max_abs_entry_impl( const int level ) const
