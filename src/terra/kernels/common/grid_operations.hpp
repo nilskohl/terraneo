@@ -460,4 +460,31 @@ void cast( const grid::Grid4DDataScalar< ScalarTypeDst >& dst, const grid::Grid4
     Kokkos::fence();
 }
 
+template < typename ScalarTypeDst >
+void rand( const grid::Grid4DDataScalar< ScalarTypeDst >& dst )
+{
+    static_assert(
+        std::is_same_v< ScalarTypeDst, double > || std::is_same_v< ScalarTypeDst, float >,
+        "Random integers not implemented. But can be done easily below." );
+
+    Kokkos::Random_XorShift64_Pool<> random_pool( /*seed=*/12345 );
+    Kokkos::parallel_for(
+        "rand",
+        Kokkos::MDRangePolicy( { 0, 0, 0, 0 }, { dst.extent( 0 ), dst.extent( 1 ), dst.extent( 2 ), dst.extent( 3 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k ) {
+            auto generator = random_pool.get_state();
+            if constexpr ( std::is_same_v< ScalarTypeDst, double > )
+            {
+                dst( local_subdomain, i, j, k ) = generator.drand();
+            }
+            else if constexpr ( std::is_same_v< ScalarTypeDst, float > )
+            {
+                dst( local_subdomain, i, j, k ) = generator.frand();
+            }
+            random_pool.free_state( generator );
+        } );
+
+    Kokkos::fence();
+}
+
 } // namespace terra::kernels::common

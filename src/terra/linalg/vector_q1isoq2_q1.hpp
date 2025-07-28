@@ -43,6 +43,12 @@ class VectorQ1IsoQ2Q1
         return x.block_1().dot_impl( u_, level ) + x.block_2().dot_impl( p_, level );
     }
 
+    void randomize_impl( const int level )
+    {
+        block_1().randomize_impl( level );
+        block_2().randomize_impl( level );
+    }
+
     ScalarType max_abs_entry_impl( const int level ) const
     {
         return std::max( block_1().max_abs_entry_impl( level ), block_2().max_abs_entry_impl( level ) );

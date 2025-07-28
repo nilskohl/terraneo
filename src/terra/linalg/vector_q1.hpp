@@ -162,6 +162,8 @@ class VectorQ1Scalar
             grid_data( level ), x.grid_data( level ), mask_data( level ), grid::mask_owned() );
     }
 
+    void randomize_impl( const int level ) { return kernels::common::rand( grid_data( level ) ); }
+
     ScalarType max_abs_entry_impl( const int level ) const
     {
         return kernels::common::max_abs_entry( grid_data( level ) );
@@ -263,8 +265,11 @@ class VectorQ1Vec
 
     ScalarType dot_impl( const VectorQ1Vec& x, const int level ) const
     {
-        return kernels::common::masked_dot_product( grid_data( level ), x.grid_data( level ), mask_data( level ), grid::mask_owned() );
+        return kernels::common::masked_dot_product(
+            grid_data( level ), x.grid_data( level ), mask_data( level ), grid::mask_owned() );
     }
+
+    void randomize_impl( const int level ) { return kernels::common::rand( grid_data( level ) ); }
 
     ScalarType max_abs_entry_impl( const int level ) const
     {

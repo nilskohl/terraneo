@@ -22,6 +22,8 @@ concept VectorLike = requires(
     // Required dot product
     { self_const.dot_impl( x, level ) } -> std::same_as< typename T::ScalarType >;
 
+    { self.randomize_impl( level ) } -> std::same_as< void >;
+
     // Required max magnitude
     { self_const.max_abs_entry_impl( level ) } -> std::same_as< typename T::ScalarType >;
 
@@ -86,6 +88,12 @@ ScalarOf< Vector > dot( const Vector& y, const Vector& x, const int level )
 }
 
 template < VectorLike Vector >
+void randomize( Vector& y, const int level )
+{
+    y.randomize_impl( level );
+}
+
+template < VectorLike Vector >
 ScalarOf< Vector > inf_norm( const Vector& y, const int level )
 {
     return y.max_abs_entry_impl( level );
@@ -130,6 +138,8 @@ class DummyVector
         return 0;
     }
 
+    void randomize_impl( const int level ) { (void) level; }
+
     ScalarType max_abs_entry_impl( const int level ) const
     {
         (void) level;
@@ -172,6 +182,8 @@ class DummyBlock2Vector
         (void) level;
         return 0;
     }
+
+    void randomize_impl( const int level ) { (void) level; }
 
     ScalarType max_abs_entry_impl( const int level ) const
     {
