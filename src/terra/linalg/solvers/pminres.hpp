@@ -102,7 +102,7 @@ class PMINRES
                   { "absolute_residual", initial_residual } } );
         }
 
-        if ( std::sqrt( initial_residual ) < params_.absolute_residual_tolerance() )
+        if ( initial_residual < params_.absolute_residual_tolerance() )
         {
             return;
         }
@@ -163,7 +163,7 @@ class PMINRES
                 return;
             }
 
-            if ( std::sqrt( absolute_residual ) < params_.absolute_residual_tolerance() )
+            if ( absolute_residual < params_.absolute_residual_tolerance() )
             {
                 return;
             }

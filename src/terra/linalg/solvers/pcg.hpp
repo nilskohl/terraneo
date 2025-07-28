@@ -62,7 +62,7 @@ class PCG
         assign( p_, z_, level );
 
         // TODO: should this be dot(z, z) instead or dot(r, r)?
-        const ScalarType initial_residual = dot( r_, r_, level );
+        const ScalarType initial_residual = std::sqrt( dot( r_, r_, level ) );
 
         if ( statistics.has_value() )
         {
@@ -73,7 +73,7 @@ class PCG
                   { "absolute_residual", initial_residual } } );
         }
 
-        if ( std::sqrt( initial_residual ) < params_.absolute_residual_tolerance() )
+        if ( initial_residual < params_.absolute_residual_tolerance() )
         {
             return;
         }
@@ -91,9 +91,9 @@ class PCG
             lincomb( r_, { 1.0, -alpha }, { r_, ap_ }, level );
 
             // TODO: is this the correct term for the residual check?
-            const ScalarType absolute_residual = dot( r_, r_, level );
+            const ScalarType absolute_residual = std::sqrt( dot( r_, r_, level ) );
 
-            const ScalarType relative_residual = std::sqrt( absolute_residual ) / std::sqrt( initial_residual );
+            const ScalarType relative_residual = absolute_residual / initial_residual;
 
             if ( statistics.has_value() )
             {
@@ -109,7 +109,7 @@ class PCG
                 return;
             }
 
-            if ( std::sqrt( absolute_residual ) < params_.absolute_residual_tolerance() )
+            if ( absolute_residual < params_.absolute_residual_tolerance() )
             {
                 return;
             }
