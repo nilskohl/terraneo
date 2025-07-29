@@ -26,6 +26,7 @@ add_terra_test(test_laplace_minres)
 add_terra_test(test_laplace_richardson)
 add_terra_test(test_mpi_smoke)
 add_terra_test(test_stokes_minres)
+add_terra_test(test_unsteady_advection_diffusion_supg)
 add_terra_test(test_vector_laplace_cg)
 add_terra_test(test_vtk_writer)
 
