@@ -20,6 +20,7 @@ endfunction()
 
 # Adding all the tests.
 add_terra_test(test_flag_field_unique_vertices)
+add_terra_test(test_heat_eq)
 add_terra_test(test_laplace_bicgstab)
 add_terra_test(test_laplace_cg)
 add_terra_test(test_laplace_minres)

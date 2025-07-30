@@ -32,8 +32,9 @@ class UnsteadyAdvectionDiffusionSUPG
     double diffusivity_;
     double dt_;
 
-    bool treat_boundary_;
-    bool diagonal_;
+    bool   treat_boundary_;
+    bool   diagonal_;
+    double mass_scaling_;
 
     communication::shell::SubdomainNeighborhoodSendBuffer< double > send_buffers_;
     communication::shell::SubdomainNeighborhoodRecvBuffer< double > recv_buffers_;
@@ -51,7 +52,8 @@ class UnsteadyAdvectionDiffusionSUPG
         const double                                         diffusivity,
         const double                                         dt,
         bool                                                 treat_boundary,
-        bool                                                 diagonal )
+        bool                                                 diagonal,
+        double                                               mass_scaling )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
@@ -60,6 +62,7 @@ class UnsteadyAdvectionDiffusionSUPG
     , dt_( dt )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
+    , mass_scaling_( mass_scaling )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain )
     , recv_buffers_( domain )
@@ -163,7 +166,6 @@ class UnsteadyAdvectionDiffusionSUPG
             const auto sd = ( h / ( 2.0 * element_peclet_number ) ) * ( 1.0 - 1.0 / element_peclet_number );
 
             streamline_diffusivity[wedge] = element_peclet_number > 1.0 ? sd : 0.0;
-            // streamline_diffusivity[wedge] = 0.1;
         }
 
         // Compute the local element matrix.
@@ -197,8 +199,8 @@ class UnsteadyAdvectionDiffusionSUPG
                         const auto streamline_diffusion =
                             streamline_diffusivity[wedge] * ( vel.dot( grad_j ) ) * ( vel.dot( grad_i ) );
 
-                        A[wedge]( i, j ) += w * ( mass + dt_ * ( diffusion + advection + streamline_diffusion ) ) * det;
-                        // A[wedge]( i, j ) += w * ( mass + dt_ * ( diffusion ) ) * det;
+                        A[wedge]( i, j ) +=
+                            w * ( mass_scaling_ * mass + dt_ * ( diffusion + advection + streamline_diffusion ) ) * det;
                     }
                 }
             }

@@ -24,7 +24,7 @@ namespace terra::fe {
 /// 2. Compute g_A <- A * g.
 /// 3. Compute g_D <- diag(A) * g.
 /// 4. Set the rhs to b_elim = b - g_A,
-///    where b is the assembled rhs vector for the homogenuous problem
+///    where b is the assembled rhs vector for the homogeneous problem
 ///    (the result of evaluating the linear form into a vector or of the matrix-vector product of a vector f_vec where
 ///    the rhs function f has been interpolated into, and then b = M * f (M being the mass matrix))
 /// 5. Set the rhs b_elim at the boundary nodes to g_D, i.e.
