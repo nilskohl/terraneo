@@ -127,7 +127,7 @@ void test( int level, util::Table& table )
 
     using AD = fe::wedge::operators::shell::UnsteadyAdvectionDiffusionSUPG< ScalarType >;
 
-    AD A( domain, subdomain_shell_coords, subdomain_radii, u, 1e-3, 1e-2, false, false );
+    AD A( domain, subdomain_shell_coords, subdomain_radii, u, 1e-3, 1e-2, false, false, 1.0 );
 
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 
