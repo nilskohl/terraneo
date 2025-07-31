@@ -20,12 +20,11 @@ int main( int argc, char** argv )
 
     std::cout << "Hello from rank " << rank << " out of " << num_processes << " processes\n";
 
-    Kokkos::View< double* > src( "src", 10 );
-    Kokkos::View< double* > dst( "dst", 10 );
-
     // Init src
     if ( rank == 0 )
     {
+        Kokkos::View< double* > src( "src", 10 );
+
         Kokkos::parallel_for(
             "fill_src", Kokkos::RangePolicy( 0, 10 ), KOKKOS_LAMBDA( const int i ) {
                 src( i ) = static_cast< double >( i );
@@ -40,6 +39,8 @@ int main( int argc, char** argv )
 
     if ( rank == 1 )
     {
+        Kokkos::View< double* > dst( "dst", 10 );
+
         MPI_Recv( dst.data(), dst.span(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
 
         std::cout << "Received View from rank 0 at rank " << rank << ".\n";
