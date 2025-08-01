@@ -11,24 +11,23 @@ concept VectorLike = requires(
     const T&                                     x,
     T&                                           x_non_const,
     const std::vector< T >&                      xx,
-    const typename T::ScalarType                 c0,
-    const int                                    level ) {
+    const typename T::ScalarType                 c0 ) {
     // Requires exposing the scalar type.
     typename T::ScalarType;
 
     // Required lincomb overload with 4 args
-    { self.lincomb_impl( c, xx, c0, level ) } -> std::same_as< void >;
+    { self.lincomb_impl( c, xx, c0 ) } -> std::same_as< void >;
 
     // Required dot product
-    { self_const.dot_impl( x, level ) } -> std::same_as< typename T::ScalarType >;
+    { self_const.dot_impl( x ) } -> std::same_as< typename T::ScalarType >;
 
-    { self.randomize_impl( level ) } -> std::same_as< void >;
+    { self.randomize_impl() } -> std::same_as< void >;
 
     // Required max magnitude
-    { self_const.max_abs_entry_impl( level ) } -> std::same_as< typename T::ScalarType >;
+    { self_const.max_abs_entry_impl() } -> std::same_as< typename T::ScalarType >;
 
     // Required nan check
-    { self_const.has_nan_impl( level ) } -> std::same_as< bool >;
+    { self_const.has_nan_impl() } -> std::same_as< bool >;
 
     // Required swap operation
     { self.swap_impl( x_non_const ) } -> std::same_as< void >;
@@ -57,52 +56,51 @@ void lincomb(
     Vector&                                  y,
     const std::vector< ScalarOf< Vector > >& c,
     const std::vector< Vector >&             x,
-    const ScalarOf< Vector >&                c0,
-    const int                                level )
+    const ScalarOf< Vector >&                c0 )
 {
-    y.lincomb_impl( c, x, c0, level );
+    y.lincomb_impl( c, x, c0 );
 }
 
 template < VectorLike Vector >
-void lincomb( Vector& y, const std::vector< ScalarOf< Vector > >& c, const std::vector< Vector >& x, const int level )
+void lincomb( Vector& y, const std::vector< ScalarOf< Vector > >& c, const std::vector< Vector >& x )
 {
-    lincomb( y, c, x, static_cast< ScalarOf< Vector > >( 0 ), level );
+    lincomb( y, c, x, static_cast< ScalarOf< Vector > >( 0 ) );
 }
 
 template < VectorLike Vector >
-void assign( Vector& y, const ScalarOf< Vector >& c0, const int level )
+void assign( Vector& y, const ScalarOf< Vector >& c0 )
 {
-    lincomb( y, {}, {}, c0, level );
+    lincomb( y, {}, {}, c0 );
 }
 
 template < VectorLike Vector >
-void assign( Vector& y, const Vector& x, const int level )
+void assign( Vector& y, const Vector& x )
 {
-    lincomb( y, { static_cast< ScalarOf< Vector > >( 1 ) }, { x }, level );
+    lincomb( y, { static_cast< ScalarOf< Vector > >( 1 ) }, { x } );
 }
 
 template < VectorLike Vector >
-ScalarOf< Vector > dot( const Vector& y, const Vector& x, const int level )
+ScalarOf< Vector > dot( const Vector& y, const Vector& x )
 {
-    return y.dot_impl( x, level );
+    return y.dot_impl( x );
 }
 
 template < VectorLike Vector >
-void randomize( Vector& y, const int level )
+void randomize( Vector& y )
 {
-    y.randomize_impl( level );
+    y.randomize_impl();
 }
 
 template < VectorLike Vector >
-ScalarOf< Vector > inf_norm( const Vector& y, const int level )
+ScalarOf< Vector > inf_norm( const Vector& y )
 {
-    return y.max_abs_entry_impl( level );
+    return y.max_abs_entry_impl();
 }
 
 template < VectorLike Vector >
-bool has_nan( const Vector& y, const int level )
+bool has_nan( const Vector& y )
 {
-    return y.has_nan_impl( level );
+    return y.has_nan_impl();
 }
 
 template < VectorLike Vector >
@@ -119,38 +117,24 @@ class DummyVector
   public:
     using ScalarType = ScalarT;
 
-    void lincomb_impl(
-        const std::vector< ScalarType >&  c,
-        const std::vector< DummyVector >& x,
-        const ScalarType                  c0,
-        const int                         level )
+    void lincomb_impl( const std::vector< ScalarType >& c, const std::vector< DummyVector >& x, const ScalarType c0 )
     {
         (void) c;
         (void) x;
         (void) c0;
-        (void) level;
     }
 
-    ScalarType dot_impl( const DummyVector& x, const int level ) const
+    ScalarType dot_impl( const DummyVector& x ) const
     {
         (void) x;
-        (void) level;
         return 0;
     }
 
-    void randomize_impl( const int level ) { (void) level; }
+    void randomize_impl() {}
 
-    ScalarType max_abs_entry_impl( const int level ) const
-    {
-        (void) level;
-        return 0;
-    }
+    ScalarType max_abs_entry_impl() const { return 0; }
 
-    bool has_nan_impl( const int level ) const
-    {
-        (void) level;
-        return false;
-    }
+    bool has_nan_impl() const { return false; }
 
     void swap_impl( DummyVector< ScalarType >& other ) { (void) other; }
 };
@@ -167,35 +151,24 @@ class DummyBlock2Vector
     void lincomb_impl(
         const std::vector< ScalarType >&        c,
         const std::vector< DummyBlock2Vector >& x,
-        const ScalarType                        c0,
-        const int                               level )
+        const ScalarType                        c0 )
     {
         (void) c;
         (void) x;
         (void) c0;
-        (void) level;
     }
 
-    ScalarType dot_impl( const DummyBlock2Vector& x, const int level ) const
+    ScalarType dot_impl( const DummyBlock2Vector& x ) const
     {
         (void) x;
-        (void) level;
         return 0;
     }
 
-    void randomize_impl( const int level ) { (void) level; }
+    void randomize_impl() {}
 
-    ScalarType max_abs_entry_impl( const int level ) const
-    {
-        (void) level;
-        return 0;
-    }
+    ScalarType max_abs_entry_impl() const { return 0; }
 
-    bool has_nan_impl( const int level ) const
-    {
-        (void) level;
-        return false;
-    }
+    bool has_nan_impl() const { return false; }
 
     void swap_impl( DummyBlock2Vector& other ) { (void) other; }
 

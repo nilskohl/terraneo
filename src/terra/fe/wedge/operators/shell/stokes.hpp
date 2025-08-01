@@ -50,13 +50,12 @@ class Stokes
     void apply_impl(
         const SrcVectorType&                    src,
         DstVectorType&                          dst,
-        int                                     level,
         const linalg::OperatorApplyMode         operator_apply_mode,
         const linalg::OperatorCommunicationMode operator_communication_mode )
     {
         if ( diagonal_ )
         {
-            apply( A_, src.block_1(), dst.block_1(), level, operator_apply_mode, operator_communication_mode );
+            apply( A_, src.block_1(), dst.block_1(), operator_apply_mode, operator_communication_mode );
             return;
         }
 
@@ -64,11 +63,10 @@ class Stokes
             A_,
             src.block_1(),
             dst.block_1(),
-            level,
             linalg::OperatorApplyMode::Replace,
             linalg::OperatorCommunicationMode::SkipCommunication );
-        apply( B_T_, src.block_2(), dst.block_1(), level, linalg::OperatorApplyMode::Add, operator_communication_mode );
-        apply( B_, src.block_1(), dst.block_2(), level, operator_apply_mode, operator_communication_mode );
+        apply( B_T_, src.block_2(), dst.block_1(), linalg::OperatorApplyMode::Add, operator_communication_mode );
+        apply( B_, src.block_1(), dst.block_2(), operator_apply_mode, operator_communication_mode );
     }
 
     const Block11Type& block_11() const { return A_; }

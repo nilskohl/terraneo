@@ -50,19 +50,18 @@ class PCG
         OperatorType&                                          A,
         SolutionVectorType&                                    x,
         const RHSVectorType&                                   b,
-        int                                                    level,
         std::optional< std::reference_wrapper< util::Table > > statistics )
     {
-        apply( A, x, r_, level );
+        apply( A, x, r_ );
 
-        lincomb( r_, { 1.0, -1.0 }, { b, r_ }, level );
+        lincomb( r_, { 1.0, -1.0 }, { b, r_ } );
 
-        solve( preconditioner_, A, z_, r_, level );
+        solve( preconditioner_, A, z_, r_ );
 
-        assign( p_, z_, level );
+        assign( p_, z_ );
 
         // TODO: should this be dot(z, z) instead or dot(r, r)?
-        const ScalarType initial_residual = std::sqrt( dot( r_, r_, level ) );
+        const ScalarType initial_residual = std::sqrt( dot( r_, r_ ) );
 
         if ( statistics.has_value() )
         {
@@ -80,18 +79,18 @@ class PCG
 
         for ( int iteration = 1; iteration <= params_.max_iterations(); ++iteration )
         {
-            const ScalarType alpha_num = dot( z_, r_, level );
+            const ScalarType alpha_num = dot( z_, r_ );
 
-            apply( A, p_, ap_, level );
-            const ScalarType alpha_den = dot( ap_, p_, level );
+            apply( A, p_, ap_ );
+            const ScalarType alpha_den = dot( ap_, p_ );
 
             const ScalarType alpha = alpha_num / alpha_den;
 
-            lincomb( x, { 1.0, alpha }, { x, p_ }, level );
-            lincomb( r_, { 1.0, -alpha }, { r_, ap_ }, level );
+            lincomb( x, { 1.0, alpha }, { x, p_ } );
+            lincomb( r_, { 1.0, -alpha }, { r_, ap_ } );
 
             // TODO: is this the correct term for the residual check?
-            const ScalarType absolute_residual = std::sqrt( dot( r_, r_, level ) );
+            const ScalarType absolute_residual = std::sqrt( dot( r_, r_ ) );
 
             const ScalarType relative_residual = absolute_residual / initial_residual;
 
@@ -114,12 +113,12 @@ class PCG
                 return;
             }
 
-            solve( preconditioner_, A, z_, r_, level );
+            solve( preconditioner_, A, z_, r_ );
 
-            const ScalarType beta_num = dot( z_, r_, level );
+            const ScalarType beta_num = dot( z_, r_ );
             const ScalarType beta     = beta_num / alpha_num;
 
-            lincomb( p_, { 1.0, beta }, { z_, p_ }, level );
+            lincomb( p_, { 1.0, beta }, { z_, p_ } );
         }
     }
 

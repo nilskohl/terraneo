@@ -22,17 +22,15 @@ void test( const int level )
     const auto domain =
         terra::grid::shell::DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
 
-    auto mask_data = terra::grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
-    terra::linalg::setup_mask_data( domain, mask_data );
+    auto mask_data = terra::linalg::setup_mask_data( domain );
 
     // Summing up all the mask entries should be equal to the number of nodes.
     // First casting to larger type to enable adding those up.
 
-    auto ones = terra::grid::shell::allocate_scalar_grid< long >( "ones", domain );
+    auto ones           = terra::grid::shell::allocate_scalar_grid< long >( "ones", domain );
     auto mask_data_long = terra::grid::shell::allocate_scalar_grid< long >( "mask_data_long", domain );
     terra::kernels::common::set_constant( ones, 1l );
-    terra::kernels::common::assign_masked_else_keep_old(
-        mask_data_long, ones, mask_data, terra::grid::mask_owned() );
+    terra::kernels::common::assign_masked_else_keep_old( mask_data_long, ones, mask_data, terra::grid::mask_owned() );
 
     const auto number_of_nodes_mask = terra::kernels::common::sum_of_absolutes( mask_data_long );
 

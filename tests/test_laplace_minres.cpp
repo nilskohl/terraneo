@@ -25,6 +25,7 @@ using grid::Grid4DDataScalar;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using linalg::VectorQ1Scalar;
 
 struct SolutionInterpolator
 {
@@ -110,70 +111,30 @@ struct SetOnBoundary
 
 double test( int level, util::Table& table )
 {
-    /**
-
-    Boundary handling notes.
-
-    Using inhom boundary conditions we approach the elimination as follows (for the moment).
-
-    Let A be the "Neumann" operator, i.e., we do not treat the boundaries any differently.
-
-    1. Interpolate Dirichlet boundary conditions into g.
-    2. Compute g_A <- A       * g.
-    3. Compute g_D <- diag(A) * g.
-    4. Set the rhs to b = f - g_A.
-    5. Set the rhs at the boundary nodes to g_D.
-    6. Solve
-            A_elim x = b
-       where A_elim is A but with all off-diagonal entries in the same row/col as a boundary node set to zero.
-       In a matrix-free context, we have to adapt the element matrix A_local accordingly by (symmetrically) zeroing
-       out all the off-diagonals (row and col) that correspond to a boundary node. But we keep the diagonal intact.
-       We still have diag(A) == diag(A_elim).
-    7. x is the solution of the original problem. No boundary correction should be necessary.
-
-    **/
-
     Kokkos::Timer timer;
 
     using ScalarType = double;
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
 
-    auto u        = linalg::allocate_vector_q1_scalar< ScalarType >( "u", domain, level );
-    auto g        = linalg::allocate_vector_q1_scalar< ScalarType >( "g", domain, level );
-    auto Adiagg   = linalg::allocate_vector_q1_scalar< ScalarType >( "Adiagg", domain, level );
-    auto tmp      = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp", domain, level );
-    auto tmp_2    = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp_2", domain, level );
-    auto tmp_3    = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp_3", domain, level );
-    auto tmp_4    = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp_4", domain, level );
-    auto tmp_5    = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp_5", domain, level );
-    auto tmp_6    = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp_6", domain, level );
-    auto tmp_7    = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp_7", domain, level );
-    auto solution = linalg::allocate_vector_q1_scalar< ScalarType >( "solution", domain, level );
-    auto error    = linalg::allocate_vector_q1_scalar< ScalarType >( "error", domain, level );
-    auto b        = linalg::allocate_vector_q1_scalar< ScalarType >( "b", domain, level );
-    auto r        = linalg::allocate_vector_q1_scalar< ScalarType >( "r", domain, level );
+    auto mask_data = linalg::setup_mask_data( domain );
 
-    auto mask_data = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
-
-    linalg::setup_mask_data( domain, mask_data );
+    VectorQ1Scalar< ScalarType > u( "u", domain, mask_data );
+    VectorQ1Scalar< ScalarType > g( "g", domain, mask_data );
+    VectorQ1Scalar< ScalarType > Adiagg( "Adiagg", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp( "tmp", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_2( "tmp_2", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_3( "tmp_3", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_4( "tmp_4", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_5( "tmp_5", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_6( "tmp_6", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_7( "tmp_7", domain, mask_data );
+    VectorQ1Scalar< ScalarType > solution( "solution", domain, mask_data );
+    VectorQ1Scalar< ScalarType > error( "error", domain, mask_data );
+    VectorQ1Scalar< ScalarType > b( "b", domain, mask_data );
+    VectorQ1Scalar< ScalarType > r( "r", domain, mask_data );
 
     const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
-
-    u.add_mask_data( mask_data, level );
-    g.add_mask_data( mask_data, level );
-    Adiagg.add_mask_data( mask_data, level );
-    tmp.add_mask_data( mask_data, level );
-    tmp_2.add_mask_data( mask_data, level );
-    tmp_3.add_mask_data( mask_data, level );
-    tmp_4.add_mask_data( mask_data, level );
-    tmp_5.add_mask_data( mask_data, level );
-    tmp_6.add_mask_data( mask_data, level );
-    tmp_7.add_mask_data( mask_data, level );
-    solution.add_mask_data( mask_data, level );
-    error.add_mask_data( mask_data, level );
-    b.add_mask_data( mask_data, level );
-    r.add_mask_data( mask_data, level );
 
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
     const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
@@ -192,32 +153,31 @@ double test( int level, util::Table& table )
     Kokkos::parallel_for(
         "solution interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data( level ), false ) );
+        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data(), false ) );
 
     // Set up boundary data.
     Kokkos::parallel_for(
         "boundary interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data( level ), true ) );
+        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), true ) );
 
     // Set up rhs data.
     Kokkos::parallel_for(
         "rhs interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data( level ) ) );
+        RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data() ) );
 
-    linalg::apply( M, tmp, b, level );
+    linalg::apply( M, tmp, b );
 
-    linalg::apply( A_neumann_diag, g, Adiagg, level );
-    linalg::apply( A_neumann, g, tmp, level );
+    linalg::apply( A_neumann_diag, g, Adiagg );
+    linalg::apply( A_neumann, g, tmp );
 
-    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp }, level );
+    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp } );
 
     Kokkos::parallel_for(
         "set on boundary",
         grid::shell::local_domain_md_range_policy_nodes( domain ),
-        SetOnBoundary(
-            Adiagg.grid_data( level ), b.grid_data( level ), domain.domain_info().subdomain_num_nodes_radially() ) );
+        SetOnBoundary( Adiagg.grid_data(), b.grid_data(), domain.domain_info().subdomain_num_nodes_radially() ) );
 
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
@@ -226,21 +186,21 @@ double test( int level, util::Table& table )
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( pminres, A, u, b, level, table );
+    linalg::solvers::solve( pminres, A, u, b, table );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
-    linalg::lincomb( error, { 1.0, -1.0 }, { u, solution }, level );
-    const auto l2_error = std::sqrt( dot( error, error, level ) / num_dofs );
+    linalg::lincomb( error, { 1.0, -1.0 }, { u, solution } );
+    const auto l2_error = std::sqrt( dot( error, error ) / num_dofs );
 
     if ( false )
     {
         vtk::VTKOutput vtk_after(
             subdomain_shell_coords, subdomain_radii, "laplace_cg_level" + std::to_string( level ) + ".vtu", false );
-        vtk_after.add_scalar_field( g.grid_data( level ) );
-        vtk_after.add_scalar_field( u.grid_data( level ) );
-        vtk_after.add_scalar_field( solution.grid_data( level ) );
-        vtk_after.add_scalar_field( error.grid_data( level ) );
+        vtk_after.add_scalar_field( g.grid_data() );
+        vtk_after.add_scalar_field( u.grid_data() );
+        vtk_after.add_scalar_field( solution.grid_data() );
+        vtk_after.add_scalar_field( error.grid_data() );
 
         vtk_after.write();
     }

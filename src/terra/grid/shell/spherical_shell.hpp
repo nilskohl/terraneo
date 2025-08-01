@@ -16,6 +16,7 @@ std::vector< double > uniform_shell_radii( double r_min, double r_max, int num_s
 ///
 /// Carries the diamond ID, and the subdomain index (x, y, r) inside the diamond.
 /// Is globally unique (also in parallel settings).
+/// Does not carry information about the refinement of a subdomain.
 class SubdomainInfo
 {
   public:
@@ -87,33 +88,50 @@ inline std::ostream& operator<<( std::ostream& os, const SubdomainInfo& si )
     return os;
 }
 
-/// @brief Information about the domain/mesh.
+/// @brief Information about the thick spherical shell mesh.
 ///
-/// This holds data such as the number of subdomains in each direction (on each diamond), as well as the refinement
-/// level and the locations of the radial layers.
+/// The thick spherical shell is built from ten spherical diamonds. The diamonds are essentially curved hexahedra.
+/// The number of cells in lateral directions is required to be a power of 2, the number of cells in the radial
+/// direction can be chosen arbitrarily (though a power of two allows for maximally deep multigrid hierarchies).
 ///
-/// Note that all subdomains always have the same number of cells in all directions.
+/// Each diamond can be subdivided into subdomains (in all three directions) for better parallel distribution (each
+/// process can only operate on one or more entire subdomains).
 ///
-/// It has no notion of parallel distribution. For that refer to the DistributedDomain class.
+/// This class holds data such as
+/// - the shell radii,
+/// - the number of subdomains in each direction (on each diamond),
+/// - the number of nodes per subdomain in each direction (including overlapping nodes where two or more subdomains
+///   meet).
+///
+/// Note that all subdomains always have the same shape.
+///
+/// Since the global number of cells in a diamond in lateral and radial direction does not need to match, and since
+/// the number of cells in radial direction does not even need to be a power of two (although it is a good idea to
+/// choose it that way), this class computes the maximum number of coarsening steps (which is equivalent to the number
+/// of "refinement levels") dynamically. Thus, a bad choice for the number of radial layers may result in a mesh that
+/// cannot be coarsened at all.
+///
+/// This class has no notion of parallel distribution. For that refer to the DistributedDomain class.
+///
 class DomainInfo
 {
   public:
     DomainInfo() = default;
 
     /// @brief Constructs a thick spherical shell with one subdomain per diamond (10 subdomains total) and uniformly
-    /// distributed shells.
+    /// distributed radial shells.
     ///
     /// Note: a 'shell' is a spherical 2D manifold in 3D space (it is thin),
     ///       a 'layer' is defined as the volume between two 'shells' (it is thick)
     ///
-    /// @param global_lateral_refinement_level number of lateral diamond refinements
+    /// @param diamond_lateral_refinement_level number of lateral diamond refinements
     /// @param r_min inner radius
     /// @param r_max outer radius
     /// @param num_uniform_layers number of layers (uniformly spaced using r_min and r_max)
-    DomainInfo( int global_lateral_refinement_level, double r_min, double r_max, int num_uniform_layers )
-    : global_lateral_refinement_level_( global_lateral_refinement_level )
+    DomainInfo( int diamond_lateral_refinement_level, double r_min, double r_max, int num_uniform_layers )
+    : diamond_lateral_refinement_level_( diamond_lateral_refinement_level )
     , radii_( uniform_shell_radii( r_min, r_max, num_uniform_layers + 1 ) )
-    , diamond_subdomain_refinement_level_( 0 )
+    , num_subdomains_in_lateral_direction_( 1 )
     , num_subdomains_in_radial_direction_( 1 )
     {
         const int num_layers = num_uniform_layers;
@@ -124,7 +142,7 @@ class DomainInfo
         }
     }
 
-    /// @brief The refinement level of the subdomains.
+    /// @brief The "maximum refinement level" of the subdomains.
     ///
     /// This (non-negative) number is essentially indicating how many times a subdomain can be uniformly coarsened.
     int subdomain_max_refinement_level() const
@@ -137,27 +155,67 @@ class DomainInfo
         return std::min( max_refinement_level_lat, max_refinement_level_rad );
     }
 
-    int global_lateral_refinement_level() const { return global_lateral_refinement_level_; }
+    int diamond_lateral_refinement_level() const { return diamond_lateral_refinement_level_; }
 
     const std::vector< double >& radii() const { return radii_; }
 
-    int num_subdomains_per_diamond_side() const { return 1 << diamond_subdomain_refinement_level_; }
+    int num_subdomains_per_diamond_side() const { return num_subdomains_in_lateral_direction_; }
 
     int num_subdomains_in_radial_direction() const { return num_subdomains_in_radial_direction_; }
 
+    /// @brief Equivalent to calling subdomain_num_nodes_per_side_laterally( subdomain_refinement_level() )
     int subdomain_num_nodes_per_side_laterally() const
     {
-        const int num_cells_per_diamond_side   = 1 << global_lateral_refinement_level();
+        const int num_cells_per_diamond_side   = 1 << diamond_lateral_refinement_level();
         const int num_cells_per_subdomain_side = num_cells_per_diamond_side / num_subdomains_per_diamond_side();
         const int num_nodes_per_subdomain_side = num_cells_per_subdomain_side + 1;
         return num_nodes_per_subdomain_side;
     }
 
+    /// @brief Equivalent to calling subdomain_num_nodes_radially( subdomain_refinement_level() )
     int subdomain_num_nodes_radially() const
     {
         const int num_layers               = radii_.size() - 1;
         const int num_layers_per_subdomain = num_layers / num_subdomains_in_radial_direction_;
         return num_layers_per_subdomain + 1;
+    }
+
+    /// @brief Number of nodes in the lateral direction of a subdomain on the passed level.
+    ///
+    /// The level must be non-negative. The finest level is given by subdomain_max_refinement_level().
+    int subdomain_num_nodes_per_side_laterally( const int level ) const
+    {
+        if ( level < 0 )
+        {
+            throw std::invalid_argument( "Level must be non-negative." );
+        }
+
+        if ( level > subdomain_max_refinement_level() )
+        {
+            throw std::invalid_argument( "Level must be less than or equal to max subdomain refinement level." );
+        }
+
+        const int coarsening_steps = subdomain_max_refinement_level() - level;
+        return ( ( subdomain_num_nodes_per_side_laterally() - 1 ) >> coarsening_steps ) + 1;
+    }
+
+    /// @brief Number of nodes in the radial direction of a subdomain on the passed level.
+    ///
+    /// The level must be non-negative. The finest level is given by subdomain_max_refinement_level().
+    int subdomain_num_nodes_radially( const int level ) const
+    {
+        if ( level < 0 )
+        {
+            throw std::invalid_argument( "Level must be non-negative." );
+        }
+
+        if ( level > subdomain_max_refinement_level() )
+        {
+            throw std::invalid_argument( "Level must be less than or equal to subdomain refinement level." );
+        }
+
+        const int coarsening_steps = subdomain_max_refinement_level() - level;
+        return ( ( subdomain_num_nodes_radially() - 1 ) >> coarsening_steps ) + 1;
     }
 
     std::vector< SubdomainInfo > all_subdomains() const
@@ -182,15 +240,15 @@ class DomainInfo
 
   private:
     /// Number of times each diamond is refined laterally in each direction.
-    int global_lateral_refinement_level_;
+    int diamond_lateral_refinement_level_;
 
     /// Shell radii.
     std::vector< double > radii_;
 
-    /// Number of subdomain partitioning steps (for parallel partitioning) in each direction of the diamond (at least 0).
-    int diamond_subdomain_refinement_level_;
+    /// Number of subdomains per diamond (for parallel partitioning) in the lateral direction (at least 1).
+    int num_subdomains_in_lateral_direction_;
 
-    /// Number of subdomains (for parallel partitioning) in the radial direction (at least 1).
+    /// Number of subdomains per diamond (for parallel partitioning) in the radial direction (at least 1).
     int num_subdomains_in_radial_direction_;
 };
 
@@ -391,6 +449,18 @@ inline Grid4DDataScalar< ValueType >
         distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally(),
         distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally(),
         distributed_domain.domain_info().subdomain_num_nodes_radially() );
+}
+
+template < typename ValueType >
+inline Grid4DDataScalar< ValueType >
+    allocate_scalar_grid( const std::string label, const DistributedDomain& distributed_domain, const int level )
+{
+    return Grid4DDataScalar< ValueType >(
+        label,
+        distributed_domain.subdomains().size(),
+        distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally( level ),
+        distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally( level ),
+        distributed_domain.domain_info().subdomain_num_nodes_radially( level ) );
 }
 
 inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >

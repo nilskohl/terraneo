@@ -426,7 +426,7 @@ Grid3DDataVec< double, 3 > subdomain_unit_sphere_single_shell_coords( const Dist
             subdomain_coords_host,
             subdomain_idx,
             subdomain_info.diamond_id(),
-            domain.domain_info().global_lateral_refinement_level(),
+            domain.domain_info().diamond_lateral_refinement_level(),
             domain.domain_info().num_subdomains_per_diamond_side(),
             subdomain_info.subdomain_x(),
             subdomain_info.subdomain_y() );

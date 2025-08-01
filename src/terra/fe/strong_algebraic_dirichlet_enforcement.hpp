@@ -46,21 +46,19 @@ void strong_algebraic_dirichlet_enforcement_poisson_like(
     linalg::VectorQ1Scalar< ScalarType >&           tmp,
     linalg::VectorQ1Scalar< ScalarType >&           b,
     const grid::Grid4DDataScalar< util::MaskType >& mask_data,
-    const int                                       level,
     const util::MaskAndValue&                       dirichlet_boundary_mask )
 {
     // g_A <- A * g
-    linalg::apply( A_neumann, g, tmp, level );
+    linalg::apply( A_neumann, g, tmp );
 
     // b_elim <- b - g_A
-    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp }, level );
+    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp } );
 
     // g_D <- diag(A) * g
-    linalg::apply( A_neumann_diag, g, tmp, level );
+    linalg::apply( A_neumann_diag, g, tmp );
 
     // b_elim <- g_D on the Dirichlet boundary
-    kernels::common::assign_masked_else_keep_old(
-        b.grid_data( level ), tmp.grid_data( level ), mask_data, dirichlet_boundary_mask );
+    kernels::common::assign_masked_else_keep_old( b.grid_data(), tmp.grid_data(), mask_data, dirichlet_boundary_mask );
 }
 
 } // namespace terra::fe

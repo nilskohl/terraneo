@@ -29,6 +29,8 @@ using grid::Grid4DDataVec;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using linalg::VectorQ1Scalar;
+using linalg::VectorQ1Vec;
 
 struct VelocityInterpolator
 {
@@ -100,26 +102,19 @@ void test( int level, util::Table& table )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
 
-    auto T = linalg::allocate_vector_q1_scalar< ScalarType >( "T", domain, level );
-    auto u = linalg::allocate_vector_q1_vec< ScalarType, 3 >( "u", domain, level );
-    auto f = linalg::allocate_vector_q1_scalar< ScalarType >( "f", domain, level );
+    auto mask_data = linalg::setup_mask_data( domain );
 
-    auto mask_data = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
+    VectorQ1Scalar< ScalarType > T( "T", domain, mask_data );
+    VectorQ1Scalar< ScalarType > f( "f", domain, mask_data );
+    VectorQ1Vec< ScalarType >    u( "u", domain, mask_data );
 
-    linalg::setup_mask_data( domain, mask_data );
-
-    T.add_mask_data( mask_data, level );
-    u.add_mask_data( mask_data, level );
-
-    std::vector< linalg::VectorQ1Scalar< double > > tmps;
+    std::vector< VectorQ1Scalar< double > > tmps;
     for ( int i = 0; i < 8; ++i )
     {
-        tmps.emplace_back( linalg::allocate_vector_q1_scalar< ScalarType >( "tmpp", domain, level ) );
-        tmps[i].add_mask_data( mask_data, level );
+        tmps.emplace_back( "tmpp", domain, mask_data );
     }
 
-    linalg::assign( tmps[0], 1.0, level );
-    const auto num_dofs = linalg::dot( tmps[0], tmps[0], level );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
     std::cout << "Number of dofs: " << num_dofs << std::endl;
 
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
@@ -137,7 +132,7 @@ void test( int level, util::Table& table )
     Kokkos::parallel_for(
         "velocity interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        VelocityInterpolator( subdomain_shell_coords, subdomain_radii, u.grid_data( level ), false ) );
+        VelocityInterpolator( subdomain_shell_coords, subdomain_radii, u.grid_data(), false ) );
 
     Kokkos::fence();
 
@@ -145,7 +140,7 @@ void test( int level, util::Table& table )
     Kokkos::parallel_for(
         "initial temp interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        InitialConditionInterpolator( subdomain_shell_coords, subdomain_radii, T.grid_data( level ), false ) );
+        InitialConditionInterpolator( subdomain_shell_coords, subdomain_radii, T.grid_data(), false ) );
 
     Kokkos::fence();
 
@@ -163,8 +158,8 @@ void test( int level, util::Table& table )
             subdomain_radii,
             "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( 0 ) + ".vtu",
             false );
-        vtk_after.add_scalar_field( T.grid_data( level ) );
-        vtk_after.add_vector_field( u.grid_data( level ) );
+        vtk_after.add_scalar_field( T.grid_data() );
+        vtk_after.add_vector_field( u.grid_data() );
         vtk_after.write();
     }
 
@@ -172,8 +167,8 @@ void test( int level, util::Table& table )
     {
         std::cout << "Timestep " << ts << std::endl;
 
-        linalg::apply( M, T, f, level );
-        linalg::solvers::solve( bicgstab, A, T, f, level, table );
+        linalg::apply( M, T, f );
+        linalg::solvers::solve( bicgstab, A, T, f, table );
 
         table.print_pretty();
         table.clear();
@@ -185,8 +180,8 @@ void test( int level, util::Table& table )
                 subdomain_radii,
                 "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( ts ) + ".vtu",
                 false );
-            vtk_after.add_scalar_field( T.grid_data( level ) );
-            vtk_after.add_vector_field( u.grid_data( level ) );
+            vtk_after.add_scalar_field( T.grid_data() );
+            vtk_after.add_vector_field( u.grid_data() );
             vtk_after.write();
         }
     }

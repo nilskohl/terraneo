@@ -20,13 +20,12 @@ class Zero
     void apply_impl(
         const SrcVectorType&            src,
         DstVectorType&                  dst,
-        int                             level,
         const linalg::OperatorApplyMode operator_apply_mode,
         const linalg::OperatorCommunicationMode operator_communication_mode )
     {
         if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
         {
-            assign( dst, 0, level );
+            assign( dst, 0 );
         }
     }
 };

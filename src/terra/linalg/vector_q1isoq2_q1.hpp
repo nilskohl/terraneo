@@ -19,11 +19,19 @@ class VectorQ1IsoQ2Q1
     using Block1Type = VectorQ1Vec< ScalarType, VecDim >;
     using Block2Type = VectorQ1Scalar< ScalarType >;
 
+    VectorQ1IsoQ2Q1(
+        const std::string&                              label,
+        const grid::shell::DistributedDomain&           distributed_domain_fine,
+        const grid::shell::DistributedDomain&           distributed_domain_coarse,
+        const grid::Grid4DDataScalar< util::MaskType >& mask_data_fine,
+        const grid::Grid4DDataScalar< util::MaskType >& mask_data_coarse)
+    : u_( label + "_u", distributed_domain_fine, mask_data_fine ), p_( label + "_p", distributed_domain_coarse, mask_data_coarse )
+    {}
+
     void lincomb_impl(
         const std::vector< ScalarType >&      c,
         const std::vector< VectorQ1IsoQ2Q1 >& x,
-        const ScalarType                      c0,
-        const int                             level )
+        const ScalarType                      c0 )
     {
         std::vector< Block1Type > us;
         std::vector< Block2Type > ps;
@@ -34,29 +42,29 @@ class VectorQ1IsoQ2Q1
             ps.emplace_back( xx.block_2() );
         }
 
-        u_.lincomb_impl( c, us, c0, level );
-        p_.lincomb_impl( c, ps, c0, level );
+        u_.lincomb_impl( c, us, c0 );
+        p_.lincomb_impl( c, ps, c0 );
     }
 
-    ScalarType dot_impl( const VectorQ1IsoQ2Q1& x, const int level ) const
+    ScalarType dot_impl( const VectorQ1IsoQ2Q1& x ) const
     {
-        return x.block_1().dot_impl( u_, level ) + x.block_2().dot_impl( p_, level );
+        return x.block_1().dot_impl( u_ ) + x.block_2().dot_impl( p_ );
     }
 
-    void randomize_impl( const int level )
+    void randomize_impl()
     {
-        block_1().randomize_impl( level );
-        block_2().randomize_impl( level );
+        block_1().randomize_impl();
+        block_2().randomize_impl();
     }
 
-    ScalarType max_abs_entry_impl( const int level ) const
+    ScalarType max_abs_entry_impl() const
     {
-        return std::max( block_1().max_abs_entry_impl( level ), block_2().max_abs_entry_impl( level ) );
+        return std::max( block_1().max_abs_entry_impl(), block_2().max_abs_entry_impl() );
     }
 
-    bool has_nan_impl( const int level ) const
+    bool has_nan_impl() const
     {
-        return block_1().has_nan_impl( level ) || block_2().has_nan_impl( level );
+        return block_1().has_nan_impl() || block_2().has_nan_impl();
     }
 
     void swap_impl( VectorQ1IsoQ2Q1& other )
@@ -67,11 +75,10 @@ class VectorQ1IsoQ2Q1
 
     void add_mask_data(
         const grid::Grid4DDataScalar< unsigned char >& mask_data_block_1,
-        const grid::Grid4DDataScalar< unsigned char >& mask_data_block_2,
-        int                                            level )
+        const grid::Grid4DDataScalar< unsigned char >& mask_data_block_2 )
     {
-        block_1().add_mask_data( mask_data_block_1, level );
-        block_2().add_mask_data( mask_data_block_2, level );
+        block_1().mask_data() = mask_data_block_1;
+        block_2().mask_data() = mask_data_block_2;
     }
 
     const Block1Type& block_1() const { return u_; }

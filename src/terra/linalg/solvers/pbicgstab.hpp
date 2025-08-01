@@ -43,27 +43,26 @@ class PBiCGStab
         OperatorType&                                          A,
         SolutionVectorType&                                    x,
         const RHSVectorType&                                   b,
-        int                                                    level,
         std::optional< std::reference_wrapper< util::Table > > statistics )
     {
-        linalg::randomize( r_shadow(), level );
+        linalg::randomize( r_shadow() );
 
         for ( int j = 0; j < l_ + 1; ++j )
         {
-            assign( us( j ), 0, level );
+            assign( us( j ), 0 );
         }
 
-        apply( A, x, residual(), level );
-        lincomb( residual(), { 1.0, -1.0 }, { b, residual() }, level );
+        apply( A, x, residual() );
+        lincomb( residual(), { 1.0, -1.0 }, { b, residual() } );
 
         if constexpr ( !std::is_same_v< PreconditionerT, IdentitySolver< OperatorT > > )
         {
-            assign( tmp_prec(), residual(), level );
-            solve( A, tmp_prec(), residual(), level );
-            assign( residual(), tmp_prec(), level );
+            assign( tmp_prec(), residual() );
+            solve( A, tmp_prec(), residual() );
+            assign( residual(), tmp_prec() );
         }
 
-        const ScalarType initial_residual = std::sqrt( dot( residual(), residual(), level ) );
+        const ScalarType initial_residual = std::sqrt( dot( residual(), residual() ) );
 
         ScalarType absolute_residual = initial_residual;
         ScalarType relative_residual = 1.0;
@@ -114,41 +113,41 @@ class PBiCGStab
 
             for ( int j = 0; j < l_; ++j )
             {
-                auto rho  = dot( r_shadow(), rs( j ), level );
+                auto rho  = dot( r_shadow(), rs( j ) );
                 auto beta = rho / sigma;
 
                 for ( int i = 0; i <= j; ++i )
                 {
-                    lincomb( us( i ), { 1.0, -beta }, { rs( i ), us( i ) }, level );
+                    lincomb( us( i ), { 1.0, -beta }, { rs( i ), us( i ) } );
                 }
 
-                apply( A, us( j ), us( j + 1 ), level );
+                apply( A, us( j ), us( j + 1 ) );
 
                 if constexpr ( !std::is_same_v< PreconditionerT, IdentitySolver< OperatorT > > )
                 {
-                    assign( tmp_prec(), us( j + 1 ), level );
-                    solve( A, tmp_prec(), us( j + 1 ), level );
-                    assign( us( j + 1 ), tmp_prec(), level );
+                    assign( tmp_prec(), us( j + 1 ) );
+                    solve( A, tmp_prec(), us( j + 1 ) );
+                    assign( us( j + 1 ), tmp_prec() );
                 }
 
-                sigma      = dot( r_shadow(), us( j + 1 ), level );
+                sigma      = dot( r_shadow(), us( j + 1 ) );
                 auto alpha = rho / sigma;
 
                 for ( int i = 0; i <= j; ++i )
                 {
-                    lincomb( rs( i ), { 1.0, -alpha }, { rs( i ), us( i + 1 ) }, level );
+                    lincomb( rs( i ), { 1.0, -alpha }, { rs( i ), us( i + 1 ) } );
                 }
 
-                apply( A, rs( j ), rs( j + 1 ), level );
+                apply( A, rs( j ), rs( j + 1 ) );
 
                 if constexpr ( !std::is_same_v< PreconditionerT, IdentitySolver< OperatorT > > )
                 {
-                    assign( tmp_prec(), rs( j + 1 ), level );
-                    solve( A, tmp_prec(), rs( j + 1 ), level );
-                    assign( rs( j + 1 ), tmp_prec(), level );
+                    assign( tmp_prec(), rs( j + 1 ) );
+                    solve( A, tmp_prec(), rs( j + 1 ) );
+                    assign( rs( j + 1 ), tmp_prec() );
                 }
 
-                lincomb( x, { 1.0, alpha }, { x, us( 0 ) }, level );
+                lincomb( x, { 1.0, alpha }, { x, us( 0 ) } );
             }
 
             // MR part
@@ -157,14 +156,14 @@ class PBiCGStab
 
             for ( int j = 1; j < l_ + 1; j++ )
             {
-                M0( j - 1 ) = dot( rs( 0 ), rs( j ), level );
+                M0( j - 1 ) = dot( rs( 0 ), rs( j ) );
             }
 
             for ( int i = 0; i < l_; i++ )
             {
                 for ( int j = 0; j < l_; j++ )
                 {
-                    M( i, j ) = dot( rs( i + 1 ), rs( j + 1 ), level );
+                    M( i, j ) = dot( rs( i + 1 ), rs( j + 1 ) );
                 }
             }
 
@@ -172,22 +171,22 @@ class PBiCGStab
 
             for ( int j = 1; j < l_ + 1; ++j )
             {
-                lincomb( us( 0 ), { 1.0, -gamma( j - 1 ) }, { us( 0 ), us( j ) }, level );
+                lincomb( us( 0 ), { 1.0, -gamma( j - 1 ) }, { us( 0 ), us( j ) } );
             }
 
             for ( int j = 0; j < l_; ++j )
             {
-                lincomb( x, { 1.0, gamma( j ) }, { x, rs( j ) }, level );
+                lincomb( x, { 1.0, gamma( j ) }, { x, rs( j ) } );
             }
 
             for ( int j = 1; j < l_ + 1; ++j )
             {
-                lincomb( rs( 0 ), { 1.0, -gamma( j - 1 ) }, { rs( 0 ), rs( j ) }, level );
+                lincomb( rs( 0 ), { 1.0, -gamma( j - 1 ) }, { rs( 0 ), rs( j ) } );
             }
 
             omega = gamma( l_ - 1 );
 
-            absolute_residual = std::sqrt( dot( residual(), residual(), level ) );
+            absolute_residual = std::sqrt( dot( residual(), residual() ) );
 
             relative_residual = absolute_residual / initial_residual;
 

@@ -29,6 +29,9 @@ using grid::Grid4DDataVec;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using linalg::VectorQ1Scalar;
+using linalg::VectorQ1Vec;
+using util::MaskType;
 
 struct SolutionInterpolator
 {
@@ -70,39 +73,33 @@ struct SolutionInterpolator
 
 void test( int level, int timesteps, double dt, util::Table& table, double l2_error_threshold )
 {
-    Kokkos::Timer timer;
-
     using ScalarType = double;
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
 
-    auto T        = linalg::allocate_vector_q1_scalar< ScalarType >( "T", domain, level );
-    auto T_prev   = linalg::allocate_vector_q1_scalar< ScalarType >( "T_prev", domain, level );
-    auto u        = linalg::allocate_vector_q1_vec< ScalarType, 3 >( "u", domain, level );
-    auto f        = linalg::allocate_vector_q1_scalar< ScalarType >( "f", domain, level );
-    auto solution = linalg::allocate_vector_q1_scalar< ScalarType >( "solution", domain, level );
-    auto error    = linalg::allocate_vector_q1_scalar< ScalarType >( "error", domain, level );
+    const auto max_level = domain.domain_info().subdomain_max_refinement_level();
+    std::cout << "Max level: " << max_level << std::endl;
 
-    auto mask_data = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
+    auto mask_data = linalg::setup_mask_data( domain );
 
-    linalg::setup_mask_data( domain, mask_data );
+    VectorQ1Scalar< ScalarType > T( "T", domain, mask_data );
+    VectorQ1Scalar< ScalarType > T_prev( "T_prev", domain, mask_data );
+    VectorQ1Scalar< ScalarType > f( "f", domain, mask_data );
+    VectorQ1Scalar< ScalarType > solution( "solution", domain, mask_data );
+    VectorQ1Scalar< ScalarType > error( "error", domain, mask_data );
 
-    T.add_mask_data( mask_data, level );
-    T_prev.add_mask_data( mask_data, level );
-    u.add_mask_data( mask_data, level );
-    f.add_mask_data( mask_data, level );
-    solution.add_mask_data( mask_data, level );
-    error.add_mask_data( mask_data, level );
+    VectorQ1Vec< ScalarType, 3 > u( "u", domain, mask_data );
 
-    std::vector< linalg::VectorQ1Scalar< double > > tmps;
+    u.mask_data() = mask_data;
+
+    std::vector< VectorQ1Scalar< double > > tmps;
     for ( int i = 0; i < 8; ++i )
     {
-        tmps.emplace_back( linalg::allocate_vector_q1_scalar< ScalarType >( "tmpp", domain, level ) );
-        tmps[i].add_mask_data( mask_data, level );
+        tmps.emplace_back( "tmpp", domain, mask_data );
     }
 
-    linalg::assign( tmps[0], 1.0, level );
-    const auto num_dofs = linalg::dot( tmps[0], tmps[0], level );
+    linalg::assign( tmps[0], 1.0 );
+    const auto num_dofs = linalg::dot( tmps[0], tmps[0] );
     std::cout << "Number of dofs: " << num_dofs << std::endl;
 
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
@@ -126,7 +123,7 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
     Kokkos::parallel_for(
         "initial temp interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, T.grid_data( level ), 0.0, false ) );
+        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, T.grid_data(), 0.0, false ) );
 
     Kokkos::fence();
 
@@ -142,8 +139,8 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
             subdomain_radii,
             "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( 0 ) + ".vtu",
             false );
-        vtk_after.add_scalar_field( T.grid_data( level ) );
-        vtk_after.add_vector_field( u.grid_data( level ) );
+        vtk_after.add_scalar_field( T.grid_data() );
+        vtk_after.add_vector_field( u.grid_data() );
         vtk_after.write();
     }
 
@@ -151,30 +148,29 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
 
     for ( int ts = 1; ts <= 1; ++ts )
     {
-        linalg::assign( T_prev, T, level );
+        linalg::assign( T_prev, T );
 
-        linalg::apply( M, T, f, level );
+        linalg::apply( M, T, f );
 
         auto& g = tmps[0];
-        assign( g, 0.0, level );
+        assign( g, 0.0 );
         Kokkos::parallel_for(
             "boundary temp interpolation",
             local_domain_md_range_policy_nodes( domain ),
-            SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data( level ), dt * ts, true ) );
+            SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), dt * ts, true ) );
 
         fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-            A_bdf1_neumann, A_bdf1_neumann_diag, g, tmps[1], f, mask_data, level, grid::shell::mask_domain_boundary() );
+            A_bdf1_neumann, A_bdf1_neumann_diag, g, tmps[1], f, mask_data, grid::shell::mask_domain_boundary() );
 
-        linalg::solvers::solve( bicgstab, A_bdf1, T, f, level, table );
+        linalg::solvers::solve( bicgstab, A_bdf1, T, f, table );
 
         Kokkos::parallel_for(
             "solution interpolation",
             local_domain_md_range_policy_nodes( domain ),
-            SolutionInterpolator(
-                subdomain_shell_coords, subdomain_radii, solution.grid_data( level ), dt * ts, false ) );
+            SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data(), dt * ts, false ) );
 
-        linalg::lincomb( error, { 1.0, -1.0 }, { T, solution }, level );
-        l2_error = std::sqrt( dot( error, error, level ) / num_dofs );
+        linalg::lincomb( error, { 1.0, -1.0 }, { T, solution } );
+        l2_error = std::sqrt( dot( error, error ) / num_dofs );
 
         if ( true )
         {
@@ -191,42 +187,41 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
                 subdomain_radii,
                 "heat_level_" + std::to_string( level ) + "_ts_" + std::to_string( ts ) + ".vtu",
                 false );
-            vtk_after.add_scalar_field( T.grid_data( level ) );
-            vtk_after.add_scalar_field( solution.grid_data( level ) );
-            vtk_after.add_scalar_field( error.grid_data( level ) );
+            vtk_after.add_scalar_field( T.grid_data() );
+            vtk_after.add_scalar_field( solution.grid_data() );
+            vtk_after.add_scalar_field( error.grid_data() );
             vtk_after.write();
         }
     }
 
     for ( int ts = 2; ts <= timesteps; ++ts )
     {
-        linalg::apply( M, T_prev, tmps[0], level );
-        linalg::apply( M, T, tmps[1], level );
+        linalg::apply( M, T_prev, tmps[0] );
+        linalg::apply( M, T, tmps[1] );
 
-        linalg::lincomb( f, { 2.0, -0.5 }, { tmps[1], tmps[0] }, level );
+        linalg::lincomb( f, { 2.0, -0.5 }, { tmps[1], tmps[0] } );
 
-        linalg::assign( T_prev, T, level );
+        linalg::assign( T_prev, T );
 
         auto& g = tmps[0];
-        assign( g, 0.0, level );
+        assign( g, 0.0 );
         Kokkos::parallel_for(
             "boundary temp interpolation",
             local_domain_md_range_policy_nodes( domain ),
-            SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data( level ), dt * ts, true ) );
+            SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), dt * ts, true ) );
 
         fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-            A_bdf2_neumann, A_bdf2_neumann_diag, g, tmps[1], f, mask_data, level, grid::shell::mask_domain_boundary() );
+            A_bdf2_neumann, A_bdf2_neumann_diag, g, tmps[1], f, mask_data, grid::shell::mask_domain_boundary() );
 
-        linalg::solvers::solve( bicgstab, A_bdf2, T, f, level, table );
+        linalg::solvers::solve( bicgstab, A_bdf2, T, f, table );
 
         Kokkos::parallel_for(
             "solution interpolation",
             local_domain_md_range_policy_nodes( domain ),
-            SolutionInterpolator(
-                subdomain_shell_coords, subdomain_radii, solution.grid_data( level ), dt * ts, false ) );
+            SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data(), dt * ts, false ) );
 
-        linalg::lincomb( error, { 1.0, -1.0 }, { T, solution }, level );
-        l2_error = std::sqrt( dot( error, error, level ) / num_dofs );
+        linalg::lincomb( error, { 1.0, -1.0 }, { T, solution } );
+        l2_error = std::sqrt( dot( error, error ) / num_dofs );
 
         if ( true )
         {
@@ -243,9 +238,9 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
                 subdomain_radii,
                 "heat_level_" + std::to_string( level ) + "_ts_" + std::to_string( ts ) + ".vtu",
                 false );
-            vtk_after.add_scalar_field( T.grid_data( level ) );
-            vtk_after.add_scalar_field( solution.grid_data( level ) );
-            vtk_after.add_scalar_field( error.grid_data( level ) );
+            vtk_after.add_scalar_field( T.grid_data() );
+            vtk_after.add_scalar_field( solution.grid_data() );
+            vtk_after.add_scalar_field( error.grid_data() );
             vtk_after.write();
         }
     }

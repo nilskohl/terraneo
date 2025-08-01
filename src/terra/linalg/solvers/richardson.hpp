@@ -24,14 +24,13 @@ class Richardson
         OperatorType&                                          A,
         SolutionVectorType&                                    x,
         const RHSVectorType&                                   b,
-        int                                                    level,
         std::optional< std::reference_wrapper< util::Table > > statistics )
     {
         for ( int iteration = 0; iteration < iterations_; ++iteration )
         {
-            assign( r_, 0, level );
-            apply( A, x, r_, level );
-            lincomb( x, { 1.0, omega_, -omega_ }, { x, b, r_ }, level );
+            assign( r_, 0 );
+            apply( A, x, r_ );
+            lincomb( x, { 1.0, omega_, -omega_ }, { x, b, r_ } );
         }
     }
 

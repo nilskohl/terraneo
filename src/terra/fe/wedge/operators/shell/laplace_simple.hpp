@@ -56,17 +56,16 @@ class LaplaceSimple
     void apply_impl(
         const SrcVectorType&                    src,
         DstVectorType&                          dst,
-        int                                     level,
         const linalg::OperatorApplyMode         operator_apply_mode,
         const linalg::OperatorCommunicationMode operator_communication_mode )
     {
         if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
         {
-            assign( dst, 0, level );
+            assign( dst, 0 );
         }
 
-        src_ = src.grid_data( level );
-        dst_ = dst.grid_data( level );
+        src_ = src.grid_data();
+        dst_ = dst.grid_data();
 
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
 
@@ -97,10 +96,10 @@ class LaplaceSimple
         constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
 
         dense::Vec< double, 3 > quad_points[num_quad_points];
-        double quad_weights[num_quad_points];
+        double                  quad_weights[num_quad_points];
 
         quadrature::quad_felippa_1x1_quad_points( quad_points );
-        quadrature::quad_felippa_1x1_quad_weights(quad_weights);
+        quadrature::quad_felippa_1x1_quad_weights( quad_weights );
 
         // Compute the local element matrix.
         dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};

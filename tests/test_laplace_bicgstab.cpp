@@ -26,6 +26,7 @@ using grid::Grid4DDataScalar;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using linalg::VectorQ1Scalar;
 
 struct SolutionInterpolator
 {
@@ -140,37 +141,30 @@ double test( int level, util::Table& table )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
 
-    auto u        = linalg::allocate_vector_q1_scalar< ScalarType >( "u", domain, level );
-    auto g        = linalg::allocate_vector_q1_scalar< ScalarType >( "g", domain, level );
-    auto Adiagg   = linalg::allocate_vector_q1_scalar< ScalarType >( "Adiagg", domain, level );
-    auto tmp      = linalg::allocate_vector_q1_scalar< ScalarType >( "tmp", domain, level );
-    auto solution = linalg::allocate_vector_q1_scalar< ScalarType >( "solution", domain, level );
-    auto error    = linalg::allocate_vector_q1_scalar< ScalarType >( "error", domain, level );
-    auto b        = linalg::allocate_vector_q1_scalar< ScalarType >( "b", domain, level );
-    auto r        = linalg::allocate_vector_q1_scalar< ScalarType >( "r", domain, level );
+    auto mask_data = linalg::setup_mask_data( domain );
 
-    auto mask_data = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain );
+    VectorQ1Scalar< ScalarType > u( "u", domain, mask_data );
+    VectorQ1Scalar< ScalarType > g( "g", domain, mask_data );
+    VectorQ1Scalar< ScalarType > Adiagg( "Adiagg", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp( "tmp", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_2( "tmp_2", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_3( "tmp_3", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_4( "tmp_4", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_5( "tmp_5", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_6( "tmp_6", domain, mask_data );
+    VectorQ1Scalar< ScalarType > tmp_7( "tmp_7", domain, mask_data );
+    VectorQ1Scalar< ScalarType > solution( "solution", domain, mask_data );
+    VectorQ1Scalar< ScalarType > error( "error", domain, mask_data );
+    VectorQ1Scalar< ScalarType > b( "b", domain, mask_data );
+    VectorQ1Scalar< ScalarType > r( "r", domain, mask_data );
 
-    linalg::setup_mask_data( domain, mask_data );
-
-    u.add_mask_data( mask_data, level );
-    g.add_mask_data( mask_data, level );
-    Adiagg.add_mask_data( mask_data, level );
-    tmp.add_mask_data( mask_data, level );
-    solution.add_mask_data( mask_data, level );
-    error.add_mask_data( mask_data, level );
-    b.add_mask_data( mask_data, level );
-    r.add_mask_data( mask_data, level );
-
-    std::vector< linalg::VectorQ1Scalar< double > > tmps;
+    std::vector< VectorQ1Scalar< double > > tmps;
     for ( int i = 0; i < 8; ++i )
     {
-        tmps.emplace_back( linalg::allocate_vector_q1_scalar< ScalarType >( "tmpp", domain, level ) );
-        tmps[i].add_mask_data( mask_data, level );
+        tmps.emplace_back( "tmpp", domain, mask_data );
     }
 
-    linalg::assign( tmp, 1.0, level );
-    const auto num_dofs = linalg::dot( tmp, tmp, level );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
 
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
     const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
@@ -189,7 +183,7 @@ double test( int level, util::Table& table )
     Kokkos::parallel_for(
         "solution interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data( level ), false ) );
+        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data(), false ) );
 
     Kokkos::fence();
 
@@ -197,7 +191,7 @@ double test( int level, util::Table& table )
     Kokkos::parallel_for(
         "boundary interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data( level ), true ) );
+        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), true ) );
 
     Kokkos::fence();
 
@@ -205,14 +199,14 @@ double test( int level, util::Table& table )
     Kokkos::parallel_for(
         "rhs interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data( level ) ) );
+        RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data() ) );
 
     Kokkos::fence();
 
-    linalg::apply( M, tmp, b, level );
+    linalg::apply( M, tmp, b );
 
     fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-        A_neumann, A_neumann_diag, g, tmp, b, mask_data, level, grid::shell::mask_domain_boundary() );
+        A_neumann, A_neumann_diag, g, tmp, b, mask_data, grid::shell::mask_domain_boundary() );
 
     Kokkos::fence();
 
@@ -223,21 +217,21 @@ double test( int level, util::Table& table )
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( bicgstab, A, u, b, level, table );
+    linalg::solvers::solve( bicgstab, A, u, b, table );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
-    linalg::lincomb( error, { 1.0, -1.0 }, { u, solution }, level );
-    const auto l2_error = std::sqrt( dot( error, error, level ) / num_dofs );
+    linalg::lincomb( error, { 1.0, -1.0 }, { u, solution } );
+    const auto l2_error = std::sqrt( dot( error, error ) / num_dofs );
 
     if ( false )
     {
         vtk::VTKOutput vtk_after(
             subdomain_shell_coords, subdomain_radii, "laplace_cg_level" + std::to_string( level ) + ".vtu", false );
-        vtk_after.add_scalar_field( g.grid_data( level ) );
-        vtk_after.add_scalar_field( u.grid_data( level ) );
-        vtk_after.add_scalar_field( solution.grid_data( level ) );
-        vtk_after.add_scalar_field( error.grid_data( level ) );
+        vtk_after.add_scalar_field( g.grid_data() );
+        vtk_after.add_scalar_field( u.grid_data() );
+        vtk_after.add_scalar_field( solution.grid_data() );
+        vtk_after.add_scalar_field( error.grid_data() );
 
         vtk_after.write();
     }

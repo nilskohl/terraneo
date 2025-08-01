@@ -70,20 +70,19 @@ class PMINRES
         OperatorType&                                          A,
         SolutionVectorType&                                    x,
         const RHSVectorType&                                   b,
-        int                                                    level,
         std::optional< std::reference_wrapper< util::Table > > statistics )
     {
-        assign( v_j_minus_1_, 0, level );
-        assign( w_j_, 0, level );
-        assign( w_j_minus_1_, 0, level );
+        assign( v_j_minus_1_, 0 );
+        assign( w_j_, 0 );
+        assign( w_j_minus_1_, 0 );
 
-        apply( A, x, v_j_, level );
-        lincomb( v_j_, { 1.0, -1.0 }, { b, v_j_ }, level );
+        apply( A, x, v_j_ );
+        lincomb( v_j_, { 1.0, -1.0 }, { b, v_j_ } );
 
-        solve( preconditioner_, A, z_, v_j_, level );
+        solve( preconditioner_, A, z_, v_j_ );
 
         ScalarType gamma_j_minus_1 = 1.0;
-        ScalarType gamma_j         = std::sqrt( dot( z_, v_j_, level ) );
+        ScalarType gamma_j         = std::sqrt( dot( z_, v_j_ ) );
 
         ScalarType eta         = gamma_j;
         ScalarType s_j_minus_1 = 0;
@@ -109,23 +108,19 @@ class PMINRES
 
         for ( int iteration = 1; iteration <= params_.max_iterations(); ++iteration )
         {
-            lincomb( z_, { 1.0 / gamma_j }, { z_ }, level );
+            lincomb( z_, { 1.0 / gamma_j }, { z_ } );
 
-            apply( A, z_, az_, level );
+            apply( A, z_, az_ );
 
-            const ScalarType delta = dot( az_, z_, level );
+            const ScalarType delta = dot( az_, z_ );
 
-            lincomb(
-                v_j_minus_1_,
-                { 1.0, -delta / gamma_j, -gamma_j / gamma_j_minus_1 },
-                { az_, v_j_, v_j_minus_1_ },
-                level );
+            lincomb( v_j_minus_1_, { 1.0, -delta / gamma_j, -gamma_j / gamma_j_minus_1 }, { az_, v_j_, v_j_minus_1_ } );
             swap( v_j_minus_1_, v_j_ );
 
-            assign( z_j_plus_1_, 0.0, level );
-            solve( preconditioner_, A, z_j_plus_1_, v_j_, level );
+            assign( z_j_plus_1_, 0.0 );
+            solve( preconditioner_, A, z_j_plus_1_, v_j_ );
 
-            const ScalarType gamma_j_plus_1 = std::sqrt( dot( z_j_plus_1_, v_j_, level ) );
+            const ScalarType gamma_j_plus_1 = std::sqrt( dot( z_j_plus_1_, v_j_ ) );
 
             const ScalarType alpha_0 = c_j * delta - c_j_minus_1 * s_j * gamma_j;
             const ScalarType alpha_1 = std::sqrt( alpha_0 * alpha_0 + gamma_j_plus_1 * gamma_j_plus_1 );
@@ -136,13 +131,10 @@ class PMINRES
             const ScalarType s_j_plus_1 = gamma_j_plus_1 / alpha_1;
 
             lincomb(
-                w_j_minus_1_,
-                { 1.0 / alpha_1, -alpha_3 / alpha_1, -alpha_2 / alpha_1 },
-                { z_, w_j_minus_1_, w_j_ },
-                level );
+                w_j_minus_1_, { 1.0 / alpha_1, -alpha_3 / alpha_1, -alpha_2 / alpha_1 }, { z_, w_j_minus_1_, w_j_ } );
             swap( w_j_minus_1_, w_j_ );
 
-            lincomb( x, { 1.0, c_j_plus_1 * eta }, { x, w_j_ }, level );
+            lincomb( x, { 1.0, c_j_plus_1 * eta }, { x, w_j_ } );
 
             eta = -s_j_plus_1 * eta;
 

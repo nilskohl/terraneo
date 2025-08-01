@@ -24,7 +24,6 @@ concept OperatorLike =
         T&                               self,
         const typename T::SrcVectorType& src,
         typename T::DstVectorType&       dst,
-        int                              level,
         dense::Vec< int, 2 >             block,
         OperatorApplyMode                operator_apply_mode,
         OperatorCommunicationMode        operator_communication_mode ) {
@@ -40,9 +39,7 @@ concept OperatorLike =
         // TODO: T& self is not const because having apply_impl const is not convenient - mostly because
         //       it is handy to reuse send/recv buffers that are members of an operator implementation.
         //       To modify these members (i.e., to communicate) we cannot be const :(
-        {
-            self.apply_impl( src, dst, level, operator_apply_mode, operator_communication_mode )
-        } -> std::same_as< void >;
+        { self.apply_impl( src, dst, operator_apply_mode, operator_communication_mode ) } -> std::same_as< void >;
     };
 
 template < typename T >
@@ -78,14 +75,13 @@ using DstOf = typename Operator::DstVectorType;
 
 template < OperatorLike Operator >
 void apply(
-    Operator&                A,
-    const SrcOf< Operator >& src,
-    DstOf< Operator >&       dst,
-    const int                level,
-    const OperatorApplyMode  operator_apply_mode = OperatorApplyMode::Replace,
+    Operator&                       A,
+    const SrcOf< Operator >&        src,
+    DstOf< Operator >&              dst,
+    const OperatorApplyMode         operator_apply_mode         = OperatorApplyMode::Replace,
     const OperatorCommunicationMode operator_communication_mode = OperatorCommunicationMode::CommunicateAdditively )
 {
-    A.apply_impl( src, dst, level, operator_apply_mode, operator_communication_mode );
+    A.apply_impl( src, dst, operator_apply_mode, operator_communication_mode );
 }
 
 namespace detail {
@@ -100,13 +96,11 @@ class DummyOperator
     void apply_impl(
         const SrcVectorType&            src,
         DstVectorType&                  dst,
-        const int                       level,
         const OperatorApplyMode         operator_apply_mode,
         const OperatorCommunicationMode operator_communication_mode ) const
     {
         (void) src;
         (void) dst;
-        (void) level;
         (void) operator_apply_mode;
         (void) operator_communication_mode;
     }
@@ -121,13 +115,11 @@ class DummyConcreteOperator
     void apply_impl(
         const SrcVectorType&            src,
         DstVectorType&                  dst,
-        const int                       level,
         const OperatorApplyMode         operator_apply_mode,
         const OperatorCommunicationMode operator_communication_mode ) const
     {
         (void) src;
         (void) dst;
-        (void) level;
         (void) operator_apply_mode;
         (void) operator_communication_mode;
     }
@@ -147,13 +139,11 @@ class DummyConcreteBlock2x2Operator
     void apply_impl(
         const SrcVectorType&            src,
         DstVectorType&                  dst,
-        const int                       level,
         const OperatorApplyMode         operator_apply_mode,
         const OperatorCommunicationMode operator_communication_mode ) const
     {
         (void) src;
         (void) dst;
-        (void) level;
         (void) operator_apply_mode;
         (void) operator_communication_mode;
     }

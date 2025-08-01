@@ -20,7 +20,6 @@ concept SolverLike = requires(
     typename T::OperatorType&                              A,
     typename T::OperatorType::SrcVectorType&               x,
     const typename T::OperatorType::DstVectorType&         b,
-    const int                                              level,
     std::optional< std::reference_wrapper< util::Table > > statistics ) {
     // Require exposing the operator type.
     typename T::OperatorType;
@@ -28,7 +27,7 @@ concept SolverLike = requires(
     // Require that the operator type satisfy OperatorLike
     requires OperatorLike< typename T::OperatorType >;
 
-    { self.solve_impl( A, x, b, level, statistics ) } -> std::same_as< void >;
+    { self.solve_impl( A, x, b, statistics ) } -> std::same_as< void >;
 };
 
 template < SolverLike Solver >
@@ -38,21 +37,15 @@ template < SolverLike Solver >
 using RHSOf = DstOf< typename Solver::OperatorType >;
 
 template < SolverLike Solver, OperatorLike Operator, VectorLike SolutionVector, VectorLike RHSVector >
-void solve(
-    Solver&          solver,
-    Operator&        A,
-    SolutionVector&  x,
-    const RHSVector& b,
-    const int        level,
-    util::Table&     statistics )
+void solve( Solver& solver, Operator& A, SolutionVector& x, const RHSVector& b, util::Table& statistics )
 {
-    solver.solve_impl( A, x, b, level, std::optional( std::reference_wrapper( statistics ) ) );
+    solver.solve_impl( A, x, b, std::optional( std::reference_wrapper( statistics ) ) );
 }
 
 template < SolverLike Solver, OperatorLike Operator, VectorLike SolutionVector, VectorLike RHSVector >
-void solve( Solver& solver, Operator& A, SolutionVector& x, const RHSVector& b, const int level )
+void solve( Solver& solver, Operator& A, SolutionVector& x, const RHSVector& b )
 {
-    solver.solve_impl( A, x, b, level, std::nullopt );
+    solver.solve_impl( A, x, b, std::nullopt );
 }
 
 namespace detail {
@@ -70,13 +63,11 @@ class DummySolver
         const OperatorType&                                    A,
         SolutionVectorType&                                    x,
         const RHSVectorType&                                   b,
-        const int                                              level,
         std::optional< std::reference_wrapper< util::Table > > statistics ) const
     {
         (void) A;
         (void) x;
         (void) b;
-        (void) level;
         (void) statistics;
     }
 };

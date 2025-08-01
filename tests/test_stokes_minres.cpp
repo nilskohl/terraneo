@@ -30,6 +30,9 @@ using grid::Grid4DDataVec;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using linalg::VectorQ1IsoQ2Q1;
+using linalg::VectorQ1Scalar;
+using linalg::VectorQ1Vec;
 
 #define SOLUTION_TYPE 1
 
@@ -210,31 +213,6 @@ struct SetOnBoundary
 
 std::pair< double, double > test( int level, util::Table& table )
 {
-    /**
-
-    Boundary handling notes.
-
-    Using inhom boundary conditions we approach the elimination as follows (for the moment).
-
-    Let A be the "Neumann" operator, i.e., we do not treat the boundaries any differently.
-
-    1. Interpolate Dirichlet boundary conditions into g.
-    2. Compute g_A <- A       * g.
-    3. Compute g_D <- diag(A) * g.
-    4. Set the rhs to b = f - g_A.
-    5. Set the rhs at the boundary nodes to g_D.
-    6. Solve
-            A_elim x = b
-       where A_elim is A but with all off-diagonal entries in the same row/col as a boundary node set to zero.
-       In a matrix-free context, we have to adapt the element matrix A_local accordingly by (symmetrically) zeroing
-       out all the off-diagonals (row and col) that correspond to a boundary node. But we keep the diagonal intact.
-       We still have diag(A) == diag(A_elim).
-    7. x is the solution of the original problem. No boundary correction should be necessary.
-
-    **/
-
-    Kokkos::Timer timer;
-
     using ScalarType = double;
 
     const auto domain_fine   = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
@@ -248,51 +226,30 @@ std::pair< double, double > test( int level, util::Table& table )
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain_coarse );
     const auto subdomain_coarse_radii = terra::grid::shell::subdomain_shell_radii( domain_coarse );
 
+    auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
+    auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
+
     // K w = b
 
-    auto w      = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "w", domain_fine, domain_coarse, level );
-    auto g      = linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "g", domain_fine, domain_coarse, level );
-    auto Kdiagg = linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "Adiagg", domain_fine, domain_coarse, level );
-    auto tmp    = linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "tmp", domain_fine, domain_coarse, level );
-    auto solution =
-        linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "solution", domain_fine, domain_coarse, level );
-    auto error = linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "error", domain_fine, domain_coarse, level );
-    auto b     = linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "b", domain_fine, domain_coarse, level );
-    auto r     = linalg::allocate_vector_q1isoq2_q1< ScalarType, 3 >( "r", domain_fine, domain_coarse, level );
+    VectorQ1IsoQ2Q1< ScalarType > w( "w", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > g( "g", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > Kdiagg( "Kdiagg", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp( "tmp", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > solution( "solution", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > error( "error", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > b( "b", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > r( "r", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
 
-    auto tmp_0 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_0", domain_fine, domain_coarse, level );
-    auto tmp_1 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_1", domain_fine, domain_coarse, level );
-    auto tmp_2 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_2", domain_fine, domain_coarse, level );
-    auto tmp_3 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_3", domain_fine, domain_coarse, level );
-    auto tmp_4 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_4", domain_fine, domain_coarse, level );
-    auto tmp_5 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_5", domain_fine, domain_coarse, level );
-    auto tmp_6 = linalg::allocate_vector_q1isoq2_q1< ScalarType >( "tmp_6", domain_fine, domain_coarse, level );
-
-    auto mask_data_fine   = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain_fine );
-    auto mask_data_coarse = grid::shell::allocate_scalar_grid< unsigned char >( "mask_data", domain_coarse );
-
-    linalg::setup_mask_data( domain_fine, mask_data_fine );
-    linalg::setup_mask_data( domain_coarse, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_0( "tmp_0", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_1( "tmp_1", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_2( "tmp_2", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_3( "tmp_3", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_4( "tmp_4", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_5( "tmp_5", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
+    VectorQ1IsoQ2Q1< ScalarType > tmp_6( "tmp_6", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
 
     const auto num_dofs_velocity = 3 * kernels::common::count_masked< long >( mask_data_fine, grid::mask_owned() );
     const auto num_dofs_pressure = kernels::common::count_masked< long >( mask_data_coarse, grid::mask_owned() );
-
-    w.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    b.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    Kdiagg.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    solution.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    error.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    b.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    r.add_mask_data( mask_data_fine, mask_data_coarse, level );
-
-    tmp_0.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp_1.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp_2.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp_3.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp_4.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp_5.add_mask_data( mask_data_fine, mask_data_coarse, level );
-    tmp_6.add_mask_data( mask_data_fine, mask_data_coarse, level );
 
     using Stokes = fe::wedge::operators::shell::Stokes< ScalarType >;
 
@@ -309,41 +266,40 @@ std::pair< double, double > test( int level, util::Table& table )
         "solution interpolation",
         local_domain_md_range_policy_nodes( domain_fine ),
         SolutionVelocityInterpolator(
-            subdomain_fine_shell_coords, subdomain_fine_radii, solution.block_1().grid_data( level ), false ) );
+            subdomain_fine_shell_coords, subdomain_fine_radii, solution.block_1().grid_data(), false ) );
 
     Kokkos::parallel_for(
         "solution interpolation",
         local_domain_md_range_policy_nodes( domain_coarse ),
         SolutionPressureInterpolator(
-            subdomain_coarse_shell_coords, subdomain_coarse_radii, solution.block_2().grid_data( level ), false ) );
+            subdomain_coarse_shell_coords, subdomain_coarse_radii, solution.block_2().grid_data(), false ) );
 
     // Set up boundary data.
     Kokkos::parallel_for(
         "boundary interpolation",
         local_domain_md_range_policy_nodes( domain_fine ),
         SolutionVelocityInterpolator(
-            subdomain_fine_shell_coords, subdomain_fine_radii, g.block_1().grid_data( level ), true ) );
+            subdomain_fine_shell_coords, subdomain_fine_radii, g.block_1().grid_data(), true ) );
 
     // Set up rhs data.
     Kokkos::parallel_for(
         "rhs interpolation",
         local_domain_md_range_policy_nodes( domain_fine ),
-        RHSVelocityInterpolator(
-            subdomain_fine_shell_coords, subdomain_fine_radii, tmp.block_1().grid_data( level ) ) );
+        RHSVelocityInterpolator( subdomain_fine_shell_coords, subdomain_fine_radii, tmp.block_1().grid_data() ) );
 
-    linalg::apply( M, tmp.block_1(), b.block_1(), level );
+    linalg::apply( M, tmp.block_1(), b.block_1() );
 
-    linalg::apply( K_neumann_diag, g, Kdiagg, level );
-    linalg::apply( K_neumann, g, tmp, level );
+    linalg::apply( K_neumann_diag, g, Kdiagg );
+    linalg::apply( K_neumann, g, tmp );
 
-    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp }, level );
+    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp } );
 
     Kokkos::parallel_for(
         "set on boundary",
         grid::shell::local_domain_md_range_policy_nodes( domain_fine ),
         SetOnBoundary(
-            Kdiagg.block_1().grid_data( level ),
-            b.block_1().grid_data( level ),
+            Kdiagg.block_1().grid_data(),
+            b.block_1().grid_data(),
             domain_fine.domain_info().subdomain_num_nodes_radially() ) );
 
     linalg::solvers::IterativeSolverParameters solver_params{ 3000, 1e-8, 1e-12 };
@@ -351,30 +307,29 @@ std::pair< double, double > test( int level, util::Table& table )
     linalg::solvers::PMINRES< Stokes > pminres( solver_params, tmp_0, tmp_1, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6 );
     pminres.set_tag( "pminres_solver_level_" + std::to_string( level ) );
 
-    solve( pminres, K, w, b, level, table );
+    solve( pminres, K, w, b, table );
 
     const double avg_pressure_solution =
         kernels::common::masked_sum(
-            solution.block_2().grid_data( level ), solution.block_2().mask_data( level ), grid::mask_owned() ) /
+            solution.block_2().grid_data(), solution.block_2().mask_data(), grid::mask_owned() ) /
         num_dofs_pressure;
     const double avg_pressure_approximation =
-        kernels::common::masked_sum(
-            w.block_2().grid_data( level ), w.block_2().mask_data( level ), grid::mask_owned() ) /
+        kernels::common::masked_sum( w.block_2().grid_data(), w.block_2().mask_data(), grid::mask_owned() ) /
         num_dofs_pressure;
 
-    linalg::lincomb( solution.block_2(), { 1.0 }, { solution.block_2() }, -avg_pressure_solution, level );
-    linalg::lincomb( w.block_2(), { 1.0 }, { w.block_2() }, -avg_pressure_approximation, level );
+    linalg::lincomb( solution.block_2(), { 1.0 }, { solution.block_2() }, -avg_pressure_solution );
+    linalg::lincomb( w.block_2(), { 1.0 }, { w.block_2() }, -avg_pressure_approximation );
 
-    linalg::apply( K, w, tmp_6, level );
-    linalg::lincomb( r, { 1.0, -1.0 }, { b, tmp_6 }, level );
-    const auto inf_residual_vel = linalg::inf_norm( r.block_1(), level );
-    const auto inf_residual_pre = linalg::inf_norm( r.block_2(), level );
+    linalg::apply( K, w, tmp_6 );
+    linalg::lincomb( r, { 1.0, -1.0 }, { b, tmp_6 } );
+    const auto inf_residual_vel = linalg::inf_norm( r.block_1() );
+    const auto inf_residual_pre = linalg::inf_norm( r.block_2() );
 
-    linalg::lincomb( error, { 1.0, -1.0 }, { w, solution }, level );
+    linalg::lincomb( error, { 1.0, -1.0 }, { w, solution } );
     const auto l2_error_velocity =
-        std::sqrt( dot( error.block_1(), error.block_1(), level ) / static_cast< double >( num_dofs_velocity ) );
+        std::sqrt( dot( error.block_1(), error.block_1() ) / static_cast< double >( num_dofs_velocity ) );
     const auto l2_error_pressure =
-        std::sqrt( dot( error.block_2(), error.block_2(), level ) / static_cast< double >( num_dofs_pressure ) );
+        std::sqrt( dot( error.block_2(), error.block_2() ) / static_cast< double >( num_dofs_pressure ) );
 
     table.add_row(
         { { "level", level },
@@ -399,20 +354,20 @@ std::pair< double, double > test( int level, util::Table& table )
             "test_stokes_minres_coarse_" + std::to_string( level ) + ".vtu",
             false );
 
-        vtk_fine.add_vector_field( w.block_1().grid_data( level ) );
-        vtk_coarse.add_scalar_field( w.block_2().grid_data( level ) );
+        vtk_fine.add_vector_field( w.block_1().grid_data() );
+        vtk_coarse.add_scalar_field( w.block_2().grid_data() );
 
-        vtk_fine.add_vector_field( solution.block_1().grid_data( level ) );
-        vtk_coarse.add_scalar_field( solution.block_2().grid_data( level ) );
+        vtk_fine.add_vector_field( solution.block_1().grid_data() );
+        vtk_coarse.add_scalar_field( solution.block_2().grid_data() );
 
-        vtk_fine.add_vector_field( error.block_1().grid_data( level ) );
-        vtk_coarse.add_scalar_field( error.block_2().grid_data( level ) );
+        vtk_fine.add_vector_field( error.block_1().grid_data() );
+        vtk_coarse.add_scalar_field( error.block_2().grid_data() );
 
-        vtk_fine.add_vector_field( b.block_1().grid_data( level ) );
-        vtk_coarse.add_scalar_field( b.block_2().grid_data( level ) );
+        vtk_fine.add_vector_field( b.block_1().grid_data() );
+        vtk_coarse.add_scalar_field( b.block_2().grid_data() );
 
-        vtk_fine.add_vector_field( r.block_1().grid_data( level ) );
-        vtk_coarse.add_scalar_field( r.block_2().grid_data( level ) );
+        vtk_fine.add_vector_field( r.block_1().grid_data() );
+        vtk_coarse.add_scalar_field( r.block_2().grid_data() );
 
         vtk_fine.write();
         vtk_coarse.write();
