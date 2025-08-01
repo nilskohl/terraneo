@@ -17,17 +17,16 @@ concept SolverLike = requires(
     // TODO: Cannot make solver const since we may have temporaries as members.
     T& self,
     // TODO: See OperatorLike for why A is not const.
-    typename T::OperatorType&                              A,
-    typename T::OperatorType::SrcVectorType&               x,
-    const typename T::OperatorType::DstVectorType&         b,
-    std::optional< std::reference_wrapper< util::Table > > statistics ) {
+    typename T::OperatorType&                      A,
+    typename T::OperatorType::SrcVectorType&       x,
+    const typename T::OperatorType::DstVectorType& b ) {
     // Require exposing the operator type.
     typename T::OperatorType;
 
     // Require that the operator type satisfy OperatorLike
     requires OperatorLike< typename T::OperatorType >;
 
-    { self.solve_impl( A, x, b, statistics ) } -> std::same_as< void >;
+    { self.solve_impl( A, x, b ) } -> std::same_as< void >;
 };
 
 template < SolverLike Solver >
@@ -37,15 +36,9 @@ template < SolverLike Solver >
 using RHSOf = DstOf< typename Solver::OperatorType >;
 
 template < SolverLike Solver, OperatorLike Operator, VectorLike SolutionVector, VectorLike RHSVector >
-void solve( Solver& solver, Operator& A, SolutionVector& x, const RHSVector& b, util::Table& statistics )
-{
-    solver.solve_impl( A, x, b, std::optional( std::reference_wrapper( statistics ) ) );
-}
-
-template < SolverLike Solver, OperatorLike Operator, VectorLike SolutionVector, VectorLike RHSVector >
 void solve( Solver& solver, Operator& A, SolutionVector& x, const RHSVector& b )
 {
-    solver.solve_impl( A, x, b, std::nullopt );
+    solver.solve_impl( A, x, b );
 }
 
 namespace detail {
@@ -59,16 +52,11 @@ class DummySolver
     using SolutionVectorType = SrcOf< OperatorType >;
     using RHSVectorType      = DstOf< OperatorType >;
 
-    void solve_impl(
-        const OperatorType&                                    A,
-        SolutionVectorType&                                    x,
-        const RHSVectorType&                                   b,
-        std::optional< std::reference_wrapper< util::Table > > statistics ) const
+    void solve_impl( const OperatorType& A, SolutionVectorType& x, const RHSVectorType& b ) const
     {
         (void) A;
         (void) x;
         (void) b;
-        (void) statistics;
     }
 };
 

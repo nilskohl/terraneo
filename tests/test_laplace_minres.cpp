@@ -109,7 +109,7 @@ struct SetOnBoundary
     }
 };
 
-double test( int level, util::Table& table )
+double test( int level, const std::shared_ptr< util::Table >& table )
 {
     Kokkos::Timer timer;
 
@@ -181,12 +181,12 @@ double test( int level, util::Table& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
-    linalg::solvers::PMINRES< Laplace > pminres( solver_params, tmp, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6, tmp_7 );
+    linalg::solvers::PMINRES< Laplace > pminres( solver_params, table, tmp, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6, tmp_7 );
     pminres.set_tag( "pminres_solver_level_" + std::to_string( level ) );
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( pminres, A, u, b, table );
+    linalg::solvers::solve( pminres, A, u, b );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
@@ -205,7 +205,7 @@ double test( int level, util::Table& table )
         vtk_after.write();
     }
 
-    table.add_row(
+    table->add_row(
         { { "level", level }, { "dofs", num_dofs }, { "l2_error", l2_error }, { "time_solver", time_solver } } );
 
     return l2_error;
@@ -215,7 +215,7 @@ int main( int argc, char** argv )
 {
     util::TerraScopeGuard scope_guard( &argc, &argv );
 
-    util::Table table;
+    auto table = std::make_shared< util::Table >();
 
     double prev_l2_error = 1.0;
 
@@ -225,7 +225,7 @@ int main( int argc, char** argv )
         timer.reset();
         double     l2_error   = test( level, table );
         const auto time_total = timer.seconds();
-        table.add_row( { { "level", level }, { "time_total", time_total } } );
+        table->add_row( { { "level", level }, { "time_total", time_total } } );
 
         if ( level > 1 )
         {
@@ -236,11 +236,11 @@ int main( int argc, char** argv )
                 return EXIT_FAILURE;
             }
 
-            table.add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
+            table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
         }
         prev_l2_error = l2_error;
     }
 
-    table.query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
-    table.query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
+    table->query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
+    table->query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
 }

@@ -211,7 +211,7 @@ struct SetOnBoundary
     }
 };
 
-std::pair< double, double > test( int level, util::Table& table )
+std::pair< double, double > test( int level, const std::shared_ptr< util::Table >& table )
 {
     using ScalarType = double;
 
@@ -304,10 +304,10 @@ std::pair< double, double > test( int level, util::Table& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 3000, 1e-8, 1e-12 };
 
-    linalg::solvers::PMINRES< Stokes > pminres( solver_params, tmp_0, tmp_1, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6 );
+    linalg::solvers::PMINRES< Stokes > pminres( solver_params, table, tmp_0, tmp_1, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6 );
     pminres.set_tag( "pminres_solver_level_" + std::to_string( level ) );
 
-    solve( pminres, K, w, b, table );
+    solve( pminres, K, w, b );
 
     const double avg_pressure_solution =
         kernels::common::masked_sum(
@@ -331,7 +331,7 @@ std::pair< double, double > test( int level, util::Table& table )
     const auto l2_error_pressure =
         std::sqrt( dot( error.block_2(), error.block_2() ) / static_cast< double >( num_dofs_pressure ) );
 
-    table.add_row(
+    table->add_row(
         { { "level", level },
           { "dofs_vel", num_dofs_velocity },
           { "l2_error_vel", l2_error_velocity },
@@ -380,7 +380,7 @@ int main( int argc, char** argv )
 {
     util::TerraScopeGuard scope_guard( &argc, &argv );
 
-    util::Table table( false );
+    auto table = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
@@ -392,7 +392,7 @@ int main( int argc, char** argv )
         timer.reset();
         const auto [l2_error_vel, l2_error_pre] = test( level, table );
         const auto time_total                   = timer.seconds();
-        table.add_row( { { "level", level }, { "time_total", time_total } } );
+        table->add_row( { { "level", level }, { "time_total", time_total } } );
 
         if ( level > 2 )
         {
@@ -412,14 +412,16 @@ int main( int argc, char** argv )
                 return EXIT_FAILURE;
             }
 
-            table.add_row( { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+            table->add_row( { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
         }
         prev_l2_error_vel = l2_error_vel;
         prev_l2_error_pre = l2_error_pre;
     }
 
-    table.query_not_none( "order_vel" ).select( { "level", "order_vel", "order_pre" } ).print_pretty();
-    table.query_not_none( "dofs_vel" ).select( { "level", "dofs_vel", "l2_error_vel", "l2_error_pre" } ).print_pretty();
+    table->query_not_none( "order_vel" ).select( { "level", "order_vel", "order_pre" } ).print_pretty();
+    table->query_not_none( "dofs_vel" )
+        .select( { "level", "dofs_vel", "l2_error_vel", "l2_error_pre" } )
+        .print_pretty();
 
     return 0;
 }

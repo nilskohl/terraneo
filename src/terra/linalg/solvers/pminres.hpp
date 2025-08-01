@@ -22,16 +22,18 @@ class PMINRES
     using ScalarType = typename SolutionVectorType::ScalarType;
 
     PMINRES(
-        const IterativeSolverParameters& params,
-        const RHSVectorType&             az_tmp,
-        const RHSVectorType&             v_j_minus_1_tmp,
-        const RHSVectorType&             v_j_tmp,
-        const SolutionVectorType&        w_j_minus_1_tmp,
-        const SolutionVectorType&        w_j_tmp,
-        const SolutionVectorType&        z_tmp,
-        const SolutionVectorType&        z_j_plus_1_tmp )
+        const IterativeSolverParameters&      params,
+        const std::shared_ptr< util::Table >& statistics,
+        const RHSVectorType&                  az_tmp,
+        const RHSVectorType&                  v_j_minus_1_tmp,
+        const RHSVectorType&                  v_j_tmp,
+        const SolutionVectorType&             w_j_minus_1_tmp,
+        const SolutionVectorType&             w_j_tmp,
+        const SolutionVectorType&             z_tmp,
+        const SolutionVectorType&             z_j_plus_1_tmp )
     : PMINRES(
           params,
+          statistics,
           az_tmp,
           v_j_minus_1_tmp,
           v_j_tmp,
@@ -43,17 +45,19 @@ class PMINRES
     {}
 
     PMINRES(
-        const IterativeSolverParameters& params,
-        const RHSVectorType&             az_tmp,
-        const RHSVectorType&             v_j_minus_1_tmp,
-        const RHSVectorType&             v_j_tmp,
-        const SolutionVectorType&        w_j_minus_1_tmp,
-        const SolutionVectorType&        w_j_tmp,
-        const SolutionVectorType&        z_tmp,
-        const SolutionVectorType&        z_j_plus_1_tmp,
-        const PreconditionerT            preconditioner )
+        const IterativeSolverParameters&      params,
+        const std::shared_ptr< util::Table >& statistics,
+        const RHSVectorType&                  az_tmp,
+        const RHSVectorType&                  v_j_minus_1_tmp,
+        const RHSVectorType&                  v_j_tmp,
+        const SolutionVectorType&             w_j_minus_1_tmp,
+        const SolutionVectorType&             w_j_tmp,
+        const SolutionVectorType&             z_tmp,
+        const SolutionVectorType&             z_j_plus_1_tmp,
+        const PreconditionerT                 preconditioner )
     : tag_( "pminres_solver" )
     , params_( params )
+    , statistics_( statistics )
     , az_( az_tmp )
     , v_j_minus_1_( v_j_minus_1_tmp )
     , v_j_( v_j_tmp )
@@ -66,11 +70,7 @@ class PMINRES
 
     void set_tag( const std::string& tag ) { tag_ = tag; }
 
-    void solve_impl(
-        OperatorType&                                          A,
-        SolutionVectorType&                                    x,
-        const RHSVectorType&                                   b,
-        std::optional< std::reference_wrapper< util::Table > > statistics )
+    void solve_impl( OperatorType& A, SolutionVectorType& x, const RHSVectorType& b )
     {
         assign( v_j_minus_1_, 0 );
         assign( w_j_, 0 );
@@ -92,9 +92,9 @@ class PMINRES
 
         const ScalarType initial_residual = gamma_j;
 
-        if ( statistics.has_value() )
+        if ( statistics_ )
         {
-            statistics->get().add_row(
+            statistics_->add_row(
                 { { "tag", tag_ },
                   { "iteration", 0 },
                   { "relative_residual", 1.0 },
@@ -141,9 +141,9 @@ class PMINRES
             const ScalarType absolute_residual = std::abs( eta );
             const ScalarType relative_residual = absolute_residual / initial_residual;
 
-            if ( statistics.has_value() )
+            if ( statistics_ )
             {
-                statistics->get().add_row(
+                statistics_->add_row(
                     { { "tag", tag_ },
                       { "iteration", iteration },
                       { "relative_residual", relative_residual },
@@ -177,6 +177,8 @@ class PMINRES
     std::string tag_;
 
     IterativeSolverParameters params_;
+
+    std::shared_ptr< util::Table > statistics_;
 
     RHSVectorType      az_;
     RHSVectorType      v_j_minus_1_;

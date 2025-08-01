@@ -94,7 +94,7 @@ struct InitialConditionInterpolator
     }
 };
 
-void test( int level, util::Table& table )
+void test( int level, const std::shared_ptr< util::Table >& table )
 {
     Kokkos::Timer timer;
 
@@ -146,7 +146,7 @@ void test( int level, util::Table& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 1000, 1e-12, 1e-12 };
 
-    linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, tmps );
+    linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
 
     const int timesteps = 10;
@@ -168,10 +168,10 @@ void test( int level, util::Table& table )
         std::cout << "Timestep " << ts << std::endl;
 
         linalg::apply( M, T, f );
-        linalg::solvers::solve( bicgstab, A, T, f, table );
+        linalg::solvers::solve( bicgstab, A, T, f );
 
-        table.print_pretty();
-        table.clear();
+        table->print_pretty();
+        table->clear();
 
         if ( true )
         {
@@ -191,7 +191,7 @@ int main( int argc, char** argv )
 {
     util::TerraScopeGuard scope_guard( &argc, &argv );
 
-    util::Table table;
+    auto table = std::make_shared< util::Table >();
 
     const int level = 4;
 

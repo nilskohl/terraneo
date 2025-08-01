@@ -21,22 +21,25 @@ class PCG
 
     using ScalarType = typename SolutionVectorType::ScalarType;
 
-    PCG( const IterativeSolverParameters& params,
-         const RHSVectorType&             r_tmp,
-         const SolutionVectorType&        p_tmp,
-         const RHSVectorType&             ap_tmp,
-         const SolutionVectorType&        z_tmp )
-    : PCG( params, r_tmp, p_tmp, ap_tmp, z_tmp, IdentitySolver< OperatorT >() )
+    PCG( const IterativeSolverParameters&      params,
+         const std::shared_ptr< util::Table >& statistics,
+         const RHSVectorType&                  r_tmp,
+         const SolutionVectorType&             p_tmp,
+         const RHSVectorType&                  ap_tmp,
+         const SolutionVectorType&             z_tmp )
+    : PCG( params, statistics, r_tmp, p_tmp, ap_tmp, z_tmp, IdentitySolver< OperatorT >() )
     {}
 
-    PCG( const IterativeSolverParameters& params,
-         const RHSVectorType&             r_tmp,
-         const SolutionVectorType&        p_tmp,
-         const RHSVectorType&             ap_tmp,
-         const SolutionVectorType&        z_tmp,
-         const PreconditionerT            preconditioner )
+    PCG( const IterativeSolverParameters&      params,
+         const std::shared_ptr< util::Table >& statistics,
+         const RHSVectorType&                  r_tmp,
+         const SolutionVectorType&             p_tmp,
+         const RHSVectorType&                  ap_tmp,
+         const SolutionVectorType&             z_tmp,
+         const PreconditionerT                 preconditioner )
     : tag_( "pcg_solver" )
     , params_( params )
+    , statistics_( statistics )
     , r_( r_tmp )
     , p_( p_tmp )
     , ap_( ap_tmp )
@@ -46,11 +49,7 @@ class PCG
 
     void set_tag( const std::string& tag ) { tag_ = tag; }
 
-    void solve_impl(
-        OperatorType&                                          A,
-        SolutionVectorType&                                    x,
-        const RHSVectorType&                                   b,
-        std::optional< std::reference_wrapper< util::Table > > statistics )
+    void solve_impl( OperatorType& A, SolutionVectorType& x, const RHSVectorType& b )
     {
         apply( A, x, r_ );
 
@@ -63,9 +62,9 @@ class PCG
         // TODO: should this be dot(z, z) instead or dot(r, r)?
         const ScalarType initial_residual = std::sqrt( dot( r_, r_ ) );
 
-        if ( statistics.has_value() )
+        if ( statistics_ )
         {
-            statistics->get().add_row(
+            statistics_->add_row(
                 { { "tag", tag_ },
                   { "iteration", 0 },
                   { "relative_residual", 1.0 },
@@ -94,9 +93,9 @@ class PCG
 
             const ScalarType relative_residual = absolute_residual / initial_residual;
 
-            if ( statistics.has_value() )
+            if ( statistics_ )
             {
-                statistics->get().add_row(
+                statistics_->add_row(
                     { { "tag", tag_ },
                       { "iteration", iteration },
                       { "relative_residual", relative_residual },
@@ -126,6 +125,8 @@ class PCG
     std::string tag_;
 
     IterativeSolverParameters params_;
+
+    std::shared_ptr< util::Table > statistics_;
 
     RHSVectorType      r_;
     SolutionVectorType p_;

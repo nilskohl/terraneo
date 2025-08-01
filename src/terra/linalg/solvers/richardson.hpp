@@ -20,11 +20,7 @@ class Richardson
     , r_( r_tmp )
     {}
 
-    void solve_impl(
-        OperatorType&                                          A,
-        SolutionVectorType&                                    x,
-        const RHSVectorType&                                   b,
-        std::optional< std::reference_wrapper< util::Table > > statistics )
+    void solve_impl( OperatorType& A, SolutionVectorType& x, const RHSVectorType& b )
     {
         for ( int iteration = 0; iteration < iterations_; ++iteration )
         {

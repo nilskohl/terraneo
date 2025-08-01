@@ -71,7 +71,7 @@ struct SolutionInterpolator
     }
 };
 
-void test( int level, int timesteps, double dt, util::Table& table, double l2_error_threshold )
+void test( int level, int timesteps, double dt, const std::shared_ptr< util::Table >& table, double l2_error_threshold )
 {
     using ScalarType = double;
 
@@ -129,7 +129,7 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
 
     linalg::solvers::IterativeSolverParameters solver_params{ 1000, 1e-12, 1e-12 };
 
-    linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, tmps );
+    linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
 
     if ( true )
@@ -162,7 +162,7 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
         fe::strong_algebraic_dirichlet_enforcement_poisson_like(
             A_bdf1_neumann, A_bdf1_neumann_diag, g, tmps[1], f, mask_data, grid::shell::mask_domain_boundary() );
 
-        linalg::solvers::solve( bicgstab, A_bdf1, T, f, table );
+        linalg::solvers::solve( bicgstab, A_bdf1, T, f );
 
         Kokkos::parallel_for(
             "solution interpolation",
@@ -178,7 +178,7 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
         }
 
         // table.print_pretty();
-        table.clear();
+        table->clear();
 
         if ( true )
         {
@@ -213,7 +213,7 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
         fe::strong_algebraic_dirichlet_enforcement_poisson_like(
             A_bdf2_neumann, A_bdf2_neumann_diag, g, tmps[1], f, mask_data, grid::shell::mask_domain_boundary() );
 
-        linalg::solvers::solve( bicgstab, A_bdf2, T, f, table );
+        linalg::solvers::solve( bicgstab, A_bdf2, T, f );
 
         Kokkos::parallel_for(
             "solution interpolation",
@@ -229,7 +229,7 @@ void test( int level, int timesteps, double dt, util::Table& table, double l2_er
         }
 
         // table.print_pretty();
-        table.clear();
+        table->clear();
 
         if ( true )
         {
@@ -255,7 +255,7 @@ int main( int argc, char** argv )
 {
     util::TerraScopeGuard scope_guard( &argc, &argv );
 
-    util::Table table;
+    auto table = std::make_shared< util::Table >();
 
     test( 2, 10, 1e-3, table, 0.0059 );
     test( 3, 10, 1e-3, table, 0.0014 );

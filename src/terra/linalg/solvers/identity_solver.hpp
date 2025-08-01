@@ -16,15 +16,10 @@ class IdentitySolver
     using SolutionVectorType = SrcOf< OperatorType >;
     using RHSVectorType      = DstOf< OperatorType >;
 
-    void solve_impl(
-        const OperatorType&  A,
-        SolutionVectorType&  x,
-        const RHSVectorType& b,
-        std::optional< std::reference_wrapper< util::Table > > params ) const
+    void solve_impl( const OperatorType& A, SolutionVectorType& x, const RHSVectorType& b ) const
     {
         assign( x, b );
         (void) A;
-        (void) params;
     }
 };
 

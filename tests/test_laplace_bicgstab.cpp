@@ -110,31 +110,8 @@ struct SetOnBoundary
     }
 };
 
-double test( int level, util::Table& table )
+double test( int level, const std::shared_ptr< util::Table >& table )
 {
-    /**
-
-    Boundary handling notes.
-
-    Using inhom boundary conditions we approach the elimination as follows (for the moment).
-
-    Let A be the "Neumann" operator, i.e., we do not treat the boundaries any differently.
-
-    1. Interpolate Dirichlet boundary conditions into g.
-    2. Compute g_A <- A       * g.
-    3. Compute g_D <- diag(A) * g.
-    4. Set the rhs to b = f - g_A.
-    5. Set the rhs at the boundary nodes to g_D.
-    6. Solve
-            A_elim x = b
-       where A_elim is A but with all off-diagonal entries in the same row/col as a boundary node set to zero.
-       In a matrix-free context, we have to adapt the element matrix A_local accordingly by (symmetrically) zeroing
-       out all the off-diagonals (row and col) that correspond to a boundary node. But we keep the diagonal intact.
-       We still have diag(A) == diag(A_elim).
-    7. x is the solution of the original problem. No boundary correction should be necessary.
-
-    **/
-
     Kokkos::Timer timer;
 
     using ScalarType = double;
@@ -212,12 +189,12 @@ double test( int level, util::Table& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
-    linalg::solvers::PBiCGStab< Laplace > bicgstab( 2, solver_params, tmps );
+    linalg::solvers::PBiCGStab< Laplace > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( bicgstab, A, u, b, table );
+    linalg::solvers::solve( bicgstab, A, u, b );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
@@ -236,7 +213,7 @@ double test( int level, util::Table& table )
         vtk_after.write();
     }
 
-    table.add_row(
+    table->add_row(
         { { "level", level }, { "dofs", num_dofs }, { "l2_error", l2_error }, { "time_solver", time_solver } } );
 
     return l2_error;
@@ -246,7 +223,7 @@ int main( int argc, char** argv )
 {
     util::TerraScopeGuard scope_guard( &argc, &argv );
 
-    util::Table table;
+    auto table = std::make_shared< util::Table >();
 
     double prev_l2_error = 1.0;
 
@@ -256,7 +233,7 @@ int main( int argc, char** argv )
         timer.reset();
         double     l2_error   = test( level, table );
         const auto time_total = timer.seconds();
-        table.add_row( { { "level", level }, { "time_total", time_total } } );
+        table->add_row( { { "level", level }, { "time_total", time_total } } );
 
         if ( level > 1 )
         {
@@ -267,13 +244,13 @@ int main( int argc, char** argv )
                 return EXIT_FAILURE;
             }
 
-            table.add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
+            table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
         }
         prev_l2_error = l2_error;
     }
 
-    table.query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
-    table.query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
+    table->query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
+    table->query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
 
     return 0;
 }

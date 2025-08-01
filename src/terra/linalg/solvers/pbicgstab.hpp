@@ -22,9 +22,14 @@ class PBiCGStab
 
     using ScalarType = typename SolutionVectorType::ScalarType;
 
-    PBiCGStab( const int l, const IterativeSolverParameters& params, const std::vector< SolutionVectorType >& tmp )
+    PBiCGStab(
+        const int                                l,
+        const IterativeSolverParameters&         params,
+        const std::shared_ptr< util::Table >&    statistics,
+        const std::vector< SolutionVectorType >& tmp )
     : l_( l )
     , params_( params )
+    , statistics_( statistics )
     , tmp_( tmp )
     , tag_( "pbicgstab_solver" )
     , preconditioner_( IdentitySolver< OperatorT >() )
@@ -39,11 +44,7 @@ class PBiCGStab
 
     void set_tag( const std::string& tag ) { tag_ = tag; }
 
-    void solve_impl(
-        OperatorType&                                          A,
-        SolutionVectorType&                                    x,
-        const RHSVectorType&                                   b,
-        std::optional< std::reference_wrapper< util::Table > > statistics )
+    void solve_impl( OperatorType& A, SolutionVectorType& x, const RHSVectorType& b )
     {
         linalg::randomize( r_shadow() );
 
@@ -69,11 +70,11 @@ class PBiCGStab
         int        iteration         = 0;
 
         auto add_table_row = [&]( bool final_iteration ) {
-            if ( statistics.has_value() )
+            if ( statistics_ )
             {
                 if ( final_iteration )
                 {
-                    statistics->get().add_row(
+                    statistics_->add_row(
                         { { "tag", tag_ },
                           { "final_iteration", iteration },
                           { "relative_residual", relative_residual },
@@ -81,7 +82,7 @@ class PBiCGStab
                 }
                 else
                 {
-                    statistics->get().add_row(
+                    statistics_->add_row(
                         { { "tag", tag_ },
                           { "iteration", iteration },
                           { "relative_residual", relative_residual },
@@ -218,6 +219,8 @@ class PBiCGStab
     int l_;
 
     IterativeSolverParameters params_;
+
+    std::shared_ptr< util::Table > statistics_;
 
     std::vector< SolutionVectorType > tmp_;
 
