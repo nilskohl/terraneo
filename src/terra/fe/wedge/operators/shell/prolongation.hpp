@@ -24,19 +24,19 @@ class Prolongation
     using ScalarType    = ScalarT;
 
   private:
+    linalg::OperatorApplyMode operator_apply_mode_;
+
     grid::Grid4DDataScalar< ScalarType > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
 
   public:
-    Prolongation() {}
+    explicit Prolongation( linalg::OperatorApplyMode operator_apply_mode = linalg::OperatorApplyMode::Replace )
+    : operator_apply_mode_( operator_apply_mode )
+    {}
 
-    void apply_impl(
-        const SrcVectorType&                    src,
-        DstVectorType&                          dst,
-        const linalg::OperatorApplyMode         operator_apply_mode,
-        const linalg::OperatorCommunicationMode operator_communication_mode )
+    void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
+        if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
         }

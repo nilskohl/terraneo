@@ -27,11 +27,15 @@ class Stokes
 
   private:
     VectorLaplace< double, VecDim > A_;
+    VectorLaplace< double, VecDim > A_diagonal_;
     Gradient< double >              B_T_;
     Divergence< double >            B_;
     Zero< double >                  O_;
 
     bool diagonal_;
+
+    linalg::OperatorApplyMode         operator_apply_mode_;
+    linalg::OperatorCommunicationMode operator_communication_mode_;
 
   public:
     Stokes(
@@ -40,33 +44,43 @@ class Stokes
         const grid::Grid3DDataVec< double, 3 >& grid,
         const grid::Grid2DDataScalar< double >& radii,
         bool                                    treat_boundary,
-        bool                                    diagonal )
-    : A_( domain_fine, grid, radii, treat_boundary, diagonal )
-    , B_T_( domain_fine, domain_coarse, grid, radii, treat_boundary )
-    , B_( domain_fine, domain_coarse, grid, radii, treat_boundary )
+        bool                                    diagonal,
+        linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode       operator_communication_mode =
+            linalg::OperatorCommunicationMode::CommunicateAdditively )
+    : A_( domain_fine,
+          grid,
+          radii,
+          treat_boundary,
+          false,
+          linalg::OperatorApplyMode::Replace,
+          linalg::OperatorCommunicationMode::SkipCommunication )
+    , A_diagonal_( domain_fine, grid, radii, treat_boundary, true, operator_apply_mode, operator_communication_mode )
+    , B_T_(
+          domain_fine,
+          domain_coarse,
+          grid,
+          radii,
+          treat_boundary,
+          linalg::OperatorApplyMode::Add,
+          operator_communication_mode )
+    , B_( domain_fine, domain_coarse, grid, radii, treat_boundary, operator_apply_mode, operator_communication_mode )
     , diagonal_( diagonal )
+    , operator_apply_mode_( operator_apply_mode )
+    , operator_communication_mode_( operator_communication_mode )
     {}
 
-    void apply_impl(
-        const SrcVectorType&                    src,
-        DstVectorType&                          dst,
-        const linalg::OperatorApplyMode         operator_apply_mode,
-        const linalg::OperatorCommunicationMode operator_communication_mode )
+    void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
         if ( diagonal_ )
         {
-            apply( A_, src.block_1(), dst.block_1(), operator_apply_mode, operator_communication_mode );
+            apply( A_diagonal_, src.block_1(), dst.block_1() );
             return;
         }
 
-        apply(
-            A_,
-            src.block_1(),
-            dst.block_1(),
-            linalg::OperatorApplyMode::Replace,
-            linalg::OperatorCommunicationMode::SkipCommunication );
-        apply( B_T_, src.block_2(), dst.block_1(), linalg::OperatorApplyMode::Add, operator_communication_mode );
-        apply( B_, src.block_1(), dst.block_2(), operator_apply_mode, operator_communication_mode );
+        apply( A_, src.block_1(), dst.block_1() );
+        apply( B_T_, src.block_2(), dst.block_1() );
+        apply( B_, src.block_1(), dst.block_2() );
     }
 
     const Block11Type& block_11() const { return A_; }

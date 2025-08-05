@@ -30,6 +30,9 @@ class Gradient
 
     bool treat_boundary_;
 
+    linalg::OperatorApplyMode         operator_apply_mode_;
+    linalg::OperatorCommunicationMode operator_communication_mode_;
+
     communication::shell::SubdomainNeighborhoodSendBuffer< double, 3 > send_buffers_;
     communication::shell::SubdomainNeighborhoodRecvBuffer< double, 3 > recv_buffers_;
 
@@ -42,24 +45,25 @@ class Gradient
         const grid::shell::DistributedDomain&   domain_coarse,
         const grid::Grid3DDataVec< double, 3 >& grid_fine,
         const grid::Grid2DDataScalar< double >& radii_fine,
-        bool                                    treat_boundary )
+        bool                                    treat_boundary,
+        linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode       operator_communication_mode =
+            linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_fine_( domain_fine )
     , domain_coarse_( domain_coarse )
     , grid_fine_( grid_fine )
     , radii_( radii_fine )
     , treat_boundary_( treat_boundary )
+    , operator_apply_mode_( operator_apply_mode )
+    , operator_communication_mode_( operator_communication_mode )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain_fine )
     , recv_buffers_( domain_fine )
     {}
 
-    void apply_impl(
-        const SrcVectorType&                    src,
-        DstVectorType&                          dst,
-        const linalg::OperatorApplyMode         operator_apply_mode,
-        const linalg::OperatorCommunicationMode operator_communication_mode )
+    void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
+        if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
         }
@@ -69,7 +73,7 @@ class Gradient
 
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_fine_ ), *this );
 
-        if ( operator_communication_mode == linalg::OperatorCommunicationMode::CommunicateAdditively )
+        if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
             std::vector< std::array< int, 11 > > expected_recvs_metadata;
             std::vector< MPI_Request >           expected_recvs_requests;
@@ -96,10 +100,10 @@ class Gradient
         constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
 
         dense::Vec< double, 3 > quad_points[num_quad_points];
-        double quad_weights[num_quad_points];
+        double                  quad_weights[num_quad_points];
 
         quadrature::quad_felippa_1x1_quad_points( quad_points );
-        quadrature::quad_felippa_1x1_quad_weights(quad_weights);
+        quadrature::quad_felippa_1x1_quad_weights( quad_weights );
 
         const int fine_radial_wedge_index = r_cell % 2;
 

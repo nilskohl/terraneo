@@ -26,6 +26,8 @@ class Restriction
   private:
     grid::shell::DistributedDomain domain_coarse_;
 
+    linalg::OperatorApplyMode operator_apply_mode_;
+
     communication::shell::SubdomainNeighborhoodSendBuffer< double > send_buffers_;
     communication::shell::SubdomainNeighborhoodRecvBuffer< double > recv_buffers_;
 
@@ -35,20 +37,19 @@ class Restriction
     grid::Grid4DDataScalar< util::MaskType > mask_src_;
 
   public:
-    Restriction( const grid::shell::DistributedDomain& domain_coarse )
+    Restriction(
+        const grid::shell::DistributedDomain& domain_coarse,
+        linalg::OperatorApplyMode             operator_apply_mode = linalg::OperatorApplyMode::Replace )
     : domain_coarse_( domain_coarse )
+    , operator_apply_mode_( operator_apply_mode )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain_coarse )
     , recv_buffers_( domain_coarse )
     {}
 
-    void apply_impl(
-        const SrcVectorType&                    src,
-        DstVectorType&                          dst,
-        const linalg::OperatorApplyMode         operator_apply_mode,
-        const linalg::OperatorCommunicationMode operator_communication_mode )
+    void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
+        if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
         }

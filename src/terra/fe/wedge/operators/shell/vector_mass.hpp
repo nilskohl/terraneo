@@ -27,6 +27,9 @@ class VectorMass
 
     bool diagonal_;
 
+    linalg::OperatorApplyMode         operator_apply_mode_;
+    linalg::OperatorCommunicationMode operator_communication_mode_;
+
     communication::shell::SubdomainNeighborhoodSendBuffer< double, 3 > send_buffers_;
     communication::shell::SubdomainNeighborhoodRecvBuffer< double, 3 > recv_buffers_;
 
@@ -38,23 +41,24 @@ class VectorMass
         const grid::shell::DistributedDomain&   domain,
         const grid::Grid3DDataVec< double, 3 >& grid,
         const grid::Grid2DDataScalar< double >& radii,
-        const bool                              diagonal )
+        const bool                              diagonal,
+        linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode       operator_communication_mode =
+            linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
     , diagonal_( diagonal )
+    , operator_apply_mode_( operator_apply_mode )
+    , operator_communication_mode_( operator_communication_mode )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain )
     , recv_buffers_( domain )
     {}
 
-    void apply_impl(
-        const SrcVectorType&                    src,
-        DstVectorType&                          dst,
-        const linalg::OperatorApplyMode         operator_apply_mode,
-        const linalg::OperatorCommunicationMode operator_communication_mode )
+    void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        if ( operator_apply_mode == linalg::OperatorApplyMode::Replace )
+        if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
         }
@@ -64,7 +68,7 @@ class VectorMass
 
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
 
-        if ( operator_communication_mode == linalg::OperatorCommunicationMode::CommunicateAdditively )
+        if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
             std::vector< std::array< int, 11 > > expected_recvs_metadata;
             std::vector< MPI_Request >           expected_recvs_requests;
@@ -90,10 +94,10 @@ class VectorMass
         constexpr auto num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
 
         dense::Vec< double, 3 > quad_points[num_quad_points];
-        double quad_weights[num_quad_points];
+        double                  quad_weights[num_quad_points];
 
         quadrature::quad_felippa_3x2_quad_points( quad_points );
-        quadrature::quad_felippa_3x2_quad_weights(quad_weights);
+        quadrature::quad_felippa_3x2_quad_weights( quad_weights );
 
         double det_jac_lat[num_wedges_per_hex_cell][num_quad_points] = {};
 
