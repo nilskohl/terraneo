@@ -517,4 +517,18 @@ KOKKOS_INLINE_FUNCTION dense::Vec< double, 3 > coords(
     return coords * subdomain_shell_radii( subdomain, r );
 }
 
+KOKKOS_INLINE_FUNCTION dense::Vec< double, 3 > coords(
+    const dense::Vec< int, 4 >        subdomain_x_y_r,
+    const Grid3DDataVec< double, 3 >& subdomain_unit_sphere_coords,
+    const Grid2DDataScalar< double >& subdomain_shell_radii )
+{
+    return coords(
+        subdomain_x_y_r( 0 ),
+        subdomain_x_y_r( 1 ),
+        subdomain_x_y_r( 2 ),
+        subdomain_x_y_r( 3 ),
+        subdomain_unit_sphere_coords,
+        subdomain_shell_radii );
+}
+
 } // namespace terra::grid::shell

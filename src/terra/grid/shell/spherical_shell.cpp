@@ -27,8 +27,8 @@ std::vector< double > uniform_shell_radii( const double r_min, const double r_ma
     return radii;
 }
 
-// Struct to hold the coordinates of the four base corners
-// and the number of intervals N = ntan - 1.
+/// Struct to hold the coordinates of the four base corners
+/// and the number of intervals N = ntan - 1.
 struct BaseCorners
 {
     Vec3 p00; // Coordinates for global index (0, 0)
@@ -50,16 +50,16 @@ struct BaseCorners
 // Memoization cache type: maps (i, j) index pair to computed coordinates
 using MemoizationCache = std::map< std::pair< int, int >, Vec3 >;
 
-/**
- * @brief Computes the coordinates for a specific node (i, j) in the final refined grid.
- *        Uses recursion and memoization, sourcing base points from the BaseCorners struct.
- *
- * @param i Row index (0 to corners.N).
- * @param j Column index (0 to corners.N).
- * @param corners Struct containing base corner coordinates and N = ntan - 1.
- * @param cache Cache to store/retrieve already computed nodes.
- * @return Vec3 Coordinates of the node (i, j) on the unit sphere.
- */
+///
+///@brief Computes the coordinates for a specific node (i, j) in the final refined grid.
+///       Uses recursion and memoization, sourcing base points from the BaseCorners struct.
+///
+/// @param i Row index (0 to corners.N).
+/// @param j Column index (0 to corners.N).
+/// @param corners Struct containing base corner coordinates and N = ntan - 1.
+/// @param cache Cache to store/retrieve already computed nodes.
+/// @return Vec3 Coordinates of the node (i, j) on the unit sphere.
+///
 static Vec3 compute_node_recursive( int i, int j, const BaseCorners& corners, MemoizationCache& cache )
 {
     // --- Get N and validate indices ---
@@ -175,18 +175,19 @@ static Vec3 compute_node_recursive( int i, int j, const BaseCorners& corners, Me
     return result;
 }
 
-/**
- * @brief Generates coordinates for a rectangular subdomain of the refined spherical grid.
- *
- * @param subdomain_coords_host a properly sized host-allocated view that is filled with the coordinates of the points
- * @param corners Struct containing the base corner points and N = ntan - 1.
- * @param i_start_incl Starting row index (inclusive) of the subdomain (global index).
- * @param i_end_incl Ending row index (inclusive) of the subdomain (global index).
- * @param j_start_incl Starting column index (inclusive) of the subdomain (global index).
- * @param j_end_incl Ending column index (inclusive) of the subdomain (global index).
- * @return Kokkos::View<double**[3], Kokkos::HostSpace> Host view containing coordinates
- *         for the subdomain. Dimensions are ((i_end_incl - 1) - i_start, (j_end_incl - 1) - j_start).
- */
+///
+/// @brief Generates coordinates for a rectangular subdomain of the refined spherical grid.
+///
+///@param subdomain_coords_host a properly sized host-allocated view that is filled with the coordinates of the points
+///@param corners Struct containing the base corner points and N = ntan - 1.
+///@param i_start_incl Starting row index (inclusive) of the subdomain (global index).
+///@param i_end_incl Ending row index (inclusive) of the subdomain (global index).
+///@param j_start_incl Starting column index (inclusive) of the subdomain (global index).
+///@param j_end_incl Ending column index (inclusive) of the subdomain (global index).
+///
+///@return Kokkos::View<double**[3], Kokkos::HostSpace> Host view containing coordinates
+///        for the subdomain. Dimensions are ((i_end_incl - 1) - i_start, (j_end_incl - 1) - j_start).
+///
 void compute_subdomain(
     const Grid3DDataVec< double, 3 >::HostMirror& subdomain_coords_host,
     int                                           subdomain_idx,

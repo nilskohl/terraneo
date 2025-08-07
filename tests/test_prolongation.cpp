@@ -59,6 +59,39 @@ struct ConstantFunctionInterpolator
     }
 };
 
+struct LinearFunctionInterpolator
+{
+    Grid3DDataVec< double, 3 > grid_;
+    Grid2DDataScalar< double > radii_;
+    Grid4DDataScalar< double > data_;
+    bool                       only_boundary_;
+
+    LinearFunctionInterpolator(
+        const Grid3DDataVec< double, 3 >& grid,
+        const Grid2DDataScalar< double >& radii,
+        const Grid4DDataScalar< double >& data,
+        bool                              only_boundary )
+    : grid_( grid )
+    , radii_( radii )
+    , data_( data )
+    , only_boundary_( only_boundary )
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
+    {
+        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+
+        const double value = coords( 0 ) + 2.3 * coords( 1 ) - 0.8 * coords( 2 ) + 1.0;
+        // const double value = coords( 2 );
+
+        if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
+        {
+            data_( local_subdomain_id, x, y, r ) = value;
+        }
+    }
+};
+
 struct SomeFunctionInterpolator
 {
     Grid3DDataVec< double, 3 > grid_;
@@ -123,7 +156,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using Prolongation = fe::wedge::operators::shell::Prolongation< ScalarType >;
 
-    Prolongation P;
+    Prolongation P( subdomain_shell_coords_fine, subdomain_radii_fine );
 
     // Set up solution data.
     Kokkos::parallel_for(
@@ -197,6 +230,23 @@ int main( int argc, char** argv )
 
     std::cout << std::endl;
 
+    std::cout << "Testing prolongation: linear function" << std::endl;
+    {
+        for ( int level = 1; level <= 5; ++level )
+        {
+            double error = test< LinearFunctionInterpolator >( level, table );
+
+            std::cout << "error (fine level " << level << ") = " << error << std::endl;
+
+            if ( error > 1e-12 )
+            {
+                throw std::runtime_error( "constants must be prolongated exactly" );
+            }
+        }
+    }
+
+    std::cout << std::endl;
+
     std::cout << "Testing prolongation: arbitrary function" << std::endl;
     {
         double prev_error = 1.0;
@@ -207,7 +257,7 @@ int main( int argc, char** argv )
             {
                 const auto order = prev_error / error;
                 std::cout << "order (fine level " << level << ") = " << order << std::endl;
-                if ( order < 3.8 )
+                if ( order < 4.0 )
                 {
                     throw std::runtime_error( "order too low" );
                 }

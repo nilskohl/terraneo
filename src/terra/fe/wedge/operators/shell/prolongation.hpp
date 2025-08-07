@@ -24,14 +24,22 @@ class Prolongation
     using ScalarType    = ScalarT;
 
   private:
+    grid::Grid3DDataVec< ScalarType, 3 > grid_fine_;
+    grid::Grid2DDataScalar< ScalarType > radii_fine_;
+
     linalg::OperatorApplyMode operator_apply_mode_;
 
     grid::Grid4DDataScalar< ScalarType > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
 
   public:
-    explicit Prolongation( linalg::OperatorApplyMode operator_apply_mode = linalg::OperatorApplyMode::Replace )
-    : operator_apply_mode_( operator_apply_mode )
+    explicit Prolongation(
+        const grid::Grid3DDataVec< ScalarType, 3 >& grid_fine,
+        const grid::Grid2DDataScalar< ScalarType >& radii_fine,
+        linalg::OperatorApplyMode                   operator_apply_mode = linalg::OperatorApplyMode::Replace )
+    : grid_fine_( grid_fine )
+    , radii_fine_( radii_fine )
+    , operator_apply_mode_( operator_apply_mode )
     {}
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
@@ -57,16 +65,16 @@ class Prolongation
             }
         }
 
-        // Looping over the coarse grid.
+        // Looping over the fine grid.
         Kokkos::parallel_for(
             "matvec",
             Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
                 { 0, 0, 0, 0 },
                 {
-                    src_.extent( 0 ),
-                    src_.extent( 1 ),
-                    src_.extent( 2 ),
-                    src_.extent( 3 ),
+                    dst_.extent( 0 ),
+                    dst_.extent( 1 ),
+                    dst_.extent( 2 ),
+                    dst_.extent( 3 ),
                 } ),
             *this );
 
@@ -74,32 +82,87 @@ class Prolongation
     }
 
     KOKKOS_INLINE_FUNCTION void
-        operator()( const int local_subdomain_id, const int x_coarse, const int y_coarse, const int r_coarse ) const
+        operator()( const int local_subdomain_id, const int x_fine, const int y_fine, const int r_fine ) const
     {
-        const auto x_fine = 2 * x_coarse;
-        const auto y_fine = 2 * y_coarse;
-        const auto r_fine = 2 * r_coarse;
-
-        dense::Vec< int, 3 > offsets[21];
-        wedge::shell::prolongation_fine_grid_stencil_offsets_at_coarse_vertex( offsets );
-
-        for ( const auto& offset : offsets )
+        if ( x_fine % 2 == 0 && y_fine % 2 == 0 && r_fine % 2 == 0 )
         {
-            const auto fine_stencil_x = x_fine + offset( 0 );
-            const auto fine_stencil_y = y_fine + offset( 1 );
-            const auto fine_stencil_r = r_fine + offset( 2 );
+            const auto x_coarse = x_fine / 2;
+            const auto y_coarse = y_fine / 2;
+            const auto r_coarse = r_fine / 2;
 
-            if ( fine_stencil_x >= 0 && fine_stencil_x < dst_.extent( 1 ) && fine_stencil_y >= 0 &&
-                 fine_stencil_y < dst_.extent( 2 ) && fine_stencil_r >= 0 && fine_stencil_r < dst_.extent( 3 ) )
-            {
-                const auto weight = wedge::shell::prolongation_weight< ScalarType >(
-                    fine_stencil_x, fine_stencil_y, fine_stencil_r, x_coarse, y_coarse, r_coarse );
+            dst_( local_subdomain_id, x_fine, y_fine, r_fine ) =
+                src_( local_subdomain_id, x_coarse, y_coarse, r_coarse );
 
-                Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, fine_stencil_x, fine_stencil_y, fine_stencil_r ),
-                    weight * src_( local_subdomain_id, x_coarse, y_coarse, r_coarse ) );
-            }
+            return;
         }
+
+        const auto r_coarse_bot = r_fine < dst_.extent( 3 ) - 1 ? r_fine / 2 : r_fine / 2 - 1;
+        const auto r_coarse_top = r_coarse_bot + 1;
+
+        if ( x_fine % 2 == 0 && y_fine % 2 == 0 )
+        {
+            const auto x_coarse = x_fine / 2;
+            const auto y_coarse = y_fine / 2;
+
+            const auto weights = wedge::shell::prolongation_weights(
+                dense::Vec< int, 4 >{ local_subdomain_id, x_fine, y_fine, r_fine },
+                dense::Vec< int, 4 >{ local_subdomain_id, x_coarse, y_coarse, r_coarse_bot },
+                grid_fine_,
+                radii_fine_ );
+
+            dst_( local_subdomain_id, x_fine, y_fine, r_fine ) =
+                weights( 0 ) * src_( local_subdomain_id, x_coarse, y_coarse, r_coarse_bot ) +
+                weights( 1 ) * src_( local_subdomain_id, x_coarse, y_coarse, r_coarse_top );
+
+            return;
+        }
+
+        int x_coarse_0 = -1;
+        int x_coarse_1 = -1;
+
+        int y_coarse_0 = -1;
+        int y_coarse_1 = -1;
+
+        if ( x_fine % 2 == 0 )
+        {
+            // "Vertical" edge.
+            x_coarse_0 = x_fine / 2;
+            x_coarse_1 = x_fine / 2;
+
+            y_coarse_0 = y_fine / 2;
+            y_coarse_1 = y_fine / 2 + 1;
+        }
+        else if ( y_fine % 2 == 0 )
+        {
+            // "Horizontal" edge.
+            x_coarse_0 = x_fine / 2;
+            x_coarse_1 = x_fine / 2 + 1;
+
+            y_coarse_0 = y_fine / 2;
+            y_coarse_1 = y_fine / 2;
+        }
+        else
+        {
+            // "Diagonal" edge.
+            x_coarse_0 = x_fine / 2 + 1;
+            x_coarse_1 = x_fine / 2;
+
+            y_coarse_0 = y_fine / 2;
+            y_coarse_1 = y_fine / 2 + 1;
+        }
+
+        const auto weights = wedge::shell::prolongation_weights(
+            dense::Vec< int, 4 >{ local_subdomain_id, x_fine, y_fine, r_fine },
+            dense::Vec< int, 4 >{ local_subdomain_id, x_coarse_0, y_coarse_0, r_coarse_bot },
+            dense::Vec< int, 4 >{ local_subdomain_id, x_coarse_1, y_coarse_1, r_coarse_bot },
+            grid_fine_,
+            radii_fine_ );
+
+        dst_( local_subdomain_id, x_fine, y_fine, r_fine ) =
+            weights( 0 ) * src_( local_subdomain_id, x_coarse_0, y_coarse_0, r_coarse_bot ) +
+            weights( 0 ) * src_( local_subdomain_id, x_coarse_1, y_coarse_1, r_coarse_bot ) +
+            weights( 1 ) * src_( local_subdomain_id, x_coarse_0, y_coarse_0, r_coarse_top ) +
+            weights( 1 ) * src_( local_subdomain_id, x_coarse_1, y_coarse_1, r_coarse_top );
     }
 };
 } // namespace terra::fe::wedge::operators::shell
