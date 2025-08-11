@@ -9,19 +9,22 @@
 - [ ] advection-diffusion source term handling (must add SUPG term in linear form)
 - [x] ~~GMRES~~ BiCGStab(l)
 - [x] BDF2 (not yet in a dedicated function, see test_heat_eq)
-- [ ] multigrid
+- [x] multigrid (some notes: a) we need higher operator quad degree than constant (not sure where exactly: diagonal,
+  fine-level, everywhere?), b) two-grid V(10, 10) looks ok, otherwise with multigrid we do not get perfectly h-ind. conv rates., I
+  suppose we need Galerkin coarse grid operators maybe)
 - [ ] MPI parallel execution (multi-GPU, multi-node CPU)
 - [ ] intra-diamond subdomain communication
 - [ ] variable viscosity
 - [ ] plates
 - [ ] free-slip
+- [ ] radial layer data assimilation
 
 ### Small features / improvements (not necessarily / maybe required)
 
 - [ ] performance engineering
-- [ ] curved wedges
-- [ ] particles
-- [ ] matrix export / assembly
+- [x] ~~curved wedges~~ the wedges are curved (unlike I assumed when writing this)
+- [ ] particles(?)
+- [x] matrix export / assembly (implemented for debugging - not for actual use)
 - [ ] CPU SIMD kernels
 
 ### Documentation / cleanup / refactoring

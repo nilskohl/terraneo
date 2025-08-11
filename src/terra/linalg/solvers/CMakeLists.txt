@@ -1,8 +1,11 @@
 target_sources(terra
         PRIVATE
-        pbicgstab.hpp
         identity_solver.hpp
         iterative_solver_info.hpp
+        jacobi.hpp
+        multigrid.hpp
+        pbicgstab.hpp
         pcg.hpp
+        pminres.hpp
         richardson.hpp
         solver.hpp)
