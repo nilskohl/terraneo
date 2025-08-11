@@ -7,7 +7,7 @@
 #include "dense/vec.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/kernel_helpers.hpp"
-#include "fe/wedge/shell/grid_transfer.hpp"
+#include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
@@ -16,7 +16,7 @@
 namespace terra::fe::wedge::operators::shell {
 
 template < typename ScalarT >
-class Restriction
+class RestrictionConstant
 {
   public:
     using SrcVectorType = linalg::VectorQ1Scalar< double >;
@@ -37,7 +37,7 @@ class Restriction
     grid::Grid4DDataScalar< util::MaskType > mask_src_;
 
   public:
-    Restriction(
+    RestrictionConstant(
         const grid::shell::DistributedDomain& domain_coarse,
         linalg::OperatorApplyMode             operator_apply_mode = linalg::OperatorApplyMode::Replace )
     : domain_coarse_( domain_coarse )
@@ -105,7 +105,7 @@ class Restriction
         const auto r_fine = 2 * r_coarse;
 
         dense::Vec< int, 3 > offsets[21];
-        wedge::shell::prolongation_fine_grid_stencil_offsets_at_coarse_vertex( offsets );
+        wedge::shell::prolongation_constant_fine_grid_stencil_offsets_at_coarse_vertex( offsets );
 
         for ( const auto& offset : offsets )
         {
@@ -116,7 +116,7 @@ class Restriction
             if ( fine_stencil_x >= 0 && fine_stencil_x < src_.extent( 1 ) && fine_stencil_y >= 0 &&
                  fine_stencil_y < src_.extent( 2 ) && fine_stencil_r >= 0 && fine_stencil_r < src_.extent( 3 ) )
             {
-                const auto weight = wedge::shell::prolongation_weight< ScalarType >(
+                const auto weight = wedge::shell::prolongation_constant_weight< ScalarType >(
                     fine_stencil_x, fine_stencil_y, fine_stencil_r, x_coarse, y_coarse, r_coarse );
 
                 const auto mask_weight =

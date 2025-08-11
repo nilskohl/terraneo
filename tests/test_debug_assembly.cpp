@@ -1,24 +1,15 @@
 
 
-#include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
-#include "fe/wedge/integrands.hpp"
-#include "fe/wedge/operators/shell/laplace.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
-#include "linalg/solvers/pcg.hpp"
+#include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "linalg/solvers/richardson.hpp"
 #include "linalg/util/debug_sparse_assembly.hpp"
-#include "terra/dense/mat.hpp"
-#include "terra/fe/wedge/operators/shell/mass.hpp"
-#include "terra/fe/wedge/operators/shell/prolongation.hpp"
-#include "terra/fe/wedge/operators/shell/restriction.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
-#include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
 #include "terra/vtk/vtk.hpp"
 #include "util/init.hpp"
-#include "util/table.hpp"
 
 using namespace terra;
 
@@ -155,7 +146,7 @@ void test_prolongation( int level )
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain_coarse );
     const auto subdomain_radii_coarse = terra::grid::shell::subdomain_shell_radii( domain_coarse );
 
-    using Prolongation = fe::wedge::operators::shell::Prolongation< ScalarType >;
+    using Prolongation = fe::wedge::operators::shell::ProlongationConstant< ScalarType >;
 
     Prolongation P;
 

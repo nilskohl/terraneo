@@ -1,3 +1,3 @@
 target_sources(terra
         PRIVATE
-        grid_transfer.hpp)
+        grid_transfer_linear.hpp)

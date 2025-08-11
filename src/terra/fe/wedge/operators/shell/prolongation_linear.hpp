@@ -2,13 +2,9 @@
 
 #pragma once
 
-#include "../../quadrature/quadrature.hpp"
 #include "communication/shell/communication.hpp"
 #include "dense/vec.hpp"
-#include "fe/wedge/integrands.hpp"
-#include "fe/wedge/kernel_helpers.hpp"
-#include "fe/wedge/shell/grid_transfer.hpp"
-#include "grid/shell/spherical_shell.hpp"
+#include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
@@ -16,7 +12,7 @@
 namespace terra::fe::wedge::operators::shell {
 
 template < typename ScalarT >
-class Prolongation
+class ProlongationLinear
 {
   public:
     using SrcVectorType = linalg::VectorQ1Scalar< double >;
@@ -33,7 +29,7 @@ class Prolongation
     grid::Grid4DDataScalar< ScalarType > dst_;
 
   public:
-    explicit Prolongation(
+    explicit ProlongationLinear(
         const grid::Grid3DDataVec< ScalarType, 3 >& grid_fine,
         const grid::Grid2DDataScalar< ScalarType >& radii_fine,
         linalg::OperatorApplyMode                   operator_apply_mode = linalg::OperatorApplyMode::Replace )
@@ -51,6 +47,18 @@ class Prolongation
 
         src_ = src.grid_data();
         dst_ = dst.grid_data();
+
+        if ( dst_.extent( 1 ) != grid_fine_.extent( 1 ) )
+        {
+            throw std::runtime_error(
+                "Prolongation: dst and grid_fine must have the same number of cells in the x direction." );
+        }
+
+        if ( dst_.extent( 3 ) != radii_fine_.extent( 1 ) )
+        {
+            throw std::runtime_error(
+                "Prolongation: dst and radii_fine must have the same number of cells in the r direction." );
+        }
 
         if ( src_.extent( 0 ) != dst_.extent( 0 ) )
         {
@@ -90,7 +98,7 @@ class Prolongation
             const auto y_coarse = y_fine / 2;
             const auto r_coarse = r_fine / 2;
 
-            dst_( local_subdomain_id, x_fine, y_fine, r_fine ) =
+            dst_( local_subdomain_id, x_fine, y_fine, r_fine ) +=
                 src_( local_subdomain_id, x_coarse, y_coarse, r_coarse );
 
             return;
@@ -104,13 +112,13 @@ class Prolongation
             const auto x_coarse = x_fine / 2;
             const auto y_coarse = y_fine / 2;
 
-            const auto weights = wedge::shell::prolongation_weights(
+            const auto weights = wedge::shell::prolongation_linear_weights(
                 dense::Vec< int, 4 >{ local_subdomain_id, x_fine, y_fine, r_fine },
                 dense::Vec< int, 4 >{ local_subdomain_id, x_coarse, y_coarse, r_coarse_bot },
                 grid_fine_,
                 radii_fine_ );
 
-            dst_( local_subdomain_id, x_fine, y_fine, r_fine ) =
+            dst_( local_subdomain_id, x_fine, y_fine, r_fine ) +=
                 weights( 0 ) * src_( local_subdomain_id, x_coarse, y_coarse, r_coarse_bot ) +
                 weights( 1 ) * src_( local_subdomain_id, x_coarse, y_coarse, r_coarse_top );
 
@@ -151,14 +159,14 @@ class Prolongation
             y_coarse_1 = y_fine / 2 + 1;
         }
 
-        const auto weights = wedge::shell::prolongation_weights(
+        const auto weights = wedge::shell::prolongation_linear_weights(
             dense::Vec< int, 4 >{ local_subdomain_id, x_fine, y_fine, r_fine },
             dense::Vec< int, 4 >{ local_subdomain_id, x_coarse_0, y_coarse_0, r_coarse_bot },
             dense::Vec< int, 4 >{ local_subdomain_id, x_coarse_1, y_coarse_1, r_coarse_bot },
             grid_fine_,
             radii_fine_ );
 
-        dst_( local_subdomain_id, x_fine, y_fine, r_fine ) =
+        dst_( local_subdomain_id, x_fine, y_fine, r_fine ) +=
             weights( 0 ) * src_( local_subdomain_id, x_coarse_0, y_coarse_0, r_coarse_bot ) +
             weights( 0 ) * src_( local_subdomain_id, x_coarse_1, y_coarse_1, r_coarse_bot ) +
             weights( 1 ) * src_( local_subdomain_id, x_coarse_0, y_coarse_0, r_coarse_top ) +

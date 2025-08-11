@@ -1,15 +1,11 @@
 
 
 #include "../src/terra/communication/shell/communication.hpp"
-#include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/laplace.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
-#include "linalg/solvers/pcg.hpp"
 #include "linalg/solvers/richardson.hpp"
-#include "terra/dense/mat.hpp"
-#include "terra/fe/wedge/operators/shell/mass.hpp"
-#include "terra/fe/wedge/operators/shell/prolongation.hpp"
+#include "terra/fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
@@ -115,7 +111,8 @@ struct SomeFunctionInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const double value = Kokkos::sinh( coords( 0 ) ) * Kokkos::cosh( coords( 1 ) ) * Kokkos::tanh( coords( 2 ) );
+        const double value =
+            Kokkos::sin( 10 * coords( 0 ) ) * Kokkos::cos( 10 * coords( 1 ) ); //* Kokkos::tanh( coords( 2 ) );
 
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
@@ -154,9 +151,9 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain_coarse );
     const auto subdomain_radii_coarse = terra::grid::shell::subdomain_shell_radii( domain_coarse );
 
-    using Prolongation = fe::wedge::operators::shell::Prolongation< ScalarType >;
+    using Prolongation = fe::wedge::operators::shell::ProlongationConstant< ScalarType >;
 
-    Prolongation P( subdomain_shell_coords_fine, subdomain_radii_fine );
+    Prolongation P;
 
     // Set up solution data.
     Kokkos::parallel_for(
@@ -232,16 +229,20 @@ int main( int argc, char** argv )
 
     std::cout << "Testing prolongation: linear function" << std::endl;
     {
-        for ( int level = 1; level <= 5; ++level )
+        double prev_error = 1.0;
+        for ( int level = 2; level <= 5; ++level )
         {
-            double error = test< LinearFunctionInterpolator >( level, table );
-
-            std::cout << "error (fine level " << level << ") = " << error << std::endl;
-
-            if ( error > 1e-12 )
+            double error = test< SomeFunctionInterpolator >( level, table );
+            if ( level > 3 )
             {
-                throw std::runtime_error( "constants must be prolongated exactly" );
+                const auto order = prev_error / error;
+                std::cout << "order (fine level " << level << ") = " << order << std::endl;
+                if ( order < 3.2 )
+                {
+                    throw std::runtime_error( "order too low" );
+                }
             }
+            prev_error = error;
         }
     }
 
@@ -250,14 +251,14 @@ int main( int argc, char** argv )
     std::cout << "Testing prolongation: arbitrary function" << std::endl;
     {
         double prev_error = 1.0;
-        for ( int level = 1; level <= 5; ++level )
+        for ( int level = 2; level <= 5; ++level )
         {
             double error = test< SomeFunctionInterpolator >( level, table );
-            if ( level > 2 )
+            if ( level > 3 )
             {
                 const auto order = prev_error / error;
                 std::cout << "order (fine level " << level << ") = " << order << std::endl;
-                if ( order < 4.0 )
+                if ( order < 3.2 )
                 {
                     throw std::runtime_error( "order too low" );
                 }

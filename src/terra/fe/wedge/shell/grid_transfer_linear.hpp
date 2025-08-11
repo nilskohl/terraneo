@@ -11,7 +11,7 @@ namespace terra::fe::wedge::shell {
 ///
 /// This covers the (simpler) case that the fine node index and the corresponding coarse grid nodes are aligned.
 template < typename ScalarType >
-KOKKOS_INLINE_FUNCTION constexpr dense::Vec< ScalarType, 2 > prolongation_weights(
+KOKKOS_INLINE_FUNCTION constexpr dense::Vec< ScalarType, 2 > prolongation_linear_weights(
     const dense::Vec< int, 4 >&                 idx_fine,
     const dense::Vec< int, 4 >&                 idx_coarse_bot,
     const grid::Grid3DDataVec< ScalarType, 3 >& subdomain_shell_coords_fine,
@@ -97,7 +97,7 @@ KOKKOS_INLINE_FUNCTION constexpr dense::Vec< ScalarType, 2 > prolongation_weight
 /// @return (weight_bot, weight_top) to scale the four coarse grid nodes:
 ///         fine = weight_bot * ( coarse(bot_0) + coarse(bot_1) ) + weight_top * ( coarse(top_0) + coarse(top_1) )
 template < typename ScalarType >
-KOKKOS_INLINE_FUNCTION constexpr dense::Vec< ScalarType, 2 > prolongation_weights(
+KOKKOS_INLINE_FUNCTION constexpr dense::Vec< ScalarType, 2 > prolongation_linear_weights(
     const dense::Vec< int, 4 >&                 idx_fine,
     const dense::Vec< int, 4 >&                 idx_coarse_bot_0,
     const dense::Vec< int, 4 >&                 idx_coarse_bot_1,

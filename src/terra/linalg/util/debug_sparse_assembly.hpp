@@ -138,8 +138,6 @@ Eigen::SparseMatrix< double > debug_sparse_assembly_operator_vec_q1_scalar(
                                     const auto value = tmp_dst.grid_data()( iidx_0, iidx_1, iidx_2, iidx_3 );
                                     if ( value != 0.0 )
                                     {
-                                        std::cout << "Inserting at (" << A_row << ", " << A_col << ") = " << value
-                                                  << std::endl;
                                         mat.insert( A_row, A_col ) =
                                             tmp_dst.grid_data()( iidx_0, iidx_1, iidx_2, iidx_3 );
                                     }
