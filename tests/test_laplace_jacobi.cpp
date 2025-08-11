@@ -1,10 +1,10 @@
 
 
 #include "../src/terra/communication/shell/communication.hpp"
-#include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/laplace.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
+#include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/solvers/richardson.hpp"
 #include "terra/dense/mat.hpp"
@@ -127,13 +127,14 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     VectorQ1Scalar< ScalarType > error( "error", domain, mask_data );
     VectorQ1Scalar< ScalarType > b( "b", domain, mask_data );
     VectorQ1Scalar< ScalarType > r( "r", domain, mask_data );
+    VectorQ1Scalar< ScalarType > inv_diag( "inv_diag", domain, mask_data );
 
     const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
 
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
     const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
 
-    using Laplace = fe::wedge::operators::shell::Laplace< ScalarType >;
+    using Laplace = fe::wedge::operators::shell::LaplaceSimple< ScalarType >;
 
     Laplace A( domain, subdomain_shell_coords, subdomain_radii, true, false );
     Laplace A_neumann( domain, subdomain_shell_coords, subdomain_radii, false, false );
@@ -149,15 +150,11 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         local_domain_md_range_policy_nodes( domain ),
         SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data(), false ) );
 
-    Kokkos::fence();
-
     // Set up boundary data.
     Kokkos::parallel_for(
         "boundary interpolation",
         local_domain_md_range_policy_nodes( domain ),
         SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), true ) );
-
-    Kokkos::fence();
 
     // Set up rhs data.
     Kokkos::parallel_for(
@@ -165,33 +162,40 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         local_domain_md_range_policy_nodes( domain ),
         RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data() ) );
 
-    Kokkos::fence();
-
     linalg::apply( M, tmp, b );
 
-    fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-        A_neumann, A_neumann_diag, g, tmp, b, mask_data, grid::shell::mask_domain_boundary() );
+    linalg::apply( A_neumann_diag, g, Adiagg );
+    linalg::apply( A_neumann, g, tmp );
 
-    Kokkos::fence();
+    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp } );
 
-    linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
+    Kokkos::parallel_for(
+        "set on boundary",
+        grid::shell::local_domain_md_range_policy_nodes( domain ),
+        SetOnBoundary( Adiagg.grid_data(), b.grid_data(), domain.domain_info().subdomain_num_nodes_radially() ) );
 
-    linalg::solvers::PCG< Laplace > pcg( solver_params, table, tmp, Adiagg, error, r );
-    pcg.set_tag( "pcg_solver_level_" + std::to_string( level ) );
+    assign( r, 1.0 );
+    apply( A_neumann_diag, r, inv_diag );
+    linalg::invert_entries( inv_diag );
+
+    linalg::solvers::Jacobi< Laplace > jacobi( inv_diag, 1000, r, 0.3 );
 
     Kokkos::fence();
     timer.reset();
-    linalg::solvers::solve( pcg, A, u, b );
+    linalg::solvers::solve( jacobi, A, u, b );
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
     linalg::lincomb( error, { 1.0, -1.0 }, { u, solution } );
     const auto l2_error = std::sqrt( dot( error, error ) / num_dofs );
 
-    if ( false )
+    if ( true )
     {
         vtk::VTKOutput vtk_after(
-            subdomain_shell_coords, subdomain_radii, "laplace_cg_level" + std::to_string( level ) + ".vtu", false );
+            subdomain_shell_coords,
+            subdomain_radii,
+            "test_laplace_jacobi_level" + std::to_string( level ) + ".vtu",
+            false );
         vtk_after.add_scalar_field( g.grid_data() );
         vtk_after.add_scalar_field( u.grid_data() );
         vtk_after.add_scalar_field( solution.grid_data() );
@@ -214,13 +218,11 @@ int main( int argc, char** argv )
 
     double prev_l2_error = 1.0;
 
-    for ( int level = 0; level < 5; ++level )
+    for ( int level = 0; level < 4; ++level )
     {
         Kokkos::Timer timer;
         timer.reset();
-        double l2_error = test( level, table );
-        table->print_pretty();
-        table->clear();
+        double     l2_error   = test( level, table );
         const auto time_total = timer.seconds();
         table->add_row( { { "level", level }, { "time_total", time_total } } );
 
@@ -228,9 +230,10 @@ int main( int argc, char** argv )
         {
             const double order = prev_l2_error / l2_error;
             std::cout << "order = " << order << std::endl;
-            if ( order < 3.9 )
+            if ( order < 3.4 )
             {
-                // return EXIT_FAILURE;
+                table->print_pretty();
+                return EXIT_FAILURE;
             }
 
             table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
@@ -240,6 +243,4 @@ int main( int argc, char** argv )
 
     table->query_not_none( "order" ).select( { "level", "order" } ).print_pretty();
     table->query_not_none( "dofs" ).select( { "level", "dofs", "l2_error" } ).print_pretty();
-
-    return 0;
 }

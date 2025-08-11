@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-
 #include "solver.hpp"
 
 namespace terra::linalg::solvers {
@@ -24,7 +22,6 @@ class Richardson
     {
         for ( int iteration = 0; iteration < iterations_; ++iteration )
         {
-            assign( r_, 0 );
             apply( A, x, r_ );
             lincomb( x, { 1.0, omega_, -omega_ }, { x, b, r_ } );
         }
