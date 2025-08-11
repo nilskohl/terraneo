@@ -26,19 +26,26 @@ class PBiCGStab
         const int                                l,
         const IterativeSolverParameters&         params,
         const std::shared_ptr< util::Table >&    statistics,
-        const std::vector< SolutionVectorType >& tmp )
+        const std::vector< SolutionVectorType >& tmp,
+        const PreconditionerT&                   preconditioner = IdentitySolver< OperatorT >() )
     : l_( l )
     , params_( params )
     , statistics_( statistics )
     , tmp_( tmp )
     , tag_( "pbicgstab_solver" )
-    , preconditioner_( IdentitySolver< OperatorT >() )
+    , preconditioner_( preconditioner )
     {
         const int num_required_tmp_vectors = 2 * ( l + 1 ) + 2;
         if ( tmp.size() < num_required_tmp_vectors )
         {
             throw std::runtime_error(
                 "PBiCGStab: tmp.size() != 2 * (l+1) + 2 = " + std::to_string( num_required_tmp_vectors ) );
+        }
+
+        if ( tmp.size() > num_required_tmp_vectors )
+        {
+            std::cout << "Note: You are using more tmp vectors that required in PBiCGStab. Required: "
+                      << num_required_tmp_vectors << ", passed: " << tmp.size() << std::endl;
         }
     }
 
@@ -59,7 +66,7 @@ class PBiCGStab
         if constexpr ( !std::is_same_v< PreconditionerT, IdentitySolver< OperatorT > > )
         {
             assign( tmp_prec(), residual() );
-            solve( A, tmp_prec(), residual() );
+            solve( preconditioner_, A, tmp_prec(), residual() );
             assign( residual(), tmp_prec() );
         }
 
@@ -106,6 +113,8 @@ class PBiCGStab
 
         Eigen::Matrix< ScalarType, Eigen::Dynamic, 1 > gamma( l_ );
 
+        iteration++;
+
         for ( ; iteration < params_.max_iterations(); ++iteration )
         {
             sigma = -omega * sigma;
@@ -127,7 +136,7 @@ class PBiCGStab
                 if constexpr ( !std::is_same_v< PreconditionerT, IdentitySolver< OperatorT > > )
                 {
                     assign( tmp_prec(), us( j + 1 ) );
-                    solve( A, tmp_prec(), us( j + 1 ) );
+                    solve( preconditioner_, A, tmp_prec(), us( j + 1 ) );
                     assign( us( j + 1 ), tmp_prec() );
                 }
 
@@ -144,7 +153,7 @@ class PBiCGStab
                 if constexpr ( !std::is_same_v< PreconditionerT, IdentitySolver< OperatorT > > )
                 {
                     assign( tmp_prec(), rs( j + 1 ) );
-                    solve( A, tmp_prec(), rs( j + 1 ) );
+                    solve( preconditioner_, A, tmp_prec(), rs( j + 1 ) );
                     assign( rs( j + 1 ), tmp_prec() );
                 }
 
