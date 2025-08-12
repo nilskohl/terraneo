@@ -342,17 +342,9 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
 
     if ( false )
     {
-        vtk::VTKOutput vtk_fine(
-            subdomain_fine_shell_coords,
-            subdomain_fine_radii,
-            "test_stokes_minres_fine_" + std::to_string( level ) + ".vtu",
-            false );
+        vtk::VTKOutput vtk_fine( subdomain_fine_shell_coords, subdomain_fine_radii, false );
 
-        vtk::VTKOutput vtk_coarse(
-            subdomain_coarse_shell_coords,
-            subdomain_coarse_radii,
-            "test_stokes_minres_coarse_" + std::to_string( level ) + ".vtu",
-            false );
+        vtk::VTKOutput vtk_coarse( subdomain_coarse_shell_coords, subdomain_coarse_radii, false );
 
         vtk_fine.add_vector_field( w.block_1().grid_data() );
         vtk_coarse.add_scalar_field( w.block_2().grid_data() );
@@ -369,8 +361,8 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
         vtk_fine.add_vector_field( r.block_1().grid_data() );
         vtk_coarse.add_scalar_field( r.block_2().grid_data() );
 
-        vtk_fine.write();
-        vtk_coarse.write();
+        vtk_fine.write( "test_stokes_minres_fine_" + std::to_string( level ) + ".vtu" );
+        vtk_coarse.write( "test_stokes_minres_coarse_" + std::to_string( level ) + ".vtu" );
     }
 
     return { l2_error_velocity, l2_error_pressure };

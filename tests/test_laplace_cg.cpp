@@ -189,14 +189,13 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( false )
     {
-        vtk::VTKOutput vtk_after(
-            coords_shell, coords_radii, "laplace_cg_level" + std::to_string( level ) + ".vtu", false );
+        vtk::VTKOutput vtk_after( coords_shell, coords_radii, false );
         vtk_after.add_scalar_field( g.grid_data() );
         vtk_after.add_scalar_field( u.grid_data() );
         vtk_after.add_scalar_field( solution.grid_data() );
         vtk_after.add_scalar_field( error.grid_data() );
 
-        vtk_after.write();
+        vtk_after.write( "laplace_cg_level" + std::to_string( level ) + ".vtu" );
     }
 
     table->add_row(

@@ -305,15 +305,11 @@ double
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine(
-            subdomain_shell_coords.back(),
-            subdomain_radii.back(),
-            "test_laplace_pbicgstab_multigrid_maxlevel_" + std::to_string( max_level ) + "_fine.vtu",
-            false );
+        vtk::VTKOutput vtk_fine( subdomain_shell_coords.back(), subdomain_radii.back(), false );
         vtk_fine.add_scalar_field( u.grid_data() );
         vtk_fine.add_scalar_field( solution.grid_data() );
         vtk_fine.add_scalar_field( error.grid_data() );
-        vtk_fine.write();
+        vtk_fine.write( "test_laplace_pbicgstab_multigrid_maxlevel_" + std::to_string( max_level ) + "_fine.vtu" );
     }
 
     table->add_row(

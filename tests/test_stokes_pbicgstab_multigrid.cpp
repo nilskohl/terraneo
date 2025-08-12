@@ -486,17 +486,9 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine(
-            coords_shell[velocity_level],
-            coords_radii[velocity_level],
-            "test_stokes_pbicgstab_" + std::to_string( max_level ) + "_vel.vtu",
-            false );
+        vtk::VTKOutput vtk_fine( coords_shell[velocity_level], coords_radii[velocity_level], false );
 
-        vtk::VTKOutput vtk_coarse(
-            coords_shell[pressure_level],
-            coords_radii[pressure_level],
-            "test_stokes_pbicgstab_" + std::to_string( max_level ) + "_pre.vtu",
-            false );
+        vtk::VTKOutput vtk_coarse( coords_shell[pressure_level], coords_radii[pressure_level], false );
 
         vtk_fine.add_vector_field( u.block_1().grid_data() );
         vtk_coarse.add_scalar_field( u.block_2().grid_data() );
@@ -513,8 +505,8 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
         vtk_fine.add_vector_field( stok_vecs["tmp_5"].block_1().grid_data() );
         vtk_coarse.add_scalar_field( stok_vecs["tmp_5"].block_2().grid_data() );
 
-        vtk_fine.write();
-        vtk_coarse.write();
+        vtk_fine.write( "test_stokes_pbicgstab_" + std::to_string( max_level ) + "_vel.vtu" );
+        vtk_coarse.write( "test_stokes_pbicgstab_" + std::to_string( max_level ) + "_pre.vtu" );
     }
 
     return { l2_error_velocity, l2_error_pressure };

@@ -719,10 +719,8 @@ class VTKOutput
     VTKOutput(
         const ShellCoordsView& shell_node_coords_device,
         const RadiiView&       radii_per_layer_device,
-        const std::string&     output_path,
         bool                   generate_quadratic_elements_from_linear_input = false )
-    : output_path_( output_path )
-    , is_quadratic_( generate_quadratic_elements_from_linear_input )
+    : is_quadratic_( generate_quadratic_elements_from_linear_input )
     {
         // 1. Copy input geometry data to managed host views (as before)
         h_shell_coords_managed_ = Kokkos::create_mirror_view( shell_node_coords_device );
@@ -825,12 +823,12 @@ class VTKOutput
         point_data_entries_.push_back( std::move( entry ) );
     }
 
-    void write()
+    void write( const std::string& output_file )
     {
-        std::ofstream vtk_file( output_path_ );
+        std::ofstream vtk_file( output_file );
         if ( !vtk_file.is_open() )
         {
-            throw std::runtime_error( "Failed to open VTK output file: " + output_path_ );
+            throw std::runtime_error( "Failed to open VTK output file: " + output_file );
         }
         vtk_file << std::fixed << std::setprecision( 8 );
 
@@ -1307,8 +1305,7 @@ class VTKOutput
     }
 
     // --- Member Variables ---
-    std::string output_path_;
-    bool        is_quadratic_;
+    bool is_quadratic_;
 
     grid::Grid3DDataVec< double, 3 >::HostMirror h_shell_coords_managed_;
     grid::Grid2DDataScalar< double >::HostMirror h_radii_managed_;

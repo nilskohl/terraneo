@@ -151,16 +151,15 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 
     const int timesteps = 10;
 
-    if ( true )
+    vtk::VTKOutput vtk_after( subdomain_shell_coords, subdomain_radii, false );
+    vtk_after.add_scalar_field( T.grid_data() );
+    vtk_after.add_vector_field( u.grid_data() );
+
+    constexpr auto vtk = false;
+
+    if ( vtk )
     {
-        vtk::VTKOutput vtk_after(
-            subdomain_shell_coords,
-            subdomain_radii,
-            "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( 0 ) + ".vtu",
-            false );
-        vtk_after.add_scalar_field( T.grid_data() );
-        vtk_after.add_vector_field( u.grid_data() );
-        vtk_after.write();
+        vtk_after.write( "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( 0 ) + ".vtu" );
     }
 
     for ( int ts = 1; ts < timesteps; ++ts )
@@ -173,16 +172,10 @@ void test( int level, const std::shared_ptr< util::Table >& table )
         table->print_pretty();
         table->clear();
 
-        if ( true )
+        if ( vtk )
         {
-            vtk::VTKOutput vtk_after(
-                subdomain_shell_coords,
-                subdomain_radii,
-                "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( ts ) + ".vtu",
-                false );
-            vtk_after.add_scalar_field( T.grid_data() );
-            vtk_after.add_vector_field( u.grid_data() );
-            vtk_after.write();
+            vtk_after.write(
+                "advection_diffusion_" + std::to_string( level ) + "_ts_" + std::to_string( ts ) + ".vtu" );
         }
     }
 }

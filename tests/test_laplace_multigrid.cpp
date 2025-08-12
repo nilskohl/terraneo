@@ -268,12 +268,10 @@ double
 
     linalg::solvers::IterativeSolverParameters solver_params{ 10000, 1e-16, 1e-16 };
 
-    CoarseGridSolver coarse_grid_solver(
-        solver_params, table, coarse_grid_tmps );
+    CoarseGridSolver coarse_grid_solver( solver_params, table, coarse_grid_tmps );
 
-    linalg::solvers::Multigrid< Laplace, Prolongation, Restriction, Smoother, CoarseGridSolver >
-        multigrid_solver(
-            P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 20, 1e-8 );
+    linalg::solvers::Multigrid< Laplace, Prolongation, Restriction, Smoother, CoarseGridSolver > multigrid_solver(
+        P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 20, 1e-8 );
 
     multigrid_solver.collect_statistics( table );
 
@@ -291,15 +289,11 @@ double
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine(
-            subdomain_shell_coords.back(),
-            subdomain_radii.back(),
-            "test_laplace_multigrid_maxlevel_" + std::to_string( max_level ) + "_fine.vtu",
-            false );
+        vtk::VTKOutput vtk_fine( subdomain_shell_coords.back(), subdomain_radii.back(), false );
         vtk_fine.add_scalar_field( u.grid_data() );
         vtk_fine.add_scalar_field( solution.grid_data() );
         vtk_fine.add_scalar_field( error.grid_data() );
-        vtk_fine.write();
+        vtk_fine.write( "test_laplace_multigrid_maxlevel_" + std::to_string( max_level ) + "_fine.vtu" );
     }
 
     table->add_row(

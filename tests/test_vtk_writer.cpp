@@ -55,9 +55,9 @@ int main( int argc, char** argv )
         terra::grid::shell::local_domain_md_range_policy_nodes( domain ),
         SomeInterpolator( subdomain_shell_coords, subdomain_radii, data ) );
 
-    terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, "my_fancy_vtk.vtu", true );
+    terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, true );
     vtk.add_scalar_field( data );
-    vtk.write();
+    vtk.write( "my_fancy_vtk.vtu" );
 
     return 0;
 }

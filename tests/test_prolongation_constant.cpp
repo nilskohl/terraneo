@@ -180,25 +180,17 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine(
-            subdomain_shell_coords_fine,
-            subdomain_radii_fine,
-            "prolongation_fine_level_" + std::to_string( level ) + ".vtu",
-            false );
+        vtk::VTKOutput vtk_fine( subdomain_shell_coords_fine, subdomain_radii_fine, false );
         vtk_fine.add_scalar_field( u_fine.grid_data() );
         vtk_fine.add_scalar_field( solution_fine.grid_data() );
         vtk_fine.add_scalar_field( error_fine.grid_data() );
 
-        vtk_fine.write();
+        vtk_fine.write( "prolongation_fine_level_" + std::to_string( level ) + ".vtu" );
 
-        vtk::VTKOutput vtk_coarse(
-            subdomain_shell_coords_coarse,
-            subdomain_radii_coarse,
-            "prolongation_coarse_level_" + std::to_string( level ) + ".vtu",
-            false );
+        vtk::VTKOutput vtk_coarse( subdomain_shell_coords_coarse, subdomain_radii_coarse, false );
         vtk_coarse.add_scalar_field( u_coarse.grid_data() );
 
-        vtk_coarse.write();
+        vtk_coarse.write( "prolongation_coarse_level_" + std::to_string( level ) + ".vtu" );
     }
 
     return error_norm;
