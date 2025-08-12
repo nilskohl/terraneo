@@ -19,6 +19,8 @@ class VectorQ1IsoQ2Q1
     using Block1Type = VectorQ1Vec< ScalarType, VecDim >;
     using Block2Type = VectorQ1Scalar< ScalarType >;
 
+    VectorQ1IsoQ2Q1() = default;
+
     VectorQ1IsoQ2Q1(
         const std::string&                              label,
         const grid::shell::DistributedDomain&           distributed_domain_fine,

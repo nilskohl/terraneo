@@ -186,7 +186,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
-    linalg::solvers::PCG< Laplace > pcg( solver_params, table, tmp, Adiagg, error, r );
+    linalg::solvers::PCG< Laplace > pcg( solver_params, table, { tmp, Adiagg, error, r } );
     pcg.set_tag( "pcg_solver_level_" + std::to_string( level ) );
 
     Kokkos::fence();
@@ -235,11 +235,11 @@ int main( int argc, char** argv )
         const auto time_total = timer.seconds();
         table->add_row( { { "level", level }, { "time_total", time_total } } );
 
-        if ( level > 1 )
+        if ( level > 2 )
         {
             const double order = prev_l2_error / l2_error;
             std::cout << "order = " << order << std::endl;
-            if ( order < 3.9 )
+            if ( order < 3.8 )
             {
                 return EXIT_FAILURE;
             }

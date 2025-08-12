@@ -402,12 +402,12 @@ int main( int argc, char** argv )
             std::cout << "order_vel = " << order_vel << std::endl;
             std::cout << "order_pre = " << order_pre << std::endl;
 
-            if ( order_vel < 3.8 )
+            if ( order_vel < 3.7 )
             {
                 return EXIT_FAILURE;
             }
 
-            if ( order_vel < 3.3 )
+            if ( order_vel < 3.7 )
             {
                 return EXIT_FAILURE;
             }

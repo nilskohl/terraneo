@@ -27,15 +27,11 @@ class Stokes
 
   private:
     VectorLaplace< double, VecDim > A_;
-    VectorLaplace< double, VecDim > A_diagonal_;
     Gradient< double >              B_T_;
     Divergence< double >            B_;
     Zero< double >                  O_;
 
     bool diagonal_;
-
-    linalg::OperatorApplyMode         operator_apply_mode_;
-    linalg::OperatorCommunicationMode operator_communication_mode_;
 
   public:
     Stokes(
@@ -44,53 +40,85 @@ class Stokes
         const grid::Grid3DDataVec< double, 3 >& grid,
         const grid::Grid2DDataScalar< double >& radii,
         bool                                    treat_boundary,
-        bool                                    diagonal,
-        linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode       operator_communication_mode =
-            linalg::OperatorCommunicationMode::CommunicateAdditively )
-    : A_( domain_fine,
-          grid,
-          radii,
-          treat_boundary,
-          false,
-          linalg::OperatorApplyMode::Replace,
-          linalg::OperatorCommunicationMode::SkipCommunication )
-    , A_diagonal_( domain_fine, grid, radii, treat_boundary, true, operator_apply_mode, operator_communication_mode )
-    , B_T_(
-          domain_fine,
-          domain_coarse,
-          grid,
-          radii,
-          treat_boundary,
-          linalg::OperatorApplyMode::Add,
-          operator_communication_mode )
-    , B_( domain_fine, domain_coarse, grid, radii, treat_boundary, operator_apply_mode, operator_communication_mode )
+        bool                                    diagonal )
+    : A_( domain_fine, grid, radii, treat_boundary, diagonal )
+    , B_T_( domain_fine, domain_coarse, grid, radii, treat_boundary )
+    , B_( domain_fine, domain_coarse, grid, radii, treat_boundary )
     , diagonal_( diagonal )
-    , operator_apply_mode_( operator_apply_mode )
-    , operator_communication_mode_( operator_communication_mode )
     {}
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        if ( diagonal_ )
+        if ( !diagonal_ )
         {
-            apply( A_diagonal_, src.block_1(), dst.block_1() );
-            return;
+            A_.set_operator_apply_and_communication_modes(
+                linalg::OperatorApplyMode::Replace, linalg::OperatorCommunicationMode::SkipCommunication );
         }
 
+        B_T_.set_operator_apply_and_communication_modes(
+            linalg::OperatorApplyMode::Add, linalg::OperatorCommunicationMode::CommunicateAdditively );
+        B_.set_operator_apply_and_communication_modes(
+            linalg::OperatorApplyMode::Replace, linalg::OperatorCommunicationMode::CommunicateAdditively );
+
         apply( A_, src.block_1(), dst.block_1() );
-        apply( B_T_, src.block_2(), dst.block_1() );
-        apply( B_, src.block_1(), dst.block_2() );
+
+        if ( !diagonal_ )
+        {
+            apply( B_T_, src.block_2(), dst.block_1() );
+            apply( B_, src.block_1(), dst.block_2() );
+        }
+
+        A_.set_operator_apply_and_communication_modes(
+            linalg::OperatorApplyMode::Replace, linalg::OperatorCommunicationMode::CommunicateAdditively );
+        B_T_.set_operator_apply_and_communication_modes(
+            linalg::OperatorApplyMode::Replace, linalg::OperatorCommunicationMode::CommunicateAdditively );
+        B_.set_operator_apply_and_communication_modes(
+            linalg::OperatorApplyMode::Replace, linalg::OperatorCommunicationMode::CommunicateAdditively );
     }
 
     const Block11Type& block_11() const { return A_; }
-    const Block12Type& block_12() const { return B_T_; }
-    const Block21Type& block_21() const { return B_; }
+
+    const Block12Type& block_12() const
+    {
+        if ( diagonal_ )
+        {
+            throw std::runtime_error( "block_12() is not implemented for diagonal Stokes operator" );
+        }
+
+        return B_T_;
+    }
+
+    const Block21Type& block_21() const
+    {
+        if ( diagonal_ )
+        {
+            throw std::runtime_error( "block_21() is not implemented for diagonal Stokes operator" );
+        }
+
+        return B_;
+    }
+
     const Block22Type& block_22() const { return O_; }
 
     Block11Type& block_11() { return A_; }
-    Block12Type& block_12() { return B_T_; }
-    Block21Type& block_21() { return B_; }
+    Block12Type& block_12()
+    {
+        if ( diagonal_ )
+        {
+            throw std::runtime_error( "block_12() is not implemented for diagonal Stokes operator" );
+        }
+
+        return B_T_;
+    }
+    Block21Type& block_21()
+    {
+        if ( diagonal_ )
+        {
+            throw std::runtime_error( "block_21() is not implemented for diagonal Stokes operator" );
+        }
+
+        return B_;
+    }
     Block22Type& block_22() { return O_; }
 };
 

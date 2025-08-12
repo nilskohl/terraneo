@@ -61,6 +61,14 @@ class Divergence
     , recv_buffers_( domain_coarse )
     {}
 
+    void set_operator_apply_and_communication_modes(
+        const linalg::OperatorApplyMode         operator_apply_mode,
+        const linalg::OperatorCommunicationMode operator_communication_mode )
+    {
+        operator_apply_mode_         = operator_apply_mode;
+        operator_communication_mode_ = operator_communication_mode;
+    }
+
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )

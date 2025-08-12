@@ -12,7 +12,7 @@
 
 namespace terra::fe::wedge::operators::shell {
 
-template < typename ScalarT, int VecDim >
+template < typename ScalarT, int VecDim = 3 >
 class VectorLaplace
 {
   public:
@@ -60,6 +60,14 @@ class VectorLaplace
     , recv_buffers_( domain )
     {}
 
+    void set_operator_apply_and_communication_modes(
+        const linalg::OperatorApplyMode         operator_apply_mode,
+        const linalg::OperatorCommunicationMode operator_communication_mode )
+    {
+        operator_apply_mode_         = operator_apply_mode;
+        operator_communication_mode_ = operator_communication_mode;
+    }
+
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
@@ -95,13 +103,13 @@ class VectorLaplace
 
         // Compute lateral part of Jacobian.
 
-        constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
+        constexpr auto num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
 
         dense::Vec< double, 3 > quad_points[num_quad_points];
         double                  quad_weights[num_quad_points];
 
-        quadrature::quad_felippa_1x1_quad_points( quad_points );
-        quadrature::quad_felippa_1x1_quad_weights( quad_weights );
+        quadrature::quad_felippa_3x2_quad_points( quad_points );
+        quadrature::quad_felippa_3x2_quad_weights( quad_weights );
 
         dense::Mat< double, 3, 3 > jac_lat_inv_t[num_wedges_per_hex_cell][num_quad_points] = {};
         double                     det_jac_lat[num_wedges_per_hex_cell][num_quad_points]   = {};

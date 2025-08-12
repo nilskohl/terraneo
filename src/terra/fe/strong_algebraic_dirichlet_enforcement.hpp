@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include <linalg/vector_q1.hpp>
-
+#include "linalg/vector_q1.hpp"
+#include "linalg/vector_q1isoq2_q1.hpp"
 #include "terra/linalg/operator.hpp"
 
 namespace terra::fe {
@@ -72,6 +72,30 @@ void strong_algebraic_homogeneous_dirichlet_enforcement_poisson_like(
 {
     // b_elim <- 0 on the Dirichlet boundary
     kernels::common::assign_masked_else_keep_old( b.grid_data(), 0.0, mask_data, dirichlet_boundary_mask );
+}
+
+template < typename ScalarType, linalg::OperatorLike OperatorType >
+void strong_algebraic_velocity_dirichlet_enforcement_stokes_like(
+    OperatorType&                                   K_neumann,
+    OperatorType&                                   K_neumann_diag,
+    const linalg::VectorQ1IsoQ2Q1< ScalarType >&    g,
+    linalg::VectorQ1IsoQ2Q1< ScalarType >&          tmp,
+    linalg::VectorQ1IsoQ2Q1< ScalarType >&          b,
+    const grid::Grid4DDataScalar< util::MaskType >& mask_data,
+    const util::MaskAndValue&                       dirichlet_boundary_mask )
+{
+    // g_A <- A * g
+    linalg::apply( K_neumann, g, tmp );
+
+    // b_elim <- b - g_A
+    linalg::lincomb( b, { 1.0, -1.0 }, { b, tmp } );
+
+    // g_D <- diag(A) * g
+    linalg::apply( K_neumann_diag, g, tmp );
+
+    // b_elim <- g_D on the Dirichlet boundary
+    kernels::common::assign_masked_else_keep_old(
+        b.block_1().grid_data(), tmp.block_1().grid_data(), mask_data, dirichlet_boundary_mask );
 }
 
 } // namespace terra::fe

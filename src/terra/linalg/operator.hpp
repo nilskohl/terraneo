@@ -44,6 +44,11 @@ template < typename T >
 concept Block2x2OperatorLike = OperatorLike< T > &&
 
                                requires( const T& self_const, T& self ) {
+
+                                    // Require that Src and Dst vector types satisfy VectorLike
+                                    requires Block2VectorLike< typename T::SrcVectorType >;
+                                    requires Block2VectorLike< typename T::DstVectorType >;
+
                                    typename T::Block11Type;
                                    typename T::Block12Type;
                                    typename T::Block21Type;

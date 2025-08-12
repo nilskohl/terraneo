@@ -21,36 +21,37 @@ class PCG
 
     using ScalarType = typename SolutionVectorType::ScalarType;
 
-    PCG( const IterativeSolverParameters&      params,
-         const std::shared_ptr< util::Table >& statistics,
-         const RHSVectorType&                  r_tmp,
-         const SolutionVectorType&             p_tmp,
-         const RHSVectorType&                  ap_tmp,
-         const SolutionVectorType&             z_tmp )
-    : PCG( params, statistics, r_tmp, p_tmp, ap_tmp, z_tmp, IdentitySolver< OperatorT >() )
+    PCG( const IterativeSolverParameters&         params,
+         const std::shared_ptr< util::Table >&    statistics,
+         const std::vector< SolutionVectorType >& tmps )
+    : PCG( params, statistics, tmps, IdentitySolver< OperatorT >() )
     {}
 
-    PCG( const IterativeSolverParameters&      params,
-         const std::shared_ptr< util::Table >& statistics,
-         const RHSVectorType&                  r_tmp,
-         const SolutionVectorType&             p_tmp,
-         const RHSVectorType&                  ap_tmp,
-         const SolutionVectorType&             z_tmp,
-         const PreconditionerT                 preconditioner )
+    PCG( const IterativeSolverParameters&         params,
+         const std::shared_ptr< util::Table >&    statistics,
+         const std::vector< SolutionVectorType >& tmps,
+         const PreconditionerT                    preconditioner )
     : tag_( "pcg_solver" )
     , params_( params )
     , statistics_( statistics )
-    , r_( r_tmp )
-    , p_( p_tmp )
-    , ap_( ap_tmp )
-    , z_( z_tmp )
+    , tmps_( tmps )
     , preconditioner_( preconditioner )
-    {}
+    {
+        if ( tmps.size() < 4 )
+        {
+            throw std::runtime_error( "PCG: tmps.size() < 4. Need at least 4 tmp vectors." );
+        }
+    }
 
     void set_tag( const std::string& tag ) { tag_ = tag; }
 
     void solve_impl( OperatorType& A, SolutionVectorType& x, const RHSVectorType& b )
     {
+        auto& r_  = tmps_[0];
+        auto& p_  = tmps_[1];
+        auto& ap_ = tmps_[2];
+        auto& z_  = tmps_[3];
+
         apply( A, x, r_ );
 
         lincomb( r_, { 1.0, -1.0 }, { b, r_ } );
@@ -128,10 +129,7 @@ class PCG
 
     std::shared_ptr< util::Table > statistics_;
 
-    RHSVectorType      r_;
-    SolutionVectorType p_;
-    RHSVectorType      ap_;
-    SolutionVectorType z_;
+    std::vector< SolutionVectorType > tmps_;
 
     PreconditionerT preconditioner_;
 };

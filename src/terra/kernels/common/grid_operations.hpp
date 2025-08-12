@@ -90,6 +90,28 @@ void assign_masked_else_keep_old(
     Kokkos::fence();
 }
 
+template < typename ScalarType, int VecDim >
+void assign_masked_else_keep_old(
+    const grid::Grid4DDataVec< ScalarType, VecDim >& dst,
+    const grid::Grid4DDataVec< ScalarType, VecDim >& src,
+    const grid::Grid4DDataScalar< util::MaskType >&  mask_grid,
+    const util::MaskAndValue                         mask_and_value )
+{
+    Kokkos::parallel_for(
+        "assign_masked",
+        Kokkos::MDRangePolicy(
+            { 0, 0, 0, 0, 0 },
+            { dst.extent( 0 ), dst.extent( 1 ), dst.extent( 2 ), dst.extent( 3 ), dst.extent( 4 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, int d ) {
+            const ScalarType mask_val =
+                util::check_bits( mask_grid( local_subdomain, i, j, k ), mask_and_value ) ? 1.0 : 0.0;
+            dst( local_subdomain, i, j, k, d ) =
+                mask_val * src( local_subdomain, i, j, k, d ) + ( 1.0 - mask_val ) * dst( local_subdomain, i, j, k, d );
+        } );
+
+    Kokkos::fence();
+}
+
 template < typename ScalarType >
 void lincomb(
     const grid::Grid4DDataScalar< ScalarType >& y,
@@ -523,6 +545,28 @@ void rand( const grid::Grid4DDataScalar< ScalarTypeDst >& dst )
         KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k ) {
             auto generator                  = random_pool.get_state();
             dst( local_subdomain, i, j, k ) = static_cast< ScalarTypeDst >( generator.drand() );
+            random_pool.free_state( generator );
+        } );
+
+    Kokkos::fence();
+}
+
+template < typename ScalarTypeDst, int VecDim >
+void rand( const grid::Grid4DDataVec< ScalarTypeDst, VecDim >& dst )
+{
+    static_assert(
+        std::is_same_v< ScalarTypeDst, double > || std::is_same_v< ScalarTypeDst, float >,
+        "Random integers not implemented. But can be done easily below." );
+
+    Kokkos::Random_XorShift64_Pool<> random_pool( /*seed=*/12345 );
+    Kokkos::parallel_for(
+        "rand",
+        Kokkos::MDRangePolicy(
+            { 0, 0, 0, 0, 0 },
+            { dst.extent( 0 ), dst.extent( 1 ), dst.extent( 2 ), dst.extent( 3 ), dst.extent( 4 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, int d ) {
+            auto generator                     = random_pool.get_state();
+            dst( local_subdomain, i, j, k, d ) = static_cast< ScalarTypeDst >( generator.drand() );
             random_pool.free_state( generator );
         } );
 

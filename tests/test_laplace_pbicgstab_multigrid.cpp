@@ -279,11 +279,9 @@ double
 
     linalg::solvers::IterativeSolverParameters solver_params{ 10000, 1e-16, 1e-16 };
 
-    CoarseGridSolver coarse_grid_solver(
-        solver_params, table, coarse_grid_tmps[0], coarse_grid_tmps[1], coarse_grid_tmps[2], coarse_grid_tmps[3] );
+    CoarseGridSolver coarse_grid_solver( solver_params, table, coarse_grid_tmps );
 
-    using Multigrid =
-        linalg::solvers::Multigrid< Laplace, Prolongation, Restriction, Laplace, Smoother, CoarseGridSolver >;
+    using Multigrid = linalg::solvers::Multigrid< Laplace, Prolongation, Restriction, Smoother, CoarseGridSolver >;
 
     Multigrid multigrid_solver(
         P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 1, -1 );

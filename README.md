@@ -21,6 +21,7 @@
 
 ### Small features / improvements (not necessarily / maybe required)
 
+- [ ] cube-like test case (this may require some new FE features)
 - [ ] performance engineering
 - [x] ~~curved wedges~~ the wedges are curved (unlike I assumed when writing this)
 - [ ] particles(?)
@@ -33,3 +34,4 @@
 - [x] Doxygen
 - [ ] Doxygen page
 - [x] move mask stuff that generalizes away from shell namespace
+- [ ] sort out what is spherical shell specific and what is not

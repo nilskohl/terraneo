@@ -73,7 +73,6 @@ struct RHSInterpolator
     : grid_( grid )
     , radii_( radii )
     , data_( data )
-
     {}
 
     KOKKOS_INLINE_FUNCTION
@@ -130,24 +129,24 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
 
-    const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
-    const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
+    const auto coords_shell = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
+    const auto coords_radii = terra::grid::shell::subdomain_shell_radii( domain );
 
-    using Laplace = fe::wedge::operators::shell::Laplace< ScalarType >;
+    using Laplace = fe::wedge::operators::shell::LaplaceSimple< ScalarType >;
 
-    Laplace A( domain, subdomain_shell_coords, subdomain_radii, true, false );
-    Laplace A_neumann( domain, subdomain_shell_coords, subdomain_radii, false, false );
-    Laplace A_neumann_diag( domain, subdomain_shell_coords, subdomain_radii, false, true );
+    Laplace A( domain, coords_shell, coords_radii, true, false );
+    Laplace A_neumann( domain, coords_shell, coords_radii, false, false );
+    Laplace A_neumann_diag( domain, coords_shell, coords_radii, false, true );
 
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 
-    Mass M( domain, subdomain_shell_coords, subdomain_radii, false );
+    Mass M( domain, coords_shell, coords_radii, false );
 
     // Set up solution data.
     Kokkos::parallel_for(
         "solution interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, solution.grid_data(), false ) );
+        SolutionInterpolator( coords_shell, coords_radii, solution.grid_data(), false ) );
 
     Kokkos::fence();
 
@@ -155,7 +154,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     Kokkos::parallel_for(
         "boundary interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), true ) );
+        SolutionInterpolator( coords_shell, coords_radii, g.grid_data(), true ) );
 
     Kokkos::fence();
 
@@ -163,7 +162,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     Kokkos::parallel_for(
         "rhs interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        RHSInterpolator( subdomain_shell_coords, subdomain_radii, tmp.grid_data() ) );
+        RHSInterpolator( coords_shell, coords_radii, tmp.grid_data() ) );
 
     Kokkos::fence();
 
@@ -176,7 +175,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-12, 1e-12 };
 
-    linalg::solvers::PCG< Laplace > pcg( solver_params, table, tmp, Adiagg, error, r );
+    linalg::solvers::PCG< Laplace > pcg( solver_params, table, { tmp, Adiagg, error, r } );
     pcg.set_tag( "pcg_solver_level_" + std::to_string( level ) );
 
     Kokkos::fence();
@@ -191,7 +190,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     if ( false )
     {
         vtk::VTKOutput vtk_after(
-            subdomain_shell_coords, subdomain_radii, "laplace_cg_level" + std::to_string( level ) + ".vtu", false );
+            coords_shell, coords_radii, "laplace_cg_level" + std::to_string( level ) + ".vtu", false );
         vtk_after.add_scalar_field( g.grid_data() );
         vtk_after.add_scalar_field( u.grid_data() );
         vtk_after.add_scalar_field( solution.grid_data() );
@@ -228,9 +227,9 @@ int main( int argc, char** argv )
         {
             const double order = prev_l2_error / l2_error;
             std::cout << "order = " << order << std::endl;
-            if ( order < 3.9 )
+            if ( order < 3.4 )
             {
-                // return EXIT_FAILURE;
+                return EXIT_FAILURE;
             }
 
             table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );

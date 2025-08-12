@@ -12,18 +12,16 @@ template <
     OperatorLike OperatorT,
     OperatorLike ProlongationT,
     OperatorLike RestrictionT,
-    OperatorLike CoarseGridOperatorT,
     SolverLike   SmootherT,
     SolverLike   CoarseGridSolverT >
 class Multigrid
 {
   public:
-    using OperatorType           = OperatorT;
-    using ProlongationType       = ProlongationT;
-    using RestrictionType        = RestrictionT;
-    using CoarseGridOperatorType = CoarseGridOperatorT;
-    using SmootherType           = SmootherT;
-    using CoarseGridSolverType   = CoarseGridSolverT;
+    using OperatorType         = OperatorT;
+    using ProlongationType     = ProlongationT;
+    using RestrictionType      = RestrictionT;
+    using SmootherType         = SmootherT;
+    using CoarseGridSolverType = CoarseGridSolverT;
 
     using SolutionVectorType = SrcOf< OperatorType >;
     using RHSVectorType      = DstOf< OperatorType >;
@@ -31,15 +29,15 @@ class Multigrid
     using ScalarType = SolutionVectorType::ScalarType;
 
   private:
-    std::vector< ProlongationType >       P_additive_;
-    std::vector< RestrictionType >        R_;
-    std::vector< CoarseGridOperatorType > A_c_;
-    std::vector< SolutionVectorType >     tmp_r_;
-    std::vector< SolutionVectorType >     tmp_e_;
-    std::vector< SolutionVectorType >     tmp_;
-    std::vector< SmootherType >           smoothers_pre_;
-    std::vector< SmootherType >           smoothers_post_;
-    CoarseGridSolverType                  coarse_grid_solver_;
+    std::vector< ProlongationType >   P_additive_;
+    std::vector< RestrictionType >    R_;
+    std::vector< OperatorT >          A_c_;
+    std::vector< SolutionVectorType > tmp_r_;
+    std::vector< SolutionVectorType > tmp_e_;
+    std::vector< SolutionVectorType > tmp_;
+    std::vector< SmootherType >       smoothers_pre_;
+    std::vector< SmootherType >       smoothers_post_;
+    CoarseGridSolverType              coarse_grid_solver_;
 
     int        num_cycles_;
     ScalarType relative_residual_threshold_;
@@ -49,17 +47,17 @@ class Multigrid
 
   public:
     Multigrid(
-        const std::vector< ProlongationType >&       P_additive,
-        const std::vector< RestrictionType >&        R,
-        const std::vector< CoarseGridOperatorType >& A_c,
-        const std::vector< SolutionVectorType >&     tmp_r,
-        const std::vector< SolutionVectorType >&     tmp_e,
-        const std::vector< SolutionVectorType >&     tmp,
-        const std::vector< SmootherType >&           smoothers_pre,
-        const std::vector< SmootherType >&           smoothers_post,
-        const CoarseGridSolverType&                  coarse_grid_solver,
-        int                                          num_cycles,
-        ScalarType                                   relative_residual_threshold )
+        const std::vector< ProlongationType >&   P_additive,
+        const std::vector< RestrictionType >&    R,
+        const std::vector< OperatorT >&          A_c,
+        const std::vector< SolutionVectorType >& tmp_r,
+        const std::vector< SolutionVectorType >& tmp_e,
+        const std::vector< SolutionVectorType >& tmp,
+        const std::vector< SmootherType >&       smoothers_pre,
+        const std::vector< SmootherType >&       smoothers_post,
+        const CoarseGridSolverType&              coarse_grid_solver,
+        int                                      num_cycles,
+        ScalarType                               relative_residual_threshold )
     : P_additive_( P_additive )
     , R_( R )
     , A_c_( A_c )
@@ -82,8 +80,8 @@ class Multigrid
              tmp_e_.size() != A_c_.size() || tmp_.size() != A_c_.size() + 1 )
         {
             throw std::runtime_error(
-                "Multigrid: P_additive, R, and A_c must be available for all coarse levels. tmp_0, tmp_1, tmp_2 "
-                "require the finest grid allocated, too." );
+                "Multigrid: P_additive, R, A_c, tmp_e, and tmp_r must be available for all coarse levels. tmp "
+                "requires the finest grid allocated, too." );
         }
 
         const int max_level = P_additive_.size();
