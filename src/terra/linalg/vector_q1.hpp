@@ -114,6 +114,9 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
 }
 
 /// @brief Q1 scalar finite element vector on a distributed shell grid.
+///
+/// Same layout as required for tensor-product wedge elements.
+///
 /// Satisfies the VectorLike concept (see vector.hpp).
 /// Provides masked grid data and operations for scalar fields.
 template < typename ScalarT >
@@ -251,6 +254,9 @@ class VectorQ1Scalar
 static_assert( VectorLike< VectorQ1Scalar< double > > );
 
 /// @brief Q1 vector finite element vector on a distributed shell grid.
+///
+/// Same layout as required for tensor-product wedge elements.
+///
 /// Satisfies the VectorLike concept (see vector.hpp).
 /// Provides masked grid data and operations for vector fields.
 template < typename ScalarT, int VecDim = 3 >

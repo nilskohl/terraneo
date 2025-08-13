@@ -10,6 +10,9 @@
 namespace terra::linalg {
 
 /// @brief Block vector consisting of a Q1 vector and a Q1 scalar vector on distributed shell grids.
+///
+/// Same layout as required for tensor-product wedge elements.
+///
 /// Satisfies the Block2VectorLike concept (see vector.hpp).
 /// Used for mixed finite element methods (e.g., Q1isoQ2-Q1).
 template < typename ScalarT, int VecDim = 3 >
