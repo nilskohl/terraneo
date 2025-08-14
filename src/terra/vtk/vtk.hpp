@@ -706,14 +706,19 @@ void write_surface_radial_extruded_to_wedge_vtu(
     vtk_file.close();
 }
 
+/// @tparam InputDataScalarType The scalar type of the added grids - the output type can be set later.
+template < typename InputDataScalarType >
 class VTKOutput
 {
   public:
+    using ScalarFieldDeviceView = Kokkos::View< InputDataScalarType**** >;
+    using VectorFieldDeviceView = Kokkos::View< InputDataScalarType**** [3] >;
+
     // Define Host view types for field data storage for clarity
     // Assuming input fields are double, will be cast to float on write.
     // If input fields can be float, this could be templated further or use a base class.
-    using ScalarFieldHostView = Kokkos::View< double**** >::HostMirror;
-    using VectorFieldHostView = Kokkos::View< double**** [3] >::HostMirror;
+    using ScalarFieldHostView = ScalarFieldDeviceView::HostMirror;
+    using VectorFieldHostView = VectorFieldDeviceView::HostMirror;
 
     template < class ShellCoordsView, class RadiiView >
     VTKOutput(
@@ -786,15 +791,11 @@ class VTKOutput
         }
         validate_field_view_dimensions_for_input_grid( field_data_view_device, field_data_view_device.label() );
 
-        // Create a host mirror and store it.
-        ScalarFieldHostView h_field_data_input =
-            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), field_data_view_device );
-
         PointDataEntry entry;
-        entry.name                 = field_data_view_device.label();
-        entry.num_components       = 1;
-        entry.data_type_str        = "Float32";
-        entry.host_view_input_data = h_field_data_input;
+        entry.name                   = field_data_view_device.label();
+        entry.num_components         = 1;
+        entry.data_type_str          = "Float32";
+        entry.device_view_input_data = field_data_view_device;
         point_data_entries_.push_back( std::move( entry ) );
     }
 
@@ -812,14 +813,11 @@ class VTKOutput
         }
         validate_field_view_dimensions_for_input_grid( field_data_view_device, field_data_view_device.label() );
 
-        VectorFieldHostView h_field_data_input =
-            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), field_data_view_device );
-
         PointDataEntry entry;
-        entry.name                 = field_data_view_device.label();
-        entry.num_components       = num_vec_components;
-        entry.data_type_str        = "Float32";
-        entry.host_view_input_data = h_field_data_input;
+        entry.name                   = field_data_view_device.label();
+        entry.num_components         = num_vec_components;
+        entry.data_type_str          = "Float32";
+        entry.device_view_input_data = field_data_view_device;
         point_data_entries_.push_back( std::move( entry ) );
     }
 
@@ -891,9 +889,9 @@ class VTKOutput
     {
         std::string name;
         // Store the host-mirrored INPUT grid data view directly
-        std::variant< ScalarFieldHostView, VectorFieldHostView > host_view_input_data;
-        int                                                      num_components;
-        std::string                                              data_type_str;
+        std::variant< ScalarFieldDeviceView, VectorFieldDeviceView > device_view_input_data;
+        int                                                          num_components;
+        std::string                                                  data_type_str;
     };
 
     // --- Helper: Get Global Output Node ID --- (same as before)
@@ -1174,7 +1172,7 @@ class VTKOutput
             if ( NR_nodes_rad_input_ == 1 )
                 ir_in = 0;
 
-            if constexpr ( std::is_same_v< InputFieldViewType, grid::Grid4DDataScalar< double >::HostMirror > )
+            if constexpr ( std::is_same_v< InputFieldViewType, ScalarFieldHostView > )
             { // Scalar
                 interpolated_values[0] = h_field_data_input( sd, ix_in, iy_in, ir_in );
             }
@@ -1215,9 +1213,7 @@ class VTKOutput
                         double W_i   = ( i_off == 0 ) ? ( 1.0 - wx_param ) : wx_param;
 
                         double weight = W_i * W_j * R_k;
-                        if constexpr ( std::is_same_v<
-                                           InputFieldViewType,
-                                           grid::Grid4DDataScalar< double >::HostMirror > )
+                        if constexpr ( std::is_same_v< InputFieldViewType, ScalarFieldHostView > )
                         { // Scalar
                             val_sum[0] += weight * h_field_data_input( sd, ix_in, iy_in, ir_in );
                         }
@@ -1242,7 +1238,7 @@ class VTKOutput
             }
             else
             { // Original node or not enough points to interpolate from
-                if constexpr ( std::is_same_v< InputFieldViewType, grid::Grid4DDataScalar< double >::HostMirror > )
+                if constexpr ( std::is_same_v< InputFieldViewType, ScalarFieldHostView > )
                 {
                     interpolated_values[0] = h_field_data_input(
                         sd,
@@ -1268,6 +1264,43 @@ class VTKOutput
 
     void write_field_data( std::ostream& os, const PointDataEntry& entry )
     {
+        std::variant< ScalarFieldHostView, VectorFieldHostView > host_view;
+
+        if ( entry.num_components == 1 )
+        {
+            if ( !scalar_field_host_buffer_.has_value() )
+            {
+                ScalarFieldHostView host_mirror = Kokkos::create_mirror_view_and_copy(
+                    Kokkos::HostSpace(), std::get< ScalarFieldDeviceView >( entry.device_view_input_data ) );
+                scalar_field_host_buffer_ = host_mirror;
+            }
+            else
+            {
+                Kokkos::deep_copy(
+                    scalar_field_host_buffer_.value(),
+                    std::get< ScalarFieldDeviceView >( entry.device_view_input_data ) );
+            }
+
+            host_view = scalar_field_host_buffer_.value();
+        }
+        else
+        {
+            if ( !vector_field_host_buffer_.has_value() )
+            {
+                VectorFieldHostView host_mirror = Kokkos::create_mirror_view_and_copy(
+                    Kokkos::HostSpace(), std::get< VectorFieldDeviceView >( entry.device_view_input_data ) );
+                vector_field_host_buffer_ = host_mirror;
+            }
+            else
+            {
+                Kokkos::deep_copy(
+                    vector_field_host_buffer_.value(),
+                    std::get< VectorFieldDeviceView >( entry.device_view_input_data ) );
+            }
+
+            host_view = vector_field_host_buffer_.value();
+        }
+
         std::vector< double > interpolated_values_buffer( entry.num_components );
         for ( size_t sd = 0; sd < num_subdomains_; ++sd )
         {
@@ -1289,7 +1322,7 @@ class VTKOutput
                                     entry.num_components,
                                     interpolated_values_buffer );
                             },
-                            entry.host_view_input_data );
+                            host_view );
 
                         os << "          ";
                         for ( int comp = 0; comp < entry.num_components; ++comp )
@@ -1318,6 +1351,9 @@ class VTKOutput
     size_t num_total_cells_;
 
     std::vector< PointDataEntry > point_data_entries_;
+
+    std::optional< ScalarFieldHostView > scalar_field_host_buffer_;
+    std::optional< VectorFieldHostView > vector_field_host_buffer_;
 };
 
 } // namespace terra::vtk
