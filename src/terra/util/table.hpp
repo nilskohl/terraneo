@@ -77,12 +77,10 @@ class Table
     /// @brief Max length of string values (required for safe reading of possibly non-null-terminated char arrays).
     static constexpr int MAX_STRING_LENGTH = 10000;
 
-    /// @brief Type for table cell values.
-    using Value = std::variant<
+  private:
+    using ValueBase = std::variant<
         std::monostate,
         std::string,
-        const char*,
-        char*,
         char,
         short,
         int,
@@ -96,6 +94,22 @@ class Table
         float,
         double,
         bool >;
+
+  public:
+    /// @brief Type for table cell values.
+    struct Value : ValueBase
+    {
+        // Using a variant directly is annoying because we need to handle string literals via const char *.
+        // (That conversion btw seems to be compiler-dependent :) which makes it even more annoying.)
+        // It is possible, but requires another special case throughout the accessors.
+        // So we simply always convert to std::string.
+
+        using ValueBase::ValueBase; // inherit constructors
+
+        Value( const char* arg )
+        : ValueBase( char_ptr_to_string_safe( arg ) )
+        {}
+    };
 
     /// @brief Type for a table row (mapping column name to value).
     using Row = std::unordered_map< std::string, Value >;
@@ -130,18 +144,11 @@ class Table
     }
 
     /// @brief Select a subset of columns from the table.
-    /// Always includes "id" and "timestamp".
     /// @param selected_columns Columns to select.
     /// @return New Table with only selected columns.
     [[nodiscard]] Table select_columns( const std::vector< std::string >& selected_columns ) const
     {
         Table result;
-        result.columns_ = { "id", "timestamp" }; // always keep these
-        for ( const auto& col : selected_columns )
-        {
-            result.columns_.insert( col );
-        }
-
         for ( const auto& row : rows_ )
         {
             Row new_row;
@@ -287,8 +294,7 @@ class Table
                     os << ",";
                 }
                 os << "\"" << key << "\":";
-                if ( std::holds_alternative< std::string >( val ) || std::holds_alternative< const char* >( val ) ||
-                     std::holds_alternative< char* >( val ) )
+                if ( std::holds_alternative< std::string >( val ) )
                 {
                     os << "\"" << value_to_string( val ) << "\"";
                 }
@@ -357,10 +363,6 @@ class Table
                 else if constexpr ( std::is_same_v< T, std::string > )
                 {
                     return val;
-                }
-                else if constexpr ( std::is_same_v< T, const char* > || std::is_same_v< T, char* > )
-                {
-                    return char_ptr_to_string_safe( val );
                 }
                 else if constexpr ( std::is_same_v< T, bool > )
                 {

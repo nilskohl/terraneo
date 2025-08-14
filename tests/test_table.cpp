@@ -78,6 +78,13 @@ int main( int argc, char** argv )
         failures++;
     }
 
+    if ( table.query_rows_equals( "age", 30 ).rows().size() != 1 )
+    {
+        std::cerr << "FAIL: query_rows_equals( 'age', 30 ) expected 1 rows, got " << queried_table.rows().size()
+                  << std::endl;
+        failures++;
+    }
+
     // Print formats (just call, don't check output)
     std::cout << "\nPretty print:\n";
     table.print_pretty();
