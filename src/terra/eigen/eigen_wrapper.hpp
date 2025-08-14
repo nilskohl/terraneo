@@ -12,6 +12,9 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-but-set-variable"
 
+#define EIGEN_NO_CUDA
+#define EIGEN_DONT_VECTORIZE
+
 #include "../../../extern/eigen-3.4.0/Eigen/Eigen"
 
 #pragma clang diagnostic pop
