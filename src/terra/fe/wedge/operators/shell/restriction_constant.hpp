@@ -28,8 +28,8 @@ class RestrictionConstant
 
     linalg::OperatorApplyMode operator_apply_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< ScalarType > send_buffers_;
-    communication::shell::SubdomainNeighborhoodRecvBuffer< ScalarType > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarType > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarType > recv_buffers_;
 
     grid::Grid4DDataScalar< ScalarType > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
@@ -88,13 +88,9 @@ class RestrictionConstant
 
         // Additive communication.
 
-        std::vector< std::array< int, 11 > > expected_recvs_metadata;
-        std::vector< MPI_Request >           expected_recvs_requests;
-
         communication::shell::pack_and_send_local_subdomain_boundaries(
-            domain_coarse_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
-        communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-            domain_coarse_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+            domain_coarse_, dst_, send_buffers_, recv_buffers_ );
+        communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_coarse_, dst_, recv_buffers_ );
     }
 
     KOKKOS_INLINE_FUNCTION void
@@ -147,8 +143,8 @@ class RestrictionVecConstant
 
     linalg::OperatorApplyMode operator_apply_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< ScalarType, VecDim > send_buffers_;
-    communication::shell::SubdomainNeighborhoodRecvBuffer< ScalarType, VecDim > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarType, VecDim > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarType, VecDim > recv_buffers_;
 
     grid::Grid4DDataVec< ScalarType, VecDim > src_;
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
@@ -207,13 +203,9 @@ class RestrictionVecConstant
 
         // Additive communication.
 
-        std::vector< std::array< int, 11 > > expected_recvs_metadata;
-        std::vector< MPI_Request >           expected_recvs_requests;
-
         communication::shell::pack_and_send_local_subdomain_boundaries(
-            domain_coarse_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
-        communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-            domain_coarse_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+            domain_coarse_, dst_, send_buffers_, recv_buffers_ );
+        communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_coarse_, dst_, recv_buffers_ );
     }
 
     KOKKOS_INLINE_FUNCTION void

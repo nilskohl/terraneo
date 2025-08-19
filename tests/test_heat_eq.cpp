@@ -75,7 +75,8 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
 {
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     const auto max_level = domain.domain_info().subdomain_max_refinement_level();
     std::cout << "Max level: " << max_level << std::endl;
@@ -132,7 +133,7 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
     linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
 
-    vtk::VTKOutput vtk_after( subdomain_shell_coords, subdomain_radii, false );
+    vtk::VTKOutput< ScalarType > vtk_after( subdomain_shell_coords, subdomain_radii, false );
     vtk_after.add_scalar_field( T.grid_data() );
     vtk_after.add_scalar_field( solution.grid_data() );
     vtk_after.add_scalar_field( error.grid_data() );
@@ -238,7 +239,7 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 

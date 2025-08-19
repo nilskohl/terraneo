@@ -115,7 +115,8 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data = linalg::setup_mask_data( domain );
 
@@ -191,7 +192,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( true )
     {
-        vtk::VTKOutput vtk_after( subdomain_shell_coords, subdomain_radii, false );
+        vtk::VTKOutput< double > vtk_after( subdomain_shell_coords, subdomain_radii, false );
         vtk_after.add_scalar_field( g.grid_data() );
         vtk_after.add_scalar_field( u.grid_data() );
         vtk_after.add_scalar_field( solution.grid_data() );
@@ -208,7 +209,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 

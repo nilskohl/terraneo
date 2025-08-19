@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../../kokkos/kokkos_wrapper.hpp"
+#include "kokkos/kokkos_wrapper.hpp"
+#include "mpi/mpi.hpp"
 #include "grid/grid_types.hpp"
 #include "terra/util/bit_masking.hpp"
 
@@ -330,6 +331,8 @@ ScalarType min_entry( const grid::Grid4DDataScalar< ScalarType >& x )
 
     Kokkos::fence();
 
+    MPI_Allreduce( MPI_IN_PLACE, &min_val, 1, mpi::mpi_datatype< ScalarType >(), MPI_MIN, MPI_COMM_WORLD );
+
     return min_val;
 }
 
@@ -348,6 +351,8 @@ ScalarType min_abs_entry( const grid::Grid4DDataScalar< ScalarType >& x )
 
     Kokkos::fence();
 
+    MPI_Allreduce( MPI_IN_PLACE, &min_mag, 1, mpi::mpi_datatype< ScalarType >(), MPI_MIN, MPI_COMM_WORLD );
+
     return min_mag;
 }
 
@@ -365,6 +370,8 @@ ScalarType max_abs_entry( const grid::Grid4DDataScalar< ScalarType >& x )
         Kokkos::Max< ScalarType >( max_mag ) );
 
     Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &max_mag, 1, mpi::mpi_datatype< ScalarType >(), MPI_MAX, MPI_COMM_WORLD );
 
     return max_mag;
 }
@@ -385,6 +392,8 @@ ScalarType max_abs_entry( const grid::Grid4DDataVec< ScalarType, VecDim >& x )
 
     Kokkos::fence();
 
+    MPI_Allreduce( MPI_IN_PLACE, &max_mag, 1, mpi::mpi_datatype< ScalarType >(), MPI_MAX, MPI_COMM_WORLD );
+
     return max_mag;
 }
 
@@ -402,6 +411,8 @@ ScalarType sum_of_absolutes( const grid::Grid4DDataScalar< ScalarType >& x )
         Kokkos::Sum< ScalarType >( sum_abs ) );
 
     Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &sum_abs, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
 
     return sum_abs;
 }
@@ -424,6 +435,8 @@ ScalarType count_masked( const grid::Grid4DDataScalar< MaskType >& mask, const u
         Kokkos::Sum< ScalarType >( count ) );
 
     Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &count, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
 
     return count;
 }
@@ -449,6 +462,8 @@ ScalarType masked_sum(
 
     Kokkos::fence();
 
+    MPI_Allreduce( MPI_IN_PLACE, &sum, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
+
     return sum;
 }
 
@@ -467,6 +482,8 @@ ScalarType dot_product( const grid::Grid4DDataScalar< ScalarType >& x, const gri
         Kokkos::Sum< ScalarType >( dot_prod ) );
 
     Kokkos::fence( "dot_product" );
+
+    MPI_Allreduce( MPI_IN_PLACE, &dot_prod, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
 
     return dot_prod;
 }
@@ -492,6 +509,8 @@ ScalarType masked_dot_product(
         Kokkos::Sum< ScalarType >( dot_prod ) );
 
     Kokkos::fence( "masked_dot_product" );
+
+    MPI_Allreduce( MPI_IN_PLACE, &dot_prod, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
 
     return dot_prod;
 }
@@ -519,6 +538,8 @@ ScalarType masked_dot_product(
 
     Kokkos::fence( "masked_dot_product" );
 
+    MPI_Allreduce( MPI_IN_PLACE, &dot_prod, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
+
     return dot_prod;
 }
 
@@ -536,6 +557,8 @@ bool has_nan( const grid::Grid4DDataScalar< ScalarType >& x )
         Kokkos::LOr< bool >( has_nan ) );
 
     Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &has_nan, 1, mpi::mpi_datatype< bool >(), MPI_LOR, MPI_COMM_WORLD );
 
     return has_nan;
 }

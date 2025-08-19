@@ -35,7 +35,7 @@ struct SomeInterpolator
 
 int main( int argc, char** argv )
 {
-    terra::util::TerraScopeGuard scope_guard( &argc, &argv );
+    terra::util::terra_initialize( &argc, &argv );
 
     constexpr int    lateral_refinement_level = 4;
     constexpr int    radial_refinement_level  = 4;
@@ -43,7 +43,11 @@ int main( int argc, char** argv )
     constexpr double r_max                    = 1.0;
 
     const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain(
-        lateral_refinement_level, radial_refinement_level, r_min, r_max );
+        lateral_refinement_level,
+        radial_refinement_level,
+        r_min,
+        r_max,
+        terra::grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain );
     const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii( domain );
@@ -55,7 +59,7 @@ int main( int argc, char** argv )
         terra::grid::shell::local_domain_md_range_policy_nodes( domain ),
         SomeInterpolator( subdomain_shell_coords, subdomain_radii, data ) );
 
-    terra::vtk::VTKOutput vtk( subdomain_shell_coords, subdomain_radii, true );
+    terra::vtk::VTKOutput< double > vtk( subdomain_shell_coords, subdomain_radii, true );
     vtk.add_scalar_field( data );
     vtk.write( "my_fancy_vtk.vtu" );
 

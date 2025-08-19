@@ -234,48 +234,53 @@ class Table
     /// @return Reference to this table.
     const Table& print_pretty( std::ostream& os = std::cout ) const
     {
-        std::unordered_map< std::string, size_t > widths;
-        for ( const auto& col : columns_ )
+        if ( mpi::rank() == 0 )
         {
-            widths[col] = col.size();
-        }
-
-        for ( const auto& row : rows_ )
-        {
+            std::unordered_map< std::string, size_t > widths;
             for ( const auto& col : columns_ )
             {
-                widths[col] = std::max( widths[col], value_to_string( get_value_from_row_or_none( row, col ) ).size() );
+                widths[col] = col.size();
             }
-        }
 
-        auto sep = [&] {
-            for ( const auto& col : columns_ )
+            for ( const auto& row : rows_ )
             {
-                os << "+" << std::string( widths[col] + 2, '-' );
+                for ( const auto& col : columns_ )
+                {
+                    widths[col] =
+                        std::max( widths[col], value_to_string( get_value_from_row_or_none( row, col ) ).size() );
+                }
             }
-            os << "+\n";
-        };
 
-        sep();
-        os << "|";
-        for ( const auto& col : columns_ )
-        {
-            os << " " << std::setw( static_cast< int >( widths[col] ) ) << std::right << col << " |";
-        }
-        os << "\n";
-        sep();
+            auto sep = [&] {
+                for ( const auto& col : columns_ )
+                {
+                    os << "+" << std::string( widths[col] + 2, '-' );
+                }
+                os << "+\n";
+            };
 
-        for ( const auto& row : rows_ )
-        {
+            sep();
             os << "|";
             for ( const auto& col : columns_ )
             {
-                os << " " << std::setw( static_cast< int >( widths[col] ) ) << std::right
-                   << value_to_string( get_value_from_row_or_none( row, col ) ) << " |";
+                os << " " << std::setw( static_cast< int >( widths[col] ) ) << std::right << col << " |";
             }
             os << "\n";
+            sep();
+
+            for ( const auto& row : rows_ )
+            {
+                os << "|";
+                for ( const auto& col : columns_ )
+                {
+                    os << " " << std::setw( static_cast< int >( widths[col] ) ) << std::right
+                       << value_to_string( get_value_from_row_or_none( row, col ) ) << " |";
+                }
+                os << "\n";
+            }
+            sep();
         }
-        sep();
+
         return *this;
     }
 
@@ -294,38 +299,42 @@ class Table
     /// @return Reference to this table.
     const Table& print_jsonl( std::ostream& os = std::cout ) const
     {
-        for ( const auto& row : rows_ )
+        if ( mpi::rank() == 0 )
         {
-            os << "{";
-            bool first = true;
-            for ( const auto& [key, val] : row )
+            for ( const auto& row : rows_ )
             {
-                if ( !first )
+                os << "{";
+                bool first = true;
+                for ( const auto& [key, val] : row )
                 {
-                    os << ",";
+                    if ( !first )
+                    {
+                        os << ",";
+                    }
+                    os << "\"" << key << "\":";
+                    if ( std::holds_alternative< std::string >( val ) )
+                    {
+                        os << "\"" << value_to_string( val ) << "\"";
+                    }
+                    else if ( std::holds_alternative< std::monostate >( val ) )
+                    {
+                        os << "null";
+                    }
+                    else if ( std::holds_alternative< bool >( val ) )
+                    {
+                        os << ( std::get< bool >( val ) ? "true" : "false" );
+                    }
+                    else
+                    {
+                        os << value_to_string( val );
+                    }
+                    first = false;
                 }
-                os << "\"" << key << "\":";
-                if ( std::holds_alternative< std::string >( val ) )
-                {
-                    os << "\"" << value_to_string( val ) << "\"";
-                }
-                else if ( std::holds_alternative< std::monostate >( val ) )
-                {
-                    os << "null";
-                }
-                else if ( std::holds_alternative< bool >( val ) )
-                {
-                    os << ( std::get< bool >( val ) ? "true" : "false" );
-                }
-                else
-                {
-                    os << value_to_string( val );
-                }
-                first = false;
-            }
 
-            os << "}\n";
+                os << "}\n";
+            }
         }
+
         return *this;
     }
 
@@ -334,19 +343,23 @@ class Table
     /// @return Reference to this table.
     const Table& print_csv( std::ostream& os = std::cout ) const
     {
-        print_header( os, "," );
-        for ( const auto& row : rows_ )
+        if ( mpi::rank() == 0 )
         {
-            bool first = true;
-            for ( const auto& col : columns_ )
+            print_header( os, "," );
+            for ( const auto& row : rows_ )
             {
-                if ( !first )
-                    os << ",";
-                os << value_to_string( get_value_from_row_or_none( row, col ) );
-                first = false;
+                bool first = true;
+                for ( const auto& col : columns_ )
+                {
+                    if ( !first )
+                        os << ",";
+                    os << value_to_string( get_value_from_row_or_none( row, col ) );
+                    first = false;
+                }
+                os << "\n";
             }
-            os << "\n";
         }
+
         return *this;
     }
 

@@ -233,7 +233,9 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
     {
         const int idx = level - min_level;
 
-        domains.push_back( DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 ) );
+        domains.push_back(
+            DistributedDomain::create_uniform_single_subdomain(
+                level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds ) );
         coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords( domains[idx] ) );
         coords_radii.push_back( grid::shell::subdomain_shell_radii( domains[idx] ) );
         mask_data.push_back( linalg::setup_mask_data( domains[idx] ) );
@@ -486,9 +488,9 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine( coords_shell[velocity_level], coords_radii[velocity_level], false );
+        vtk::VTKOutput< ScalarType > vtk_fine( coords_shell[velocity_level], coords_radii[velocity_level], false );
 
-        vtk::VTKOutput vtk_coarse( coords_shell[pressure_level], coords_radii[pressure_level], false );
+        vtk::VTKOutput< ScalarType > vtk_coarse( coords_shell[pressure_level], coords_radii[pressure_level], false );
 
         vtk_fine.add_vector_field( u.block_1().grid_data() );
         vtk_coarse.add_scalar_field( u.block_2().grid_data() );
@@ -514,7 +516,7 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 

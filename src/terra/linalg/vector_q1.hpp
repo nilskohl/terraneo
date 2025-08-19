@@ -22,11 +22,8 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
     auto tmp_data_for_global_subdomain_indices =
         grid::shell::allocate_scalar_grid< int >( "tmp_data_for_global_subdomain_indices", domain );
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< int > send_buffers( domain );
-    communication::shell::SubdomainNeighborhoodRecvBuffer< int > recv_buffers( domain );
-
-    std::vector< std::array< int, 11 > > expected_recvs_metadata;
-    std::vector< MPI_Request >           expected_recvs_requests;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< int > send_buffers( domain );
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< int > recv_buffers( domain );
 
     // Interpolate the unique subdomain ID.
     for ( const auto& [subdomain_info, value] : domain.subdomains() )
@@ -46,15 +43,10 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
 
     // Communicate and reduce with minimum.
     terra::communication::shell::pack_and_send_local_subdomain_boundaries(
-        domain, tmp_data_for_global_subdomain_indices, send_buffers, expected_recvs_requests, expected_recvs_metadata );
+        domain, tmp_data_for_global_subdomain_indices, send_buffers, recv_buffers );
 
     terra::communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-        domain,
-        tmp_data_for_global_subdomain_indices,
-        recv_buffers,
-        expected_recvs_requests,
-        expected_recvs_metadata,
-        communication::shell::CommuncationReduction::MIN );
+        domain, tmp_data_for_global_subdomain_indices, recv_buffers, communication::shell::CommuncationReduction::MIN );
 
     // Set all nodes to 1 if the global_subdomain_id matches - 0 otherwise.
     for ( const auto& [subdomain_info, value] : domain.subdomains() )

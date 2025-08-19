@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cmath>
+#include <iostream>
+#include <ranges>
 #include <stdexcept>
 
 #include "../grid_types.hpp"
@@ -52,6 +54,12 @@ class SubdomainInfo
                std::tie( other.diamond_id_, other.subdomain_r_, other.subdomain_y_, other.subdomain_x_ );
     }
 
+    bool operator==( const SubdomainInfo& other ) const
+    {
+        return std::tie( diamond_id_, subdomain_r_, subdomain_y_, subdomain_x_ ) ==
+               std::tie( other.diamond_id_, other.subdomain_r_, other.subdomain_y_, other.subdomain_x_ );
+    }
+
     /// @brief Scrambles the four indices (diamond ID, x, y, r) into a single integer.
     int global_id() const
     {
@@ -86,6 +94,16 @@ inline std::ostream& operator<<( std::ostream& os, const SubdomainInfo& si )
 {
     os << "Diamond ID: " << si.diamond_id();
     return os;
+}
+
+inline mpi::MPIRank subdomain_to_rank_all_root( const SubdomainInfo& subdomain_info )
+{
+    return 0;
+}
+
+inline mpi::MPIRank subdomain_to_rank_distribute_full_diamonds( const SubdomainInfo& subdomain_info )
+{
+    return subdomain_info.diamond_id() % mpi::num_processes();
 }
 
 /// @brief Information about the thick spherical shell mesh.
@@ -218,8 +236,11 @@ class DomainInfo
         return ( ( subdomain_num_nodes_radially() - 1 ) >> coarsening_steps ) + 1;
     }
 
-    std::vector< SubdomainInfo > all_subdomains() const
+    std::vector< SubdomainInfo >
+        local_subdomains( const std::function< mpi::MPIRank( const SubdomainInfo& ) >& subdomain_to_rank ) const
     {
+        const auto rank = mpi::rank();
+
         std::vector< SubdomainInfo > subdomains;
         for ( int diamond_id = 0; diamond_id < 10; diamond_id++ )
         {
@@ -230,11 +251,21 @@ class DomainInfo
                     for ( int r = 0; r < num_subdomains_in_radial_direction_; r++ )
                     {
                         SubdomainInfo subdomain( diamond_id, x, y, r );
-                        subdomains.push_back( subdomain );
+
+                        if ( subdomain_to_rank( subdomain ) == rank )
+                        {
+                            subdomains.push_back( subdomain );
+                        }
                     }
                 }
             }
         }
+
+        if ( subdomains.empty() )
+        {
+            throw std::logic_error( "No local subdomains found on rank " + std::to_string( rank ) + "." );
+        }
+
         return subdomains;
     }
 
@@ -265,9 +296,12 @@ class SubdomainNeighborhood
 
     SubdomainNeighborhood() = default;
 
-    SubdomainNeighborhood( const DomainInfo& domain_info, const SubdomainInfo& subdomain_info )
+    SubdomainNeighborhood(
+        const DomainInfo&                                            domain_info,
+        const SubdomainInfo&                                         subdomain_info,
+        const std::function< mpi::MPIRank( const SubdomainInfo& ) >& subdomain_to_rank )
     {
-        setup_neighborhood( domain_info, subdomain_info );
+        setup_neighborhood( domain_info, subdomain_info, subdomain_to_rank );
     }
 
     const std::map< BoundaryVertex, std::vector< NeighborSubdomainTupleVertex > >& neighborhood_vertex() const
@@ -283,17 +317,15 @@ class SubdomainNeighborhood
     const std::map< BoundaryFace, NeighborSubdomainTupleFace >& neighborhood_face() const { return neighborhood_face_; }
 
   private:
-    void setup_neighborhood( const DomainInfo& domain_info, const SubdomainInfo& subdomain_info )
+    void setup_neighborhood(
+        const DomainInfo&                                            domain_info,
+        const SubdomainInfo&                                         subdomain_info,
+        const std::function< mpi::MPIRank( const SubdomainInfo& ) >& subdomain_to_rank )
     {
         if ( domain_info.num_subdomains_per_diamond_side() != 1 ||
              domain_info.num_subdomains_in_radial_direction() != 1 )
         {
             throw std::logic_error( "Neighborhood setup only implemented for full diamonds." );
-        }
-
-        if ( mpi::num_processes() != 1 )
-        {
-            throw std::logic_error( "Parallel neighborhood setup not yet supported." );
         }
 
         // Setup faces.
@@ -336,15 +368,15 @@ class SubdomainNeighborhood
         case 4:
             // Part I
             neighborhood_face_[BoundaryFace::F_0YR] = {
-                SubdomainInfo( ( diamond_id + 1 ) % 5, 0, 0, 0 ), BoundaryFace::F_X0R, 0 };
+                SubdomainInfo( ( diamond_id + 1 ) % 5, 0, 0, 0 ), BoundaryFace::F_X0R, -1 };
             neighborhood_face_[BoundaryFace::F_X0R] = {
-                SubdomainInfo( ( diamond_id + 4 ) % 5, 0, 0, 0 ), BoundaryFace::F_0YR, 0 };
+                SubdomainInfo( ( diamond_id + 4 ) % 5, 0, 0, 0 ), BoundaryFace::F_0YR, -1 };
 
             // Part II
             neighborhood_face_[BoundaryFace::F_X1R] = {
-                SubdomainInfo( diamond_id + 5, 0, 0, 0 ), BoundaryFace::F_1YR, 0 };
+                SubdomainInfo( diamond_id + 5, 0, 0, 0 ), BoundaryFace::F_1YR, -1 };
             neighborhood_face_[BoundaryFace::F_1YR] = {
-                SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_X1R, 0 };
+                SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_X1R, -1 };
             break;
         case 5:
         case 6:
@@ -353,15 +385,15 @@ class SubdomainNeighborhood
         case 9:
             // Part I
             neighborhood_face_[BoundaryFace::F_0YR] = {
-                SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_X0R, 0 };
+                SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_X0R, -1 };
             neighborhood_face_[BoundaryFace::F_X0R] = {
-                SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_0YR, 0 };
+                SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_0YR, -1 };
 
             // Part II
             neighborhood_face_[BoundaryFace::F_X1R] = {
-                SubdomainInfo( ( diamond_id - 4 ) % 5, 0, 0, 0 ), BoundaryFace::F_1YR, 0 };
+                SubdomainInfo( ( diamond_id - 4 ) % 5, 0, 0, 0 ), BoundaryFace::F_1YR, -1 };
             neighborhood_face_[BoundaryFace::F_1YR] = {
-                SubdomainInfo( diamond_id - 5, 0, 0, 0 ), BoundaryFace::F_X1R, 0 };
+                SubdomainInfo( diamond_id - 5, 0, 0, 0 ), BoundaryFace::F_X1R, -1 };
             break;
         default:
             throw std::logic_error( "Invalid diamond id." );
@@ -378,8 +410,8 @@ class SubdomainNeighborhood
         case 4:
             // North Pole.
             neighborhood_edge_[BoundaryEdge::E_00R] = {
-                { SubdomainInfo( ( diamond_id + 2 ) % 5, 0, 0, 0 ), BoundaryEdge::E_00R, 0 },
-                { SubdomainInfo( ( diamond_id + 3 ) % 5, 0, 0, 0 ), BoundaryEdge::E_00R, 0 } };
+                { SubdomainInfo( ( diamond_id + 2 ) % 5, 0, 0, 0 ), BoundaryEdge::E_00R, -1 },
+                { SubdomainInfo( ( diamond_id + 3 ) % 5, 0, 0, 0 ), BoundaryEdge::E_00R, -1 } };
             break;
         case 5:
         case 6:
@@ -388,11 +420,35 @@ class SubdomainNeighborhood
         case 9:
             // South Pole.
             neighborhood_edge_[BoundaryEdge::E_00R] = {
-                { SubdomainInfo( ( diamond_id + 2 ) % 5 + 5, 0, 0, 0 ), BoundaryEdge::E_00R, 0 },
-                { SubdomainInfo( ( diamond_id + 3 ) % 5 + 5, 0, 0, 0 ), BoundaryEdge::E_00R, 0 } };
+                { SubdomainInfo( ( diamond_id + 2 ) % 5 + 5, 0, 0, 0 ), BoundaryEdge::E_00R, -1 },
+                { SubdomainInfo( ( diamond_id + 3 ) % 5 + 5, 0, 0, 0 ), BoundaryEdge::E_00R, -1 } };
             break;
         default:
             throw std::logic_error( "Invalid diamond id." );
+        }
+
+        // Assigning ranks.
+
+        for ( auto& neighbors : neighborhood_vertex_ | std::views::values )
+        {
+            for ( auto& [neighbor_subdomain_info, neighbor_boundary_vertex, neighbor_rank] : neighbors )
+            {
+                neighbor_rank = subdomain_to_rank( neighbor_subdomain_info );
+            }
+        }
+
+        for ( auto& neighbors : neighborhood_edge_ | std::views::values )
+        {
+            for ( auto& [neighbor_subdomain_info, neighbor_boundary_edge, neighbor_rank] : neighbors )
+            {
+                neighbor_rank = subdomain_to_rank( neighbor_subdomain_info );
+            }
+        }
+
+        for ( auto& [neighbor_subdomain_info, neighbor_boundary_face, neighbor_rank] :
+              neighborhood_face_ | std::views::values )
+        {
+            neighbor_rank = subdomain_to_rank( neighbor_subdomain_info );
         }
     }
 
@@ -412,17 +468,20 @@ class DistributedDomain
 
     /// @brief Creates a Domain with a single subdomain per diamond and initializes all the subdomain neighborhoods.
     static DistributedDomain create_uniform_single_subdomain(
-        const int    lateral_refinement_level,
-        const int    radial_refinement_level,
-        const real_t r_min,
-        const real_t r_max )
+        const int                                                    lateral_refinement_level,
+        const int                                                    radial_refinement_level,
+        const real_t                                                 r_min,
+        const real_t                                                 r_max,
+        const std::function< mpi::MPIRank( const SubdomainInfo& ) >& subdomain_to_rank =
+            subdomain_to_rank_distribute_full_diamonds )
     {
         DistributedDomain domain;
         domain.domain_info_ = DomainInfo( lateral_refinement_level, r_min, r_max, 1 << radial_refinement_level );
         int idx             = 0;
-        for ( const auto& subdomain : domain.domain_info_.all_subdomains() )
+        for ( const auto& subdomain : domain.domain_info_.local_subdomains( subdomain_to_rank ) )
         {
-            domain.subdomains_[subdomain] = { idx, SubdomainNeighborhood( domain.domain_info_, subdomain ) };
+            domain.subdomains_[subdomain] = {
+                idx, SubdomainNeighborhood( domain.domain_info_, subdomain, subdomain_to_rank ) };
             idx++;
         }
         return domain;

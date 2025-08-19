@@ -6,6 +6,53 @@
 
 namespace terra::util {
 
+namespace detail {
+
+class KokkosContext
+{
+  public:
+    KokkosContext( const KokkosContext& )            = delete;
+    KokkosContext& operator=( const KokkosContext& ) = delete;
+    KokkosContext( KokkosContext&& )                 = delete;
+    KokkosContext& operator=( KokkosContext&& )      = delete;
+
+    static void initialize( int argc, char** argv ) { instance( argc, argv ); }
+
+  private:
+    bool kokkos_initialized_ = false;
+
+    // private constructor
+    KokkosContext( int argc, char** argv )
+    {
+        if ( Kokkos::is_initialized() )
+        {
+            throw std::runtime_error( "Kokkos already initialized!" );
+        }
+
+        Kokkos::initialize( argc, argv );
+
+        kokkos_initialized_ = true;
+    }
+
+    // private destructor
+    ~KokkosContext()
+    {
+        if ( kokkos_initialized_ && !Kokkos::is_finalized() )
+        {
+            Kokkos::finalize();
+        }
+    }
+
+    // singleton instance accessor
+    static KokkosContext& instance( int argc, char** argv )
+    {
+        static KokkosContext guard( argc, argv );
+        return guard;
+    }
+};
+
+} // namespace detail
+
 /// @brief RAII approach to safely initialize MPI and Kokkos.
 ///
 /// At the start of your main(), create this object to run MPI_Init/Finalize and to start the Kokkos scope.
@@ -25,16 +72,11 @@ namespace terra::util {
 ///
 ///          // ...
 ///      } // Destructor handles stuff here.
-class TerraScopeGuard
+inline void terra_initialize( int* argc, char*** argv )
 {
-  public:
-    TerraScopeGuard( int* argc, char*** argv )
-    : mpi_scope_guard_( argc, argv )
-    , kokkos_scope_guard_( *argc, *argv )
-    {}
+    // The order is important!
+    mpi::detail::MPIContext::initialize( argc, argv );
+    detail::KokkosContext::initialize( *argc, *argv );
+}
 
-  private:
-    mpi::MPIScopeGuard mpi_scope_guard_;
-    Kokkos::ScopeGuard kokkos_scope_guard_;
-};
 } // namespace terra::util

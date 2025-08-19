@@ -135,8 +135,10 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         throw std::runtime_error( "level must be >= 1" );
     }
 
-    const auto domain_fine   = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
-    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain( level - 1, level - 1, 0.5, 1.0 );
+    const auto domain_fine = DistributedDomain::create_uniform_single_subdomain(
+        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain(
+        level - 1, level - 1, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
     auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
@@ -184,14 +186,14 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine( subdomain_shell_coords_fine, subdomain_radii_fine, false );
+        vtk::VTKOutput< ScalarType > vtk_fine( subdomain_shell_coords_fine, subdomain_radii_fine, false );
         vtk_fine.add_scalar_field( u_fine.grid_data() );
         vtk_fine.add_scalar_field( solution_fine.grid_data() );
         vtk_fine.add_scalar_field( error_fine.grid_data() );
 
         vtk_fine.write( "prolongation_fine_level_" + std::to_string( level ) + ".vtu" );
 
-        vtk::VTKOutput vtk_coarse( subdomain_shell_coords_coarse, subdomain_radii_coarse, false );
+        vtk::VTKOutput< ScalarType > vtk_coarse( subdomain_shell_coords_coarse, subdomain_radii_coarse, false );
         vtk_coarse.add_scalar_field( u_coarse.grid_data() );
 
         vtk_coarse.write( "prolongation_coarse_level_" + std::to_string( level ) + ".vtu" );
@@ -202,7 +204,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 

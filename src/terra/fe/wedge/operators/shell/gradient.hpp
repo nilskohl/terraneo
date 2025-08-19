@@ -33,8 +33,8 @@ class Gradient
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< double, 3 > send_buffers_;
-    communication::shell::SubdomainNeighborhoodRecvBuffer< double, 3 > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double, 3 > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double, 3 > recv_buffers_;
 
     grid::Grid4DDataScalar< ScalarType > src_;
     grid::Grid4DDataVec< ScalarType, 3 > dst_;
@@ -62,8 +62,8 @@ class Gradient
     {}
 
     void set_operator_apply_and_communication_modes(
-            const linalg::OperatorApplyMode         operator_apply_mode,
-            const linalg::OperatorCommunicationMode operator_communication_mode )
+        const linalg::OperatorApplyMode         operator_apply_mode,
+        const linalg::OperatorCommunicationMode operator_communication_mode )
     {
         operator_apply_mode_         = operator_apply_mode;
         operator_communication_mode_ = operator_communication_mode;
@@ -83,13 +83,9 @@ class Gradient
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
-            std::vector< std::array< int, 11 > > expected_recvs_metadata;
-            std::vector< MPI_Request >           expected_recvs_requests;
-
             communication::shell::pack_and_send_local_subdomain_boundaries(
-                domain_fine_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
-            communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-                domain_fine_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+                domain_fine_, dst_, send_buffers_, recv_buffers_ );
+            communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_fine_, dst_, recv_buffers_ );
         }
     }
 

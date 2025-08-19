@@ -151,7 +151,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 
     const int timesteps = 10;
 
-    vtk::VTKOutput vtk_after( subdomain_shell_coords, subdomain_radii, false );
+    vtk::VTKOutput< ScalarType > vtk_after( subdomain_shell_coords, subdomain_radii, false );
     vtk_after.add_scalar_field( T.grid_data() );
     vtk_after.add_vector_field( u.grid_data() );
 
@@ -182,7 +182,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 

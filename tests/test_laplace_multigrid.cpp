@@ -149,7 +149,8 @@ double
 
     for ( int level = 0; level <= max_level; level++ )
     {
-        auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+        auto domain = DistributedDomain::create_uniform_single_subdomain(
+            level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
         domains.push_back( domain );
 
         subdomain_shell_coords.push_back( terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain ) );
@@ -289,7 +290,7 @@ double
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine( subdomain_shell_coords.back(), subdomain_radii.back(), false );
+        vtk::VTKOutput< ScalarType > vtk_fine( subdomain_shell_coords.back(), subdomain_radii.back(), false );
         vtk_fine.add_scalar_field( u.grid_data() );
         vtk_fine.add_scalar_field( solution.grid_data() );
         vtk_fine.add_scalar_field( error.grid_data() );
@@ -308,7 +309,7 @@ double
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     double prev_l2_error = 1.0;
 

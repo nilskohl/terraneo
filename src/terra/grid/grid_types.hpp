@@ -96,7 +96,7 @@ enum class BoundaryVertex : int
 
 enum class BoundaryEdge : int
 {
-    E_X00, // edge along x, y=0, r=0, (:, 0, 0) in slice notation
+    E_X00 = 0, // edge along x, y=0, r=0, (:, 0, 0) in slice notation
     E_X10,
     E_X01,
     E_X11,
@@ -114,7 +114,7 @@ enum class BoundaryEdge : int
 
 enum class BoundaryFace : int
 {
-    F_XY0, // facet orthogonal to r, r=0
+    F_XY0 = 0, // facet orthogonal to r, r=0
     F_XY1,
 
     F_X0R,

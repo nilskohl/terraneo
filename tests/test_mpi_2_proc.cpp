@@ -1,6 +1,8 @@
 
 
+#include <array>
 #include <iostream>
+#include <memory>
 #include <mpi.h>
 
 #include "terra/kokkos/kokkos_wrapper.hpp"
@@ -8,7 +10,7 @@
 
 int main( int argc, char** argv )
 {
-    terra::util::TerraScopeGuard terra_scope_guard( &argc, &argv );
+    terra::util::terra_initialize( &argc, &argv );
 
     const auto rank          = terra::mpi::rank();
     const auto num_processes = terra::mpi::num_processes();

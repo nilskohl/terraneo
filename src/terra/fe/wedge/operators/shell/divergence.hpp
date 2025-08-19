@@ -33,8 +33,8 @@ class Divergence
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< double > send_buffers_;
-    communication::shell::SubdomainNeighborhoodRecvBuffer< double > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double > recv_buffers_;
 
     grid::Grid4DDataVec< ScalarType, 3 > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
@@ -83,13 +83,9 @@ class Divergence
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
-            std::vector< std::array< int, 11 > > expected_recvs_metadata;
-            std::vector< MPI_Request >           expected_recvs_requests;
-
             communication::shell::pack_and_send_local_subdomain_boundaries(
-                domain_coarse_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
-            communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-                domain_coarse_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+                domain_coarse_, dst_, send_buffers_, recv_buffers_ );
+            communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_coarse_, dst_, recv_buffers_ );
         }
     }
 

@@ -8,7 +8,7 @@
 
 int main( int argc, char** argv )
 {
-    terra::util::TerraScopeGuard terra_scope_guard( &argc, &argv );
+    terra::util::terra_initialize( &argc, &argv );
 
     int world_rank, world_size;
     MPI_Comm_rank( MPI_COMM_WORLD, &world_rank );

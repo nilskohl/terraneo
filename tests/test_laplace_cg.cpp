@@ -114,7 +114,8 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data = linalg::setup_mask_data( domain );
 
@@ -189,7 +190,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( false )
     {
-        vtk::VTKOutput vtk_after( coords_shell, coords_radii, false );
+        vtk::VTKOutput< double > vtk_after( coords_shell, coords_radii, false );
         vtk_after.add_scalar_field( g.grid_data() );
         vtk_after.add_scalar_field( u.grid_data() );
         vtk_after.add_scalar_field( solution.grid_data() );
@@ -206,7 +207,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 
@@ -225,8 +226,14 @@ int main( int argc, char** argv )
         if ( level > 1 )
         {
             const double order = prev_l2_error / l2_error;
+            std::cout << "error = " << l2_error << std::endl;
             std::cout << "order = " << order << std::endl;
             if ( order < 3.4 )
+            {
+                return EXIT_FAILURE;
+            }
+
+            if ( level == 4 && l2_error > 1e-4 )
             {
                 return EXIT_FAILURE;
             }

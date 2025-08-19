@@ -215,8 +215,10 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
 {
     using ScalarType = double;
 
-    const auto domain_fine   = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
-    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain( level - 1, level - 1, 0.5, 1.0 );
+    const auto domain_fine = DistributedDomain::create_uniform_single_subdomain(
+        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain(
+        level - 1, level - 1, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     const auto subdomain_fine_shell_coords =
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain_fine );
@@ -343,9 +345,9 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
 
     if ( false )
     {
-        vtk::VTKOutput vtk_fine( subdomain_fine_shell_coords, subdomain_fine_radii, false );
+        vtk::VTKOutput< ScalarType > vtk_fine( subdomain_fine_shell_coords, subdomain_fine_radii, false );
 
-        vtk::VTKOutput vtk_coarse( subdomain_coarse_shell_coords, subdomain_coarse_radii, false );
+        vtk::VTKOutput< ScalarType > vtk_coarse( subdomain_coarse_shell_coords, subdomain_coarse_radii, false );
 
         vtk_fine.add_vector_field( w.block_1().grid_data() );
         vtk_coarse.add_scalar_field( w.block_2().grid_data() );
@@ -371,7 +373,7 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     auto table = std::make_shared< util::Table >();
 

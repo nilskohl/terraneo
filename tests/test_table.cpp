@@ -8,7 +8,7 @@ using terra::util::Table;
 
 int main( int argc, char** argv )
 {
-    terra::util::TerraScopeGuard scope_guard( &argc, &argv );
+    terra::util::terra_initialize( &argc, &argv );
 
     Table table;
 

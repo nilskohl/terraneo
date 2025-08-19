@@ -1,5 +1,6 @@
 
 #pragma once
+#include <iostream>
 #include <mpi.h>
 
 namespace terra::mpi {
@@ -20,13 +21,83 @@ inline int num_processes()
     return num_processes;
 }
 
-class MPIScopeGuard
+namespace detail {
+class MPIContext
 {
   public:
-    MPIScopeGuard( int* argc, char*** argv ) { MPI_Init( argc, argv ); }
+    MPIContext( const MPIContext& )            = delete;
+    MPIContext& operator=( const MPIContext& ) = delete;
+    MPIContext( MPIContext&& )                 = delete;
+    MPIContext& operator=( MPIContext&& )      = delete;
 
-    ~MPIScopeGuard() { MPI_Finalize(); }
+    /// Initialize MPI once. Safe to call only once.
+    static void initialize( int* argc, char*** argv ) { instance( argc, argv ); }
+
+    /// Query whether MPI is initialized
+    static bool is_initialized()
+    {
+        int flag = 0;
+        MPI_Initialized( &flag );
+        return flag != 0;
+    }
+
+    /// Query whether MPI is finalized
+    static bool is_finalized()
+    {
+        int flag = 0;
+        MPI_Finalized( &flag );
+        return flag != 0;
+    }
+
+  private:
+    bool mpi_initialized_ = false;
+
+    // private constructor
+    MPIContext( int* argc, char*** argv )
+    {
+        if ( is_initialized() )
+        {
+            throw std::runtime_error( "MPI already initialized!" );
+        }
+
+        int err = MPI_Init( argc, argv );
+        if ( err != MPI_SUCCESS )
+        {
+            char errstr[MPI_MAX_ERROR_STRING];
+            int  len = 0;
+            MPI_Error_string( err, errstr, &len );
+            throw std::runtime_error( std::string( "MPI_Init failed: " ) + std::string( errstr, len ) );
+        }
+
+        mpi_initialized_ = true;
+
+        MPI_Comm_set_errhandler( MPI_COMM_WORLD, MPI_ERRORS_RETURN );
+    }
+
+    // private destructor
+    ~MPIContext()
+    {
+        if ( mpi_initialized_ && !is_finalized() )
+        {
+            int err = MPI_Finalize();
+            if ( err != MPI_SUCCESS )
+            {
+                char errstr[MPI_MAX_ERROR_STRING];
+                int  len = 0;
+                MPI_Error_string( err, errstr, &len );
+                std::cerr << "[MPI] MPI_Finalize failed: " << std::string( errstr, len ) << std::endl;
+            }
+        }
+    }
+
+    // singleton instance accessor
+    static MPIContext& instance( int* argc = nullptr, char*** argv = nullptr )
+    {
+        static MPIContext guard( argc, argv );
+        return guard;
+    }
 };
+} // namespace detail
 
 template < typename T >
 MPI_Datatype mpi_datatype()

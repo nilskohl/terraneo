@@ -32,8 +32,8 @@ class VectorLaplace
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendBuffer< double, VecDim > send_buffers_;
-    communication::shell::SubdomainNeighborhoodRecvBuffer< double, VecDim > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double, VecDim > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double, VecDim > recv_buffers_;
 
     grid::Grid4DDataVec< ScalarType, VecDim > src_;
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
@@ -82,13 +82,9 @@ class VectorLaplace
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
-            std::vector< std::array< int, 11 > > expected_recvs_metadata;
-            std::vector< MPI_Request >           expected_recvs_requests;
-
             communication::shell::pack_and_send_local_subdomain_boundaries(
-                domain_, dst_, send_buffers_, expected_recvs_requests, expected_recvs_metadata );
-            communication::shell::recv_unpack_and_add_local_subdomain_boundaries(
-                domain_, dst_, recv_buffers_, expected_recvs_requests, expected_recvs_metadata );
+                domain_, dst_, send_buffers_, recv_buffers_ );
+            communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_, dst_, recv_buffers_ );
         }
     }
 

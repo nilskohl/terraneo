@@ -152,7 +152,9 @@ double
 
     for ( int level = 0; level <= max_level; level++ )
     {
-        auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+        auto domain = DistributedDomain::create_uniform_single_subdomain(
+            level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+
         domains.push_back( domain );
 
         subdomain_shell_coords.push_back( terra::grid::shell::subdomain_unit_sphere_single_shell_coords( domain ) );
@@ -305,7 +307,7 @@ double
 
     if ( true )
     {
-        vtk::VTKOutput vtk_fine( subdomain_shell_coords.back(), subdomain_radii.back(), false );
+        vtk::VTKOutput< ScalarType > vtk_fine( subdomain_shell_coords.back(), subdomain_radii.back(), false );
         vtk_fine.add_scalar_field( u.grid_data() );
         vtk_fine.add_scalar_field( solution.grid_data() );
         vtk_fine.add_scalar_field( error.grid_data() );
@@ -324,13 +326,13 @@ double
 
 int main( int argc, char** argv )
 {
-    util::TerraScopeGuard scope_guard( &argc, &argv );
+    util::terra_initialize( &argc, &argv );
 
     double prev_l2_error = 1.0;
 
     const int max_level = 4;
 
-    constexpr double omega          = 0.666;
+    constexpr double omega          = 0.6;
     constexpr int    prepost_smooth = 1;
 
     for ( int level = 1; level <= max_level; level++ )
@@ -349,22 +351,24 @@ int main( int argc, char** argv )
 
         if ( level > 1 )
         {
-            std::cout << "l2_error = " << l2_error << std::endl;
             const double order = prev_l2_error / l2_error;
-            std::cout << "order = " << order << std::endl;
+
+            if ( mpi::rank() == 0 )
+            {
+                std::cout << "l2_error = " << l2_error << std::endl;
+                std::cout << "order = " << order << std::endl;
+            }
+
             if ( order < 3.4 )
             {
-                return EXIT_FAILURE;
+                Kokkos::abort( "Order too low." );
             }
 
             table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
+            table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
+            table->clear();
         }
         prev_l2_error = l2_error;
-
-        table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
-        // table->query_equals( "tag", "multigrid" ).print_pretty();
-        table->query_rows_equals( "tag", "time_solver" ).print_pretty();
-        table->query_rows_equals( "tag", "time_total" ).print_pretty();
     }
 
     return 0;
