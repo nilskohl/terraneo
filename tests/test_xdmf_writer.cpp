@@ -4,6 +4,7 @@
 
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/visualization/vtk.hpp"
+#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 
 struct SomeInterpolator
@@ -15,10 +16,12 @@ struct SomeInterpolator
     SomeInterpolator(
         const terra::grid::Grid3DDataVec< double, 3 >& shell_coords,
         const terra::grid::Grid2DDataScalar< double >& radii,
-        const terra::grid::Grid4DDataScalar< double >& scalar_data )
+        const terra::grid::Grid4DDataScalar< double >& scalar_data,
+        const double                                   t )
     : shell_coords_( shell_coords )
     , radii_( radii )
     , scalar_data_( scalar_data )
+    , t_( t )
     {}
 
     KOKKOS_INLINE_FUNCTION
@@ -27,18 +30,20 @@ struct SomeInterpolator
         const terra::dense::Vec< double, 3 > coords =
             terra::grid::shell::coords( subdomain, x, y, r, shell_coords_, radii_ );
 
-        const double value = coords( 0 ) * Kokkos::sin( coords( 1 ) ) * Kokkos::cos( coords( 2 ) );
+        const double value = coords( 0 ) * Kokkos::sin( t_ + coords( 1 ) ) * Kokkos::cos( coords( 2 ) );
 
         scalar_data_( subdomain, x, y, r ) = value;
     }
+
+    double t_;
 };
 
 int main( int argc, char** argv )
 {
     terra::util::terra_initialize( &argc, &argv );
 
-    constexpr int    lateral_refinement_level = 4;
-    constexpr int    radial_refinement_level  = 4;
+    constexpr int    lateral_refinement_level = 6;
+    constexpr int    radial_refinement_level  = 6;
     constexpr double r_min                    = 0.5;
     constexpr double r_max                    = 1.0;
 
@@ -54,14 +59,19 @@ int main( int argc, char** argv )
 
     auto data = terra::grid::shell::allocate_scalar_grid< double >( "scalar_data", domain );
 
-    Kokkos::parallel_for(
-        "some_interpolation",
-        terra::grid::shell::local_domain_md_range_policy_nodes( domain ),
-        SomeInterpolator( subdomain_shell_coords, subdomain_radii, data ) );
+    std::cout << data.span() << std::endl;
 
-    terra::visualization::VTKOutput< double > vtk( subdomain_shell_coords, subdomain_radii, true );
-    vtk.add_scalar_field( data );
-    vtk.write( "my_fancy_vtk.vtu" );
+    terra::visualization::XDMFOutput xdmf( "out", subdomain_shell_coords, subdomain_radii );
+    xdmf.add( data );
+
+    for ( int i = 0; i < 100; ++i )
+    {
+        Kokkos::parallel_for(
+            "some_interpolation",
+            terra::grid::shell::local_domain_md_range_policy_nodes( domain ),
+            SomeInterpolator( subdomain_shell_coords, subdomain_radii, data, 0.1 * i ) );
+        xdmf.write();
+    }
 
     return 0;
 }

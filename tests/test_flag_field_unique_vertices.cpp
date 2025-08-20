@@ -1,8 +1,9 @@
 #include "kernels/common/grid_operations.hpp"
 #include "linalg/vector_q1.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
-#include "terra/vtk/vtk.hpp"
+#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
+#include "util/logging.hpp"
 
 /// For dot products to work correctly, we need to properly define vertex ownership.
 /// Neighboring subdomains share vertices, and to uniquely mark them, we create a mask View, that is either 1 or 0

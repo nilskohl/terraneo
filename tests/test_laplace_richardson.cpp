@@ -12,7 +12,7 @@
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/vtk/vtk.hpp"
+#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -187,7 +187,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( false )
     {
-        vtk::VTKOutput< double > vtk_after( subdomain_shell_coords, subdomain_radii, false );
+        visualization::VTKOutput< double > vtk_after( subdomain_shell_coords, subdomain_radii, false );
         vtk_after.add_scalar_field( g.grid_data() );
         vtk_after.add_scalar_field( u.grid_data() );
         vtk_after.add_scalar_field( solution.grid_data() );

@@ -16,7 +16,7 @@
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/vtk/vtk.hpp"
+#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -345,9 +345,9 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
 
     if ( false )
     {
-        vtk::VTKOutput< ScalarType > vtk_fine( subdomain_fine_shell_coords, subdomain_fine_radii, false );
+        visualization::VTKOutput< ScalarType > vtk_fine( subdomain_fine_shell_coords, subdomain_fine_radii, false );
 
-        vtk::VTKOutput< ScalarType > vtk_coarse( subdomain_coarse_shell_coords, subdomain_coarse_radii, false );
+        visualization::VTKOutput< ScalarType > vtk_coarse( subdomain_coarse_shell_coords, subdomain_coarse_radii, false );
 
         vtk_fine.add_vector_field( w.block_1().grid_data() );
         vtk_coarse.add_scalar_field( w.block_2().grid_data() );

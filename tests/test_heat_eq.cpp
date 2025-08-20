@@ -15,7 +15,7 @@
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/vtk/vtk.hpp"
+#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -133,7 +133,7 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
     linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
 
-    vtk::VTKOutput< ScalarType > vtk_after( subdomain_shell_coords, subdomain_radii, false );
+    visualization::VTKOutput< ScalarType > vtk_after( subdomain_shell_coords, subdomain_radii, false );
     vtk_after.add_scalar_field( T.grid_data() );
     vtk_after.add_scalar_field( solution.grid_data() );
     vtk_after.add_scalar_field( error.grid_data() );

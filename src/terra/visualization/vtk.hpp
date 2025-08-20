@@ -10,7 +10,7 @@
 
 #include "terra/grid/grid_types.hpp"
 
-namespace terra::vtk {
+namespace terra::visualization {
 
 // Define VTK cell type IDs for clarity
 constexpr int VTK_QUAD           = 9;
@@ -1356,4 +1356,4 @@ class VTKOutput
     std::optional< VectorFieldHostView > vector_field_host_buffer_;
 };
 
-} // namespace terra::vtk
+} // namespace terra::visualization

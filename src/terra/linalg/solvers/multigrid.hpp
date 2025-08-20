@@ -2,7 +2,6 @@
 
 #include "solver.hpp"
 #include "util/table.hpp"
-#include "vtk/vtk.hpp"
 
 namespace terra::linalg::solvers {
 

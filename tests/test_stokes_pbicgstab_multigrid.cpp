@@ -23,7 +23,7 @@
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/vtk/vtk.hpp"
+#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -488,9 +488,9 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
     if ( true )
     {
-        vtk::VTKOutput< ScalarType > vtk_fine( coords_shell[velocity_level], coords_radii[velocity_level], false );
+        visualization::VTKOutput< ScalarType > vtk_fine( coords_shell[velocity_level], coords_radii[velocity_level], false );
 
-        vtk::VTKOutput< ScalarType > vtk_coarse( coords_shell[pressure_level], coords_radii[pressure_level], false );
+        visualization::VTKOutput< ScalarType > vtk_coarse( coords_shell[pressure_level], coords_radii[pressure_level], false );
 
         vtk_fine.add_vector_field( u.block_1().grid_data() );
         vtk_coarse.add_scalar_field( u.block_2().grid_data() );
