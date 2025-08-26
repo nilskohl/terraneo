@@ -12,7 +12,7 @@
 - [x] multigrid (some notes: a) we need higher operator quad degree than constant (not sure where exactly: diagonal,
   fine-level, everywhere?), b) two-grid V(10, 10) looks ok, otherwise with multigrid we do not get perfectly h-ind. conv rates., I
   suppose we need Galerkin coarse grid operators maybe)
-- [ ] MPI parallel execution (multi-GPU, multi-node CPU)
+- [x] MPI parallel execution (multi-GPU, multi-node CPU)
 - [ ] intra-diamond subdomain communication
 - [ ] variable viscosity
 - [ ] plates
@@ -20,7 +20,7 @@
 - [ ] compressible Stokes
 - [x] radial layer data assimilation
 - [ ] timing(tree?)
-- [ ] compress VTK(?) output (binary, actual float data, and/or HDF5/ADIOS2 with a single mesh file)
+- [x] ~~compress VTK(?)~~ XDMF output (binary, actual float data, and ~~/or~~ ~~HDF5/ADIOS2~~ with a single mesh file)
 - [ ] CLI interface / parameter files
 
 ### Small features / improvements (not necessarily / maybe required)

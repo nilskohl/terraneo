@@ -38,6 +38,7 @@ enum class VtkElementType
  *                 For QUADRATIC_QUAD, Nx and Ny must be odd and >= 3.
  * @param elementType Specifies whether to write linear or quadratic elements.
  */
+[[deprecated( "Use XDMF output." )]]
 void write_vtk_xml_quad_mesh(
     const std::string&                  filename,
     const Kokkos::View< double** [3] >& vertices,
@@ -273,6 +274,7 @@ enum class DiagonalSplitType
 
 // Helper to get VTK type string from C++ type
 template < typename T >
+[[deprecated( "Use XDMF output." )]]
 std::string get_vtk_type_string()
 {
     if ( std::is_same_v< T, float > )
@@ -292,6 +294,7 @@ std::string get_vtk_type_string()
 }
 
 template < typename ScalarType >
+[[deprecated( "Use XDMF output." )]]
 void write_rectilinear_to_triangular_vtu(
     Kokkos::View< ScalarType** [3] > points_device_view,
     const std::string&               filename,
@@ -429,6 +432,7 @@ void write_rectilinear_to_triangular_vtu(
 template <
     typename PointRealT, // Type for surface coordinates and radii elements
     typename AttachedDataType >
+[[deprecated( "Use XDMF output." )]]
 void write_surface_radial_extruded_to_wedge_vtu(
     grid::Grid2DDataVec< PointRealT, 3 > surface_points_device_view,
     grid::Grid1DDataScalar< PointRealT > radii_device_view,
@@ -708,7 +712,7 @@ void write_surface_radial_extruded_to_wedge_vtu(
 
 /// @tparam InputDataScalarType The scalar type of the added grids - the output type can be set later.
 template < typename InputDataScalarType >
-class VTKOutput
+class [[deprecated( "Use XDMF output." )]] VTKOutput
 {
   public:
     using ScalarFieldDeviceView = Kokkos::View< InputDataScalarType**** >;

@@ -5,22 +5,45 @@
 
 namespace terra::shell {
 
-/// @brief Compute radial profiles (min, max, avg, count) for a Q1 scalar field.
+/// @brief Simple struct, holding device-views for radial profiles.
+///
+/// See `radial_profiles()` and `radial_profiles_to_table()` for radial profiles computation.
+template < typename ScalarType >
+struct RadialProfiles
+{
+    explicit RadialProfiles( int radial_shells )
+    : radial_min_( "radial_profiles_min", radial_shells )
+    , radial_max_( "radial_profiles_max", radial_shells )
+    , radial_sum_( "radial_profiles_sum", radial_shells )
+    , radial_cnt_( "radial_profiles_cnt", radial_shells )
+    {}
+
+    grid::Grid1DDataScalar< ScalarType > radial_min_;
+    grid::Grid1DDataScalar< ScalarType > radial_max_;
+    grid::Grid1DDataScalar< ScalarType > radial_sum_;
+    grid::Grid1DDataScalar< ScalarType > radial_cnt_;
+};
+
+/// @brief Compute radial profiles (min, max, sum, count) for a Q1 scalar field.
 ///
 /// @details Computes the radial profiles for a Q1 scalar field by iterating over all radial shells.
-/// The profiles include minimum, maximum, average value, and count of nodes in each shell.
+/// The profiles include minimum, maximum, sum, and count of nodes in each shell.
 /// The radial shells are defined by the radial dimension of the Q1 scalar field.
-/// The output is a Grid2DDataScalar with shape [num_shells, 4] where:
-/// - Column 0: Minimum value in the shell
-/// - Column 1: Maximum value in the shell
-/// - Column 2: Average value in the shell
-/// - Column 3: Count of nodes in the shell
-/// 
-/// Mask data is used to filter out non-owned nodes.
+/// The output is a RadialProfiles struct with device-side arrays of size num_shells which contain:
+/// - Minimum value in the shell
+/// - Maximum value in the shell
+/// - Sum of values in the shell (compute avg with this and count)
+/// - Count of nodes in the shell (compute avg with this and sum)
+/// Performs reduction per process on the device and also inter-device reduction with MPI_Allreduce.
+/// All processes will carry the same result.
 ///
-/// @note The returned Grid2DDataScalar is still on the device.
+/// Mask data is used internally to filter out non-owned nodes. So this really only reduces owned nodes.
+///
+/// @note The returned Views are still on the device.
 ///       To convert it to a util::Table for output, use the `radial_profiles_to_table()` function.
-/// 
+///       So unless you really want to compute any further data on the device using the profile, you like always want
+///       to call the `radial_profiles_to_table()` function as outlined below.
+///
 /// To nicely format the output, use the `radial_profiles_to_table()` function, e.g., via
 /// @code
 /// auto radii = domain_info.radii(); // the DomainInfo is also available in the DistributedDomain
@@ -28,29 +51,32 @@ namespace terra::shell {
 /// std::ofstream out( "radial_profiles.csv" );
 /// table.print_csv( out );
 /// @endcode
+/// That will compute output the average values as well.
 ///
 /// @tparam ScalarType Scalar type of the field.
 /// @param data Q1 scalar field data.
-/// @return Grid2DDataScalar containing [min, max, avg, count] for each radial shell.
+/// @return RadialProfiles struct containing [min, max, sum, count] for each radial shell (still on the device).
 template < typename ScalarType >
-grid::Grid2DDataScalar< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< ScalarType >& data )
+RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< ScalarType >& data )
 {
     const int radial_shells = data.grid_data().extent( 3 );
 
     // For now, we'll do min/max/avg/count.
-    // Need to adapt size and init kernel if stuff is added.
-    grid::Grid2DDataScalar< ScalarType > reduction_data( "radial_profiles", radial_shells, 4 );
+
+    RadialProfiles< ScalarType > radial_profiles( radial_shells );
 
     const auto data_grid = data.grid_data();
     const auto data_mask = data.mask_data();
 
     Kokkos::parallel_for(
         "radial profiles init", radial_shells, KOKKOS_LAMBDA( int r ) {
-            reduction_data( r, 0 ) = Kokkos::Experimental::finite_max_v< ScalarType >;
-            reduction_data( r, 1 ) = Kokkos::Experimental::finite_min_v< ScalarType >;
-            reduction_data( r, 2 ) = 0;
-            reduction_data( r, 3 ) = 0;
+            radial_profiles.radial_min_( r ) = Kokkos::Experimental::finite_max_v< ScalarType >;
+            radial_profiles.radial_max_( r ) = Kokkos::Experimental::finite_min_v< ScalarType >;
+            radial_profiles.radial_sum_( r ) = 0;
+            radial_profiles.radial_cnt_( r ) = 0;
         } );
+
+    Kokkos::fence();
 
     Kokkos::parallel_for(
         "radial profiles reduction",
@@ -62,18 +88,47 @@ grid::Grid2DDataScalar< ScalarType > radial_profiles( const linalg::VectorQ1Scal
             {
                 return;
             }
-            Kokkos::atomic_min( &reduction_data( r, 0 ), data_grid( local_subdomain_id, x, y, r ) );
-            Kokkos::atomic_max( &reduction_data( r, 1 ), data_grid( local_subdomain_id, x, y, r ) );
-            Kokkos::atomic_add( &reduction_data( r, 2 ), data_grid( local_subdomain_id, x, y, r ) );
-            Kokkos::atomic_add( &reduction_data( r, 3 ), static_cast< ScalarType >( 1 ) );
+            Kokkos::atomic_min( &radial_profiles.radial_min_( r ), data_grid( local_subdomain_id, x, y, r ) );
+            Kokkos::atomic_max( &radial_profiles.radial_max_( r ), data_grid( local_subdomain_id, x, y, r ) );
+            Kokkos::atomic_add( &radial_profiles.radial_sum_( r ), data_grid( local_subdomain_id, x, y, r ) );
+            Kokkos::atomic_add( &radial_profiles.radial_cnt_( r ), static_cast< ScalarType >( 1 ) );
         } );
 
-    Kokkos::parallel_for(
-        "radial profiles average", radial_shells, KOKKOS_LAMBDA( int r ) {
-            reduction_data( r, 2 ) /= reduction_data( r, 3 );
-        } );
+    Kokkos::fence();
 
-    return reduction_data;
+    MPI_Allreduce(
+        radial_profiles.radial_min_.data(),
+        radial_profiles.radial_min_.data(),
+        radial_profiles.radial_min_.size(),
+        mpi::mpi_datatype< ScalarType >(),
+        MPI_MIN,
+        MPI_COMM_WORLD );
+
+    MPI_Allreduce(
+        radial_profiles.radial_max_.data(),
+        radial_profiles.radial_max_.data(),
+        radial_profiles.radial_max_.size(),
+        mpi::mpi_datatype< ScalarType >(),
+        MPI_MAX,
+        MPI_COMM_WORLD );
+
+    MPI_Allreduce(
+        radial_profiles.radial_sum_.data(),
+        radial_profiles.radial_sum_.data(),
+        radial_profiles.radial_sum_.size(),
+        mpi::mpi_datatype< ScalarType >(),
+        MPI_SUM,
+        MPI_COMM_WORLD );
+
+    MPI_Allreduce(
+        radial_profiles.radial_cnt_.data(),
+        radial_profiles.radial_cnt_.data(),
+        radial_profiles.radial_cnt_.size(),
+        mpi::mpi_datatype< ScalarType >(),
+        MPI_SUM,
+        MPI_COMM_WORLD );
+
+    return radial_profiles;
 }
 
 /// @brief Convert radial profile data to a util::Table for analysis or output.
@@ -87,6 +142,7 @@ grid::Grid2DDataScalar< ScalarType > radial_profiles( const linalg::VectorQ1Scal
 /// - radius: Radius of the shell
 /// - min: Minimum value in the shell
 /// - max: Maximum value in the shell
+/// - sum: Average value in the shell
 /// - avg: Average value in the shell
 /// - cnt: Count of nodes in the shell
 ///
@@ -101,32 +157,45 @@ grid::Grid2DDataScalar< ScalarType > radial_profiles( const linalg::VectorQ1Scal
 /// @endcode
 ///
 /// @tparam ScalarType Scalar type of the profile data.
-/// @param radial_profiles Grid2DDataScalar containing radial profile statistics. Compute this using `radial_profiles()` function. Data is expected to be on the device still. It is copied to host for table creation in this function.
+/// @param radial_profiles RadialProfiles struct containing radial profile statistics.
+///                        Compute this using `radial_profiles()` function. Data is expected to be on the device still.
+///                        It is copied to host for table creation in this function.
 /// @param radii Vector of shell radii. Can for instance be obtained from the DomainInfo.
 /// @return Table with columns: tag, shell_idx, radius, min, max, avg, cnt.
 template < typename ScalarType >
 util::Table radial_profiles_to_table(
-    const grid::Grid2DDataScalar< ScalarType >& radial_profiles,
-    const std::vector< ScalarType >             radii )
+    const RadialProfiles< ScalarType >& radial_profiles,
+    const std::vector< ScalarType >     radii )
 {
-    if ( radii.size() != radial_profiles.extent( 0 ) )
+    if ( radii.size() != radial_profiles.radial_min_.extent( 0 ) ||
+         radii.size() != radial_profiles.radial_max_.extent( 0 ) ||
+         radii.size() != radial_profiles.radial_sum_.extent( 0 ) ||
+         radii.size() != radial_profiles.radial_cnt_.extent( 0 ) )
     {
         throw std::runtime_error( "Radial profiles and radii do not have the same number of shells." );
     }
 
-    const auto radial_profiles_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles );
+    const auto radial_profiles_host_min =
+        Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_min_ );
+    const auto radial_profiles_host_max =
+        Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_max_ );
+    const auto radial_profiles_host_sum =
+        Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_sum_ );
+    const auto radial_profiles_host_cnt =
+        Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_cnt_ );
 
     util::Table table;
-    for ( int r = 0; r < radial_profiles.extent( 0 ); r++ )
+    for ( int r = 0; r < radii.size(); r++ )
     {
         table.add_row(
             { { "tag", "radial_profiles" },
               { "shell_idx", r },
               { "radius", radii[r] },
-              { "min", radial_profiles( r, 0 ) },
-              { "max", radial_profiles( r, 1 ) },
-              { "avg", radial_profiles( r, 2 ) },
-              { "cnt", radial_profiles( r, 3 ) } } );
+              { "min", radial_profiles_host_min( r ) },
+              { "max", radial_profiles_host_max( r ) },
+              { "sum", radial_profiles_host_sum( r ) },
+              { "avg", radial_profiles_host_sum( r ) / radial_profiles_host_cnt( r ) },
+              { "cnt", radial_profiles_host_cnt( r ) } } );
     }
     return table;
 }
