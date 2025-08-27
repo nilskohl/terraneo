@@ -91,7 +91,8 @@ struct InitialConditionInterpolator
 
             const double radius = coords.norm();
             const double perturbation =
-                ( 0.5 - radius ) * ( 1.0 - radius ) * 0.5 * Kokkos::sin( 10.0 * coords( 0 ) + 3.0 * coords( 1 ) );
+                // ( 0.5 - radius ) * ( 1.0 - radius ) * 0.5 * Kokkos::sin( 10.0 * coords( 0 ) + 3.0 * coords( 1 ) );
+                0.0 * radius;
 
             data_( local_subdomain_id, x, y, r ) = Kokkos::pow( 2.0 * ( 1.0 - coords.norm() ), 5 ) + perturbation;
         }
@@ -427,7 +428,10 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     double simulated_time = 0.0;
     for ( int timestep = 1; timestep < prm.max_timesteps; timestep++ )
     {
-        std::cout << "Timestep " << timestep << std::endl;
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Timestep " << timestep << std::endl;
+        }
 
         // Set up rhs data for Stokes.
 
@@ -449,7 +453,10 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         // Solve Stokes.
         solve( pbicgstab, K, u, f );
 
-        // assign( u, 0.0 );
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Stokes solve:" << std::endl;
+        }
 
         table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
         table->clear();
@@ -485,6 +492,11 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         // Solve energy.
         solve( energy_solver, A, T, q );
 
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Energy solve:" << std::endl;
+        }
+
         table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
         table->clear();
 
@@ -517,11 +529,11 @@ int main( int argc, char** argv )
 
     constexpr Parameters parameters{
         .min_level                   = 0,
-        .max_level                   = 7,
+        .max_level                   = 4,
         .r_min                       = 0.5,
         .r_max                       = 1.0,
         .diffusivity                 = 1.0,
-        .rayleigh                    = 1e6,
+        .rayleigh                    = 1e5,
         .dt                          = 1e-2,
         .t_end                       = 1000.0,
         .max_timesteps               = 1000,
