@@ -337,8 +337,10 @@ class XDMFOutput
     {
         // Copy mesh to host.
         // We assume the mesh is only written once so we throw away the host copies after this method returns.
-        const auto coords_shell_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, coords_shell_device_ );
-        const auto coords_radii_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, coords_radii_device_ );
+        const grid::Grid3DDataVec< double, 3 >::HostMirror coords_shell_host =
+            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, coords_shell_device_ );
+        const grid::Grid2DDataScalar< double >::HostMirror coords_radii_host =
+            Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, coords_radii_device_ );
 
         for ( int local_subdomain_id = 0; local_subdomain_id < coords_shell_host.extent( 0 ); local_subdomain_id++ )
         {
@@ -457,7 +459,7 @@ class XDMFOutput
     std::vector< std::pair< grid::Grid4DDataScalar< double >, OutputTypeFloat > > device_data_views_scalar_double_;
 
     // Just a single mirror for buffering during write.
-    std::optional< grid::Grid4DDataScalar< double > > host_data_mirror_scalar_double_;
+    std::optional< grid::Grid4DDataScalar< double >::HostMirror > host_data_mirror_scalar_double_;
 
     int write_counter_ = 0;
 

@@ -572,33 +572,51 @@ Grid3DDataVec< double, 3 > subdomain_unit_sphere_single_shell_coords( const Dist
 ///
 Grid2DDataScalar< double > subdomain_shell_radii( const DistributedDomain& domain );
 
+template < typename CoordsShellType, typename CoordsRadiiType >
 KOKKOS_INLINE_FUNCTION dense::Vec< double, 3 > coords(
-    const int                         subdomain,
-    const int                         x,
-    const int                         y,
-    const int                         r,
-    const Grid3DDataVec< double, 3 >& subdomain_unit_sphere_coords,
-    const Grid2DDataScalar< double >& subdomain_shell_radii )
+    const int              subdomain,
+    const int              x,
+    const int              y,
+    const int              r,
+    const CoordsShellType& coords_shell,
+    const CoordsRadiiType& coords_radii )
 {
+    static_assert(
+        std::is_same_v< CoordsShellType, Grid3DDataVec< double, 3 > > ||
+        std::is_same_v< CoordsShellType, Grid3DDataVec< double, 3 >::HostMirror > );
+
+    static_assert(
+        std::is_same_v< CoordsRadiiType, Grid2DDataScalar< double > > ||
+        std::is_same_v< CoordsRadiiType, Grid2DDataScalar< double >::HostMirror > );
+
     dense::Vec< double, 3 > coords;
-    coords( 0 ) = subdomain_unit_sphere_coords( subdomain, x, y, 0 );
-    coords( 1 ) = subdomain_unit_sphere_coords( subdomain, x, y, 1 );
-    coords( 2 ) = subdomain_unit_sphere_coords( subdomain, x, y, 2 );
-    return coords * subdomain_shell_radii( subdomain, r );
+    coords( 0 ) = coords_shell( subdomain, x, y, 0 );
+    coords( 1 ) = coords_shell( subdomain, x, y, 1 );
+    coords( 2 ) = coords_shell( subdomain, x, y, 2 );
+    return coords * coords_radii( subdomain, r );
 }
 
+template < typename CoordsShellType, typename CoordsRadiiType >
 KOKKOS_INLINE_FUNCTION dense::Vec< double, 3 > coords(
-    const dense::Vec< int, 4 >        subdomain_x_y_r,
-    const Grid3DDataVec< double, 3 >& subdomain_unit_sphere_coords,
-    const Grid2DDataScalar< double >& subdomain_shell_radii )
+    const dense::Vec< int, 4 > subdomain_x_y_r,
+    const CoordsShellType&     coords_shell,
+    const CoordsRadiiType&     coords_radii )
 {
+    static_assert(
+        std::is_same_v< CoordsShellType, Grid3DDataVec< double, 3 > > ||
+        std::is_same_v< CoordsShellType, Grid3DDataVec< double, 3 >::HostMirror > );
+
+    static_assert(
+        std::is_same_v< CoordsRadiiType, Grid2DDataScalar< double > > ||
+        std::is_same_v< CoordsRadiiType, Grid2DDataScalar< double >::HostMirror > );
+
     return coords(
         subdomain_x_y_r( 0 ),
         subdomain_x_y_r( 1 ),
         subdomain_x_y_r( 2 ),
         subdomain_x_y_r( 3 ),
-        subdomain_unit_sphere_coords,
-        subdomain_shell_radii );
+        coords_shell,
+        coords_radii );
 }
 
 } // namespace terra::grid::shell
