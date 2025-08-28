@@ -275,7 +275,7 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
     CoarseGridSolver coarse_grid_solver( solver_params, table, coarse_grid_tmps );
 
     linalg::solvers::Multigrid< Laplace, Prolongation, Restriction, Smoother, CoarseGridSolver > multigrid_solver(
-        P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 20, 1e-8 );
+        P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 20, 1e-6 );
 
     multigrid_solver.collect_statistics( table );
 
@@ -315,7 +315,7 @@ int run_test()
 {
     T prev_l2_error = 1.0;
 
-    const int max_level = 4;
+    const int max_level = 5;
 
     constexpr T   omega          = 0.666;
     constexpr int prepost_smooth = 2;
