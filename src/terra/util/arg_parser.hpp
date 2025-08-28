@@ -15,13 +15,15 @@ namespace terra::util {
 
 /// @brief Simple argument parser.
 ///
-/// @note "Simple" as in: not tested to the bone :)
-///
 /// Parses all arguments starting with one or two dashes followed by and integer, double, string or nothing (bool)
 /// or a list of integers, doubles, or strings.
 ///
 /// Optionally, the first argument can be a text file with space-separated arguments.
 /// Inside that text file, in each line everything including and after a '#' character is skipped.
+///
+/// This parser does not implement any logic about missing/required arguments. It just parses what's there.
+/// However, you can check that later via has() and get< T >(). The latter will throw if no argument was found
+/// (also you can supply default values).
 ///
 /// Some examples:
 ///
@@ -107,11 +109,13 @@ class ArgParser
     }
 
     template < typename T >
-    T get( const std::string& key, const T& default_val = T{} ) const
+    T get( const std::string& key ) const
     {
         auto it = args.find( key );
         if ( it == args.end() )
-            return default_val;
+        {
+            throw std::runtime_error( "ArgParser::get: key not found" );
+        }
 
         // vector<T>
         if constexpr (
@@ -154,6 +158,18 @@ class ArgParser
             }
             throw std::runtime_error( "Type mismatch for key: " + key );
         }
+    }
+
+    template < typename T >
+    T get( const std::string& key, const T& default_val ) const
+    {
+        auto it = args.find( key );
+        if ( it == args.end() )
+        {
+            return default_val;
+        }
+
+        return get< T >( key );
     }
 
     bool has( const std::string& key ) const { return args.find( key ) != args.end(); }
