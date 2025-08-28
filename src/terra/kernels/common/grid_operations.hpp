@@ -1,8 +1,8 @@
 #pragma once
 
+#include "grid/grid_types.hpp"
 #include "kokkos/kokkos_wrapper.hpp"
 #include "mpi/mpi.hpp"
-#include "grid/grid_types.hpp"
 #include "terra/util/bit_masking.hpp"
 
 namespace terra::kernels::common {
@@ -387,6 +387,31 @@ ScalarType max_abs_entry( const grid::Grid4DDataVec< ScalarType, VecDim >& x )
         KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, int d, ScalarType& local_max ) {
             ScalarType val = Kokkos::abs( x( local_subdomain, i, j, k, d ) );
             local_max      = Kokkos::max( local_max, val );
+        },
+        Kokkos::Max< ScalarType >( max_mag ) );
+
+    Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &max_mag, 1, mpi::mpi_datatype< ScalarType >(), MPI_MAX, MPI_COMM_WORLD );
+
+    return max_mag;
+}
+
+template < typename ScalarType, int VecDim >
+ScalarType max_vector_magnitude( const grid::Grid4DDataVec< ScalarType, VecDim >& x )
+{
+    ScalarType max_mag = 0.0;
+    Kokkos::parallel_reduce(
+        "max_vector_magnitude",
+        Kokkos::MDRangePolicy( { 0, 0, 0, 0 }, { x.extent( 0 ), x.extent( 1 ), x.extent( 2 ), x.extent( 3 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, ScalarType& local_max ) {
+            ScalarType val = 0;
+            for ( int d = 0; d < VecDim; ++d )
+            {
+                val += x( local_subdomain, i, j, k, d ) * x( local_subdomain, i, j, k, d );
+            }
+            val       = Kokkos::sqrt( val );
+            local_max = Kokkos::max( local_max, val );
         },
         Kokkos::Max< ScalarType >( max_mag ) );
 
