@@ -1,6 +1,7 @@
 
 
 #include <fstream>
+#include <util/arg_parser.hpp>
 #include <vector>
 
 #include "communication/shell/communication.hpp"
@@ -54,10 +55,12 @@ struct Parameters
     double diffusivity;
     double rayleigh;
 
-    double dt;
+    double pseudo_cfl;
     double t_end;
     int    max_timesteps;
 
+    int stokes_bicgstab_l;
+    int stokes_bicgstab_max_iterations;
     int num_vcycles;
     int num_smoothing_steps_prepost;
 
@@ -164,7 +167,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 
     std::map< std::string, VectorQ1IsoQ2Q1< ScalarType > > stok_vecs;
     std::vector< std::string >                             stok_vec_names = { "u", "f" };
-    constexpr int                                          num_stok_tmps  = 8;
+    constexpr int                                          num_stok_tmps  = 10;
 
     for ( int i = 0; i < num_stok_tmps; i++ )
     {
@@ -323,15 +326,16 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     using PrecStokes = linalg::solvers::BlockDiagonalPreconditioner2x2< Stokes, PrecVisc, PrecSchur >;
     PrecStokes prec_stokes( prec_11, prec_22 );
 
-    linalg::solvers::IterativeSolverParameters solver_params{ 100, 1e-8, 1e-12 };
+    linalg::solvers::IterativeSolverParameters solver_params{ prm.stokes_bicgstab_max_iterations, 1e-6, 1e-12 };
 
-    std::vector< VectorQ1IsoQ2Q1< ScalarType > > tmp_bicgstab( 8 );
-    for ( int i = 0; i < 8; i++ )
+    std::vector< VectorQ1IsoQ2Q1< ScalarType > > tmp_bicgstab( 10 );
+    for ( int i = 0; i < 10; i++ )
     {
         tmp_bicgstab[i] = stok_vecs["tmp_" + std::to_string( i )];
     }
 
-    linalg::solvers::PBiCGStab< Stokes, PrecStokes > pbicgstab( 2, solver_params, table, tmp_bicgstab, prec_stokes );
+    linalg::solvers::PBiCGStab< Stokes, PrecStokes > pbicgstab(
+        prm.stokes_bicgstab_l, solver_params, table, tmp_bicgstab, prec_stokes );
 
     /////////////////////
     /// ENERGY SOLVER ///
@@ -347,7 +351,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         coords_radii[velocity_level],
         u.block_1(),
         prm.diffusivity,
-        prm.dt,
+        0.0,
         true,
         false,
         mass_scaling );
@@ -358,7 +362,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         coords_radii[velocity_level],
         u.block_1(),
         prm.diffusivity,
-        prm.dt,
+        0.0,
         false,
         false,
         mass_scaling );
@@ -369,7 +373,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         coords_radii[velocity_level],
         u.block_1(),
         prm.diffusivity,
-        prm.dt,
+        0.0,
         false,
         true,
         mass_scaling );
@@ -395,7 +399,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     }
 
     linalg::solvers::PBiCGStab< AD > energy_solver(
-        2, linalg::solvers::IterativeSolverParameters{ 100, 1e-12, 1e-12 }, table, tmp_bicgstab_temp );
+        2, linalg::solvers::IterativeSolverParameters{ 100, 1e-6, 1e-12 }, table, tmp_bicgstab_temp );
 
     table->add_row( {
         { "tag", "setup" },
@@ -426,6 +430,11 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     }
 
     double simulated_time = 0.0;
+
+    // We need some global h. Let's, for simplicity (does not need to be too accurate) just choose the smallest h in
+    // radial direction.
+    const auto h = grid::shell::min_radial_h( domains[velocity_level].domain_info().radii() );
+
     for ( int timestep = 1; timestep < prm.max_timesteps; timestep++ )
     {
         if ( mpi::rank() == 0 )
@@ -464,8 +473,29 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         // "Normalize" pressure.
         const double avg_pressure_approximation =
             kernels::common::masked_sum( u.block_2().grid_data(), u.block_2().mask_data(), grid::mask_owned() ) /
-            num_dofs_pressure;
+            static_cast< double >( num_dofs_pressure );
         linalg::lincomb( u.block_2(), { 1.0 }, { u.block_2() }, -avg_pressure_approximation );
+
+        // Max velocity magnitude.
+        const auto max_vel = kernels::common::max_vector_magnitude( u.block_1().grid_data() );
+
+        // Choose "suitable" small dt for accuracy - we have and implicit time-stepping scheme so we do not really need
+        // a CFL in the classical sense. Still useful for time-step size restriction.
+        const auto dt_advection = h / max_vel;
+        const auto dt_diffusion = ( h * h ) / prm.diffusivity;
+        const auto dt           = prm.pseudo_cfl * std::min( dt_advection, dt_diffusion );
+
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Computing dt ..." << std::endl;
+            std::cout << "    max_vel: " << max_vel << std::endl;
+            std::cout << "    h:       " << h << std::endl;
+            std::cout << "=>  dt:      " << dt << std::endl;
+        }
+
+        A.dt()              = dt;
+        A_neumann.dt()      = dt;
+        A_neumann_diag.dt() = dt;
 
         // Prepping for implicit Euler step.
         linalg::apply( M_T, T, q );
@@ -513,7 +543,12 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
             profiles.print_csv( out );
         }
 
-        simulated_time += prm.dt;
+        simulated_time += dt;
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Simulated time: " << simulated_time << " (stopping at " << prm.t_end << ", we're at "
+                      << simulated_time / prm.t_end * 100.0 << "%)" << std::endl;
+        }
         if ( simulated_time >= prm.t_end )
         {
             break;
@@ -525,21 +560,25 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
+    util::ArgParser args( argc, argv );
+
     const auto table = std::make_shared< util::Table >();
 
-    constexpr Parameters parameters{
-        .min_level                   = 0,
-        .max_level                   = 4,
-        .r_min                       = 0.5,
-        .r_max                       = 1.0,
-        .diffusivity                 = 1.0,
-        .rayleigh                    = 1e5,
-        .dt                          = 1e-2,
-        .t_end                       = 1000.0,
-        .max_timesteps               = 1000,
-        .num_vcycles                 = 2,
-        .num_smoothing_steps_prepost = 2,
-        .xdmf                        = true };
+    const Parameters parameters{
+        .min_level                      = args.get< int >( "min-level", 0 ),
+        .max_level                      = args.get< int >( "max-level", 6 ),
+        .r_min                          = 0.5,
+        .r_max                          = 1.0,
+        .diffusivity                    = 1.0,
+        .rayleigh                       = args.get< double >( "rayleigh", 1e5 ),
+        .pseudo_cfl                     = args.get< double >( "pseudo-cfl", 0.5 ),
+        .t_end                          = 1000.0,
+        .max_timesteps                  = 1000,
+        .stokes_bicgstab_l              = args.get< int >( "stokes-bicgstab-l", 2 ),
+        .stokes_bicgstab_max_iterations = args.get< int >( "stokes-bicgstab-max-iterations", 10 ),
+        .num_vcycles                    = args.get< int >( "num-vcycles", 2 ),
+        .num_smoothing_steps_prepost    = args.get< int >( "num-smooth", 2 ),
+        .xdmf                           = true };
 
     run( parameters, table );
 
