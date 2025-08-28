@@ -76,6 +76,9 @@ class UnsteadyAdvectionDiffusionSUPG
     , recv_buffers_( domain )
     {}
 
+    double&       dt() { return dt_; }
+    const double& dt() const { return dt_; }
+
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
