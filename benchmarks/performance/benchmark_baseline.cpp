@@ -44,12 +44,13 @@ struct BenchmarkData
     double duration;
 };
 
+template < std::floating_point T >
 struct ConstantStencilInner
 {
-    terra::grid::Grid4DDataScalar< double > src;
-    terra::grid::Grid4DDataScalar< double > dst;
+    terra::grid::Grid4DDataScalar< T > src;
+    terra::grid::Grid4DDataScalar< T > dst;
 
-    ConstantStencilInner( terra::grid::Grid4DDataScalar< double > _src, terra::grid::Grid4DDataScalar< double > _dst )
+    ConstantStencilInner( terra::grid::Grid4DDataScalar< T > _src, terra::grid::Grid4DDataScalar< T > _dst )
     : src( _src )
     , dst( _dst )
     {}
@@ -64,12 +65,13 @@ struct ConstantStencilInner
     }
 };
 
+template < std::floating_point T >
 struct ConstantElementwise
 {
-    terra::grid::Grid4DDataScalar< double > src;
-    terra::grid::Grid4DDataScalar< double > dst;
+    terra::grid::Grid4DDataScalar< T > src;
+    terra::grid::Grid4DDataScalar< T > dst;
 
-    ConstantElementwise( terra::grid::Grid4DDataScalar< double > _src, terra::grid::Grid4DDataScalar< double > _dst )
+    ConstantElementwise( terra::grid::Grid4DDataScalar< T > _src, terra::grid::Grid4DDataScalar< T > _dst )
     : src( _src )
     , dst( _dst )
     {}
@@ -77,8 +79,8 @@ struct ConstantElementwise
     KOKKOS_INLINE_FUNCTION
     void operator()( const int subdomain_idx, const int x_cell, const int y_cell, const int r_cell ) const
     {
-        terra::dense::Vec< double, 8 >    src_local;
-        terra::dense::Mat< double, 8, 8 > mat;
+        terra::dense::Vec< T, 8 >    src_local;
+        terra::dense::Mat< T, 8, 8 > mat;
 
         mat.fill( 0.1 );
 
@@ -94,7 +96,7 @@ struct ConstantElementwise
             }
         }
 
-        terra::dense::Vec< double, 8 > dst_local = mat * src_local;
+        terra::dense::Vec< T, 8 > dst_local = mat * src_local;
 
         for ( int x = x_cell; x < x_cell + 1; x++ )
         {
@@ -111,6 +113,7 @@ struct ConstantElementwise
     }
 };
 
+template < std::floating_point T >
 BenchmarkData
     run( const BenchmarkType benchmark,
          const int           lateral_refinement_level,
@@ -120,12 +123,12 @@ BenchmarkData
     const auto domain = DistributedDomain::create_uniform_single_subdomain(
         lateral_refinement_level, radial_refinement_level, 0.5, 1.0 );
 
-    const auto y  = allocate_scalar_grid< double >( "y", domain );
-    const auto x0 = allocate_scalar_grid< double >( "x0", domain );
-    const auto x1 = allocate_scalar_grid< double >( "x1", domain );
+    const auto y  = allocate_scalar_grid< T >( "y", domain );
+    const auto x0 = allocate_scalar_grid< T >( "x0", domain );
+    const auto x1 = allocate_scalar_grid< T >( "x1", domain );
 
-    set_constant( x0, 1.0 );
-    set_constant( x1, 1.0 );
+    set_constant( x0, T( 1.0 ) );
+    set_constant( x1, T( 1.0 ) );
 
     if ( !y.span_is_contiguous() )
     {
@@ -142,11 +145,11 @@ BenchmarkData
     {
         if ( benchmark == BenchmarkType::LINCOMB_1 )
         {
-            lincomb( y, 0.0, 42.0, x0 );
+            lincomb( y, T( 0.0 ), T( 42.0 ), x0 );
         }
         else if ( benchmark == BenchmarkType::LINCOMB_2 )
         {
-            lincomb( y, 0.0, 42.0, x0, 4711.0, x1 );
+            lincomb( y, T( 0.0 ), T( 42.0 ), x0, T( 4711.0 ), x1 );
         }
         else if ( benchmark == BenchmarkType::STENCIL_INNER_CONSTANT_7 )
         {
@@ -154,14 +157,14 @@ BenchmarkData
                 "stencil",
                 Kokkos::MDRangePolicy(
                     { 0, 1, 1, 1 }, { y.extent( 0 ), y.extent( 1 ) - 1, y.extent( 2 ) - 1, y.extent( 3 ) - 1 } ),
-                ConstantStencilInner( x0, y ) );
+                ConstantStencilInner< T >( x0, y ) );
         }
         else if ( benchmark == BenchmarkType::ELEMENTWISE_CONSTANT_MATVEC )
         {
             Kokkos::parallel_for(
                 "elementwise",
                 terra::grid::shell::local_domain_md_range_policy_cells( domain ),
-                ConstantElementwise( x0, y ) );
+                ConstantElementwise< T >( x0, y ) );
         }
     }
 
@@ -193,13 +196,22 @@ void run_all()
 
         for ( int i = min_level; i <= max_level; ++i )
         {
-            const auto data = run( benchmark, i, i, executions );
+            BenchmarkData data_float  = run< float >( benchmark, i, i, executions );
+            BenchmarkData data_double = run< double >( benchmark, i, i, executions );
+
+            if ( data_double.dofs != data_float.dofs )
+            {
+                Kokkos::abort( "Dofs should be equal." );
+            }
+
             table.add_row(
                 { { "lateral level", i },
                   { "radial level", i },
-                  { "dofs", data.dofs },
-                  { "duration (s)", data.duration },
-                  { "updated dofs/sec", data.dofs / data.duration } } );
+                  { "dofs", data_double.dofs },
+                  { "[float] duration (s)", data_float.duration },
+                  { "[float] updated dofs/sec", data_float.dofs / data_float.duration },
+                  { "[double] duration (s)", data_double.duration },
+                  { "[double] updated dofs/sec", data_double.dofs / data_double.duration } } );
         }
 
         table.print_pretty();
