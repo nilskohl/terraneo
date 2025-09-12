@@ -5,6 +5,7 @@ target_sources(terra
         laplace.hpp
         laplace_batched.hpp
         laplace_no_matrix.hpp
+        laplace_no_matrix_teams.hpp
         laplace_simple.hpp
         mass.hpp
         prolongation_linear.hpp
