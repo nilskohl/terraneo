@@ -6,35 +6,37 @@
 
 namespace terra::grid {
 
-template < typename ScalarType >
-using Grid0DDataScalar = Kokkos::View< ScalarType >;
+using Layout = Kokkos::LayoutLeft;
 
 template < typename ScalarType >
-using Grid1DDataScalar = Kokkos::View< ScalarType* >;
+using Grid0DDataScalar = Kokkos::View< ScalarType, Layout >;
 
 template < typename ScalarType >
-using Grid2DDataScalar = Kokkos::View< ScalarType** >;
+using Grid1DDataScalar = Kokkos::View< ScalarType*, Layout >;
 
 template < typename ScalarType >
-using Grid3DDataScalar = Kokkos::View< ScalarType*** >;
+using Grid2DDataScalar = Kokkos::View< ScalarType**, Layout >;
 
 template < typename ScalarType >
-using Grid4DDataScalar = Kokkos::View< ScalarType**** >;
+using Grid3DDataScalar = Kokkos::View< ScalarType***, Layout >;
+
+template < typename ScalarType >
+using Grid4DDataScalar = Kokkos::View< ScalarType****, Layout >;
 
 template < typename ScalarType, int VecDim >
-using Grid0DDataVec = Kokkos::View< ScalarType[VecDim] >;
+using Grid0DDataVec = Kokkos::View< ScalarType[VecDim], Layout >;
 
 template < typename ScalarType, int VecDim >
-using Grid1DDataVec = Kokkos::View< ScalarType* [VecDim] >;
+using Grid1DDataVec = Kokkos::View< ScalarType* [VecDim], Layout >;
 
 template < typename ScalarType, int VecDim >
-using Grid2DDataVec = Kokkos::View< ScalarType** [VecDim] >;
+using Grid2DDataVec = Kokkos::View< ScalarType** [VecDim], Layout >;
 
 template < typename ScalarType, int VecDim >
-using Grid3DDataVec = Kokkos::View< ScalarType*** [VecDim] >;
+using Grid3DDataVec = Kokkos::View< ScalarType*** [VecDim], Layout >;
 
 template < typename ScalarType, int VecDim >
-using Grid4DDataVec = Kokkos::View< ScalarType**** [VecDim] >;
+using Grid4DDataVec = Kokkos::View< ScalarType**** [VecDim], Layout >;
 
 template < typename GridDataType >
 constexpr int grid_data_vec_dim()
