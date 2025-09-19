@@ -449,6 +449,11 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 
         // Set up rhs data for Stokes.
 
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Setting up Stokes rhs ..." << std::endl;
+        }
+
         Kokkos::parallel_for(
             "Stokes rhs interpolation",
             local_domain_md_range_policy_nodes( domains[velocity_level] ),
@@ -464,16 +469,21 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         fe::strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
             stok_vecs["f"], mask_data[velocity_level], grid::shell::mask_domain_boundary() );
 
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Solving Stokes ..." << std::endl;
+        }
+
         // Solve Stokes.
         solve( pbicgstab, K, u, f );
 
-        if ( mpi::rank() == 0 )
-        {
-            std::cout << "Stokes solve:" << std::endl;
-        }
-
         table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
         table->clear();
+
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Setting up energy solve ..." << std::endl;
+        }
 
         // "Normalize" pressure.
         const ScalarType avg_pressure_approximation =
@@ -524,13 +534,13 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
             mask_data[velocity_level],
             grid::shell::mask_domain_boundary() );
 
-        // Solve energy.
-        solve( energy_solver, A, T, q );
-
         if ( mpi::rank() == 0 )
         {
-            std::cout << "Energy solve:" << std::endl;
+            std::cout << "Solving energy ..." << std::endl;
         }
+
+        // Solve energy.
+        solve( energy_solver, A, T, q );
 
         table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
         table->clear();
@@ -541,6 +551,11 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 
         if ( prm.xdmf )
         {
+            if ( mpi::rank() == 0 )
+            {
+                std::cout << "Writing XDMF output and radial profiles ..." << std::endl;
+            }
+
             xdmf_output.write();
             auto profiles = shell::radial_profiles_to_table(
                 shell::radial_profiles( T ), domains[velocity_level].domain_info().radii() );
