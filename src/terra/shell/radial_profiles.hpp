@@ -16,15 +16,17 @@ struct RadialProfiles
     , radial_max_( "radial_profiles_max", radial_shells )
     , radial_sum_( "radial_profiles_sum", radial_shells )
     , radial_cnt_( "radial_profiles_cnt", radial_shells )
+    , radial_avg_( "radial_profiles_avg", radial_shells )
     {}
 
     grid::Grid1DDataScalar< ScalarType > radial_min_;
     grid::Grid1DDataScalar< ScalarType > radial_max_;
     grid::Grid1DDataScalar< ScalarType > radial_sum_;
     grid::Grid1DDataScalar< ScalarType > radial_cnt_;
+    grid::Grid1DDataScalar< ScalarType > radial_avg_;
 };
 
-/// @brief Compute radial profiles (min, max, sum, count) for a Q1 scalar field.
+/// @brief Compute radial profiles (min, max, sum, count, average) for a Q1 scalar field (on device!).
 ///
 /// @details Computes the radial profiles for a Q1 scalar field by iterating over all radial shells.
 /// The profiles include minimum, maximum, sum, and count of nodes in each shell.
@@ -32,8 +34,9 @@ struct RadialProfiles
 /// The output is a RadialProfiles struct with device-side arrays of size num_shells which contain:
 /// - Minimum value in the shell
 /// - Maximum value in the shell
-/// - Sum of values in the shell (compute avg with this and count)
-/// - Count of nodes in the shell (compute avg with this and sum)
+/// - Sum of values in the shell
+/// - Count of nodes in the shell
+/// - Average of nodes in the shell (sum / count)
 /// Performs reduction per process on the device and also inter-device reduction with MPI_Allreduce.
 /// All processes will carry the same result.
 ///
@@ -51,17 +54,14 @@ struct RadialProfiles
 /// std::ofstream out( "radial_profiles.csv" );
 /// table.print_csv( out );
 /// @endcode
-/// That will compute output the average values as well.
 ///
 /// @tparam ScalarType Scalar type of the field.
 /// @param data Q1 scalar field data.
-/// @return RadialProfiles struct containing [min, max, sum, count] for each radial shell (still on the device).
+/// @return RadialProfiles struct containing [min, max, sum, count, average] for each radial shell (still on the device).
 template < typename ScalarType >
 RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< ScalarType >& data )
 {
     const int radial_shells = data.grid_data().extent( 3 );
-
-    // For now, we'll do min/max/avg/count.
 
     RadialProfiles< ScalarType > radial_profiles( radial_shells );
 
@@ -128,12 +128,19 @@ RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< Scal
         MPI_SUM,
         MPI_COMM_WORLD );
 
+    Kokkos::parallel_for(
+        "radial profiles avg", radial_shells, KOKKOS_LAMBDA( int r ) {
+            radial_profiles.radial_avg_( r ) = radial_profiles.radial_sum_( r ) / radial_profiles.radial_cnt_( r );
+        } );
+
+    Kokkos::fence();
+
     return radial_profiles;
 }
 
 /// @brief Convert radial profile data to a util::Table for analysis or output.
 ///
-/// @details Converts the radial profile data (min, max, avg, count) into a util::Table.
+/// @details Converts the radial profile data (min, max, sum, avg, count) into a util::Table.
 ///
 /// This table can then be used for further analysis or output to CSV/JSON.
 /// The table will have the following columns:
@@ -183,6 +190,8 @@ util::Table radial_profiles_to_table(
         Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_sum_ );
     const auto radial_profiles_host_cnt =
         Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_cnt_ );
+    const auto radial_profiles_host_avg =
+        Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), radial_profiles.radial_avg_ );
 
     util::Table table;
     for ( int r = 0; r < radii.size(); r++ )
@@ -194,7 +203,7 @@ util::Table radial_profiles_to_table(
               { "min", radial_profiles_host_min( r ) },
               { "max", radial_profiles_host_max( r ) },
               { "sum", radial_profiles_host_sum( r ) },
-              { "avg", radial_profiles_host_sum( r ) / radial_profiles_host_cnt( r ) },
+              { "avg", radial_profiles_host_avg( r ) },
               { "cnt", radial_profiles_host_cnt( r ) } } );
     }
     return table;
