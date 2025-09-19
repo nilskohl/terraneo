@@ -1,5 +1,39 @@
 # TerraNeoX
 
+## Building
+
+### Dependencies
+
+Mandatory:
+* MPI (e.g. OpenMPI)
+
+Optional:
+* CUDA (for GPU support)
+
+### On the LMU systems (`cachemiss`, `memoryleak`) for usage with CUDA:
+
+```
+$ module load mpi.ompi
+$ module load nvidia-hpc
+
+$ mkdir terraneox-build
+
+$ ll
+terraneox/               # <== the cloned source code
+terraneox-build/
+
+$ cd terraneox-build
+
+$ cmake ../terraneox/ -Kokkos_ENABLE_CUDA=ON
+
+# Build tests
+$ cd tests
+$ make -j16
+```
+
+Note the capitalization: it must be `Kokkos_ENABLE_CUDA=ON`, NOT `KOKKOS_ENABLE_CUDA=ON`.
+
+
 ## TODO
 
 ### Big features (definitely required - order not clear)
