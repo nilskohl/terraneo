@@ -13,9 +13,9 @@ namespace terra::linalg::solvers {
 /// @brief BiCGStab(l) iterative solver for general (possibly unsymmetric) linear systems.
 ///
 /// See
-/// @code  
-/// Sleijpen, G. L., & Fokkema, D. R. (1993). 
-/// BiCGstab (ell) for linear equations involving unsymmetric matrices with complex spectrum. 
+/// @code
+/// Sleijpen, G. L., & Fokkema, D. R. (1993).
+/// BiCGstab (ell) for linear equations involving unsymmetric matrices with complex spectrum.
 /// Electronic Transactions on Numerical Analysis., 1, 11-32.
 /// @endcode
 /// for details.
@@ -29,13 +29,13 @@ class PBiCGStab
 {
   public:
     /// @brief Operator type to be solved.
-    using OperatorType       = OperatorT;
+    using OperatorType = OperatorT;
     /// @brief Solution vector type.
     using SolutionVectorType = SrcOf< OperatorType >;
     /// @brief Right-hand side vector type.
-    using RHSVectorType      = DstOf< OperatorType >;
+    using RHSVectorType = DstOf< OperatorType >;
     /// @brief Scalar type for computations.
-    using ScalarType         = typename SolutionVectorType::ScalarType;
+    using ScalarType = typename SolutionVectorType::ScalarType;
 
     /// @brief Construct a PBiCGStab solver.
     /// @param l Number of BiCG iterations per "minimal residual" (MR) step.
@@ -138,8 +138,9 @@ class PBiCGStab
         ScalarType omega = 1;
         ScalarType sigma = 1;
 
-        Eigen::Matrix< ScalarType, Eigen::Dynamic, Eigen::Dynamic > M( l_, l_ );
-        Eigen::Matrix< ScalarType, Eigen::Dynamic, 1 > gamma( l_ );
+        // This has to be double regardless of the template parameter for robustness.
+        Eigen::Matrix< double, Eigen::Dynamic, Eigen::Dynamic > M( l_, l_ );
+        Eigen::Matrix< double, Eigen::Dynamic, 1 >              gamma( l_ );
 
         iteration++;
 
@@ -190,7 +191,8 @@ class PBiCGStab
 
             // MR part
 
-            Eigen::Matrix< ScalarType, Eigen::Dynamic, 1 > M0( l_ );
+            // This has to be double regardless of the template parameter for robustness.
+            Eigen::Matrix< double, Eigen::Dynamic, 1 > M0( l_ );
 
             for ( int j = 1; j < l_ + 1; j++ )
             {
@@ -205,24 +207,29 @@ class PBiCGStab
                 }
             }
 
+            std::cout << M << std::endl;
+            std::cout << M0 << std::endl;
+
             gamma = M.fullPivLu().solve( M0 );
 
             for ( int j = 1; j < l_ + 1; ++j )
             {
-                lincomb( us( 0 ), { 1.0, -gamma( j - 1 ) }, { us( 0 ), us( j ) } );
+                lincomb( us( 0 ), { 1.0, ScalarType( -gamma( j - 1 ) ) }, { us( 0 ), us( j ) } );
             }
 
             for ( int j = 0; j < l_; ++j )
             {
-                lincomb( x, { 1.0, gamma( j ) }, { x, rs( j ) } );
+                lincomb( x, { 1.0, ScalarType( gamma( j ) ) }, { x, rs( j ) } );
             }
 
             for ( int j = 1; j < l_ + 1; ++j )
             {
-                lincomb( rs( 0 ), { 1.0, -gamma( j - 1 ) }, { rs( 0 ), rs( j ) } );
+                lincomb( rs( 0 ), { 1.0, ScalarType( -gamma( j - 1 ) ) }, { rs( 0 ), rs( j ) } );
             }
 
             omega = gamma( l_ - 1 );
+
+            std::cout << omega << std::endl;
 
             absolute_residual = std::sqrt( dot( residual(), residual() ) );
             relative_residual = absolute_residual / initial_residual;
