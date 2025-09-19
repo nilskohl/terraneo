@@ -318,7 +318,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     }
 
     CoarseGridSolver coarse_grid_solver(
-        linalg::solvers::IterativeSolverParameters{ 1000, 1e-8, 1e-16 }, table, coarse_grid_tmps );
+        linalg::solvers::IterativeSolverParameters{ 10, 1e-6, 1e-16 }, table, coarse_grid_tmps );
 
     using PrecVisc = linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
     PrecVisc prec_11(
