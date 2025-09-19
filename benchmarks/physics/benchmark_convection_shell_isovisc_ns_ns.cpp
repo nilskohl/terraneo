@@ -7,13 +7,12 @@
 #include "communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
-#include "fe/wedge/operators/shell/LaplaceOld.hpp"
+#include "fe/wedge/operators/shell/identity.hpp"
 #include "fe/wedge/operators/shell/mass.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/unsteady_advection_diffusion_supg.hpp"
-#include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
 #include "grid/grid_types.hpp"
 #include "grid/shell/spherical_shell.hpp"
@@ -44,20 +43,22 @@ using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
 
+using ScalarType = float;
+
 struct Parameters
 {
     int min_level;
     int max_level;
 
-    double r_min;
-    double r_max;
+    ScalarType r_min;
+    ScalarType r_max;
 
-    double diffusivity;
-    double rayleigh;
+    ScalarType diffusivity;
+    ScalarType rayleigh;
 
-    double pseudo_cfl;
-    double t_end;
-    int    max_timesteps;
+    ScalarType pseudo_cfl;
+    ScalarType t_end;
+    int        max_timesteps;
 
     int stokes_bicgstab_l;
     int stokes_bicgstab_max_iterations;
@@ -69,16 +70,16 @@ struct Parameters
 
 struct InitialConditionInterpolator
 {
-    Grid3DDataVec< double, 3 > grid_;
-    Grid2DDataScalar< double > radii_;
-    Grid4DDataScalar< double > data_;
-    bool                       only_boundary_;
+    Grid3DDataVec< ScalarType, 3 > grid_;
+    Grid2DDataScalar< ScalarType > radii_;
+    Grid4DDataScalar< ScalarType > data_;
+    bool                           only_boundary_;
 
     InitialConditionInterpolator(
-        const Grid3DDataVec< double, 3 >& grid,
-        const Grid2DDataScalar< double >& radii,
-        const Grid4DDataScalar< double >& data,
-        bool                              only_boundary )
+        const Grid3DDataVec< ScalarType, 3 >& grid,
+        const Grid2DDataScalar< ScalarType >& radii,
+        const Grid4DDataScalar< ScalarType >& data,
+        bool                                  only_boundary )
     : grid_( grid )
     , radii_( radii )
     , data_( data )
@@ -90,10 +91,11 @@ struct InitialConditionInterpolator
     {
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
-            const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+            const dense::Vec< ScalarType, 3 > coords =
+                grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-            const double radius = coords.norm();
-            const double perturbation =
+            const ScalarType radius = coords.norm();
+            const ScalarType perturbation =
                 // ( 0.5 - radius ) * ( 1.0 - radius ) * 0.5 * Kokkos::sin( 10.0 * coords( 0 ) + 3.0 * coords( 1 ) );
                 0.0 * radius;
 
@@ -104,18 +106,18 @@ struct InitialConditionInterpolator
 
 struct RHSVelocityInterpolator
 {
-    Grid3DDataVec< double, 3 > grid_;
-    Grid2DDataScalar< double > radii_;
-    Grid4DDataVec< double, 3 > data_u_;
-    Grid4DDataScalar< double > data_T_;
-    double                     rayleigh_number_;
+    Grid3DDataVec< ScalarType, 3 > grid_;
+    Grid2DDataScalar< ScalarType > radii_;
+    Grid4DDataVec< ScalarType, 3 > data_u_;
+    Grid4DDataScalar< ScalarType > data_T_;
+    ScalarType                     rayleigh_number_;
 
     RHSVelocityInterpolator(
-        const Grid3DDataVec< double, 3 >& grid,
-        const Grid2DDataScalar< double >& radii,
-        const Grid4DDataVec< double, 3 >& data_u,
-        const Grid4DDataScalar< double >& data_T,
-        double                            rayleigh_number )
+        const Grid3DDataVec< ScalarType, 3 >& grid,
+        const Grid2DDataScalar< ScalarType >& radii,
+        const Grid4DDataVec< ScalarType, 3 >& data_u,
+        const Grid4DDataScalar< ScalarType >& data_T,
+        ScalarType                            rayleigh_number )
     : grid_( grid )
     , radii_( radii )
     , data_u_( data_u )
@@ -126,7 +128,7 @@ struct RHSVelocityInterpolator
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
-        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+        const dense::Vec< ScalarType, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
         const auto n = coords.normalized();
 
@@ -140,13 +142,11 @@ struct RHSVelocityInterpolator
 
 void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 {
-    using ScalarType = double;
-
     // Set up domains for all levels.
 
     std::vector< DistributedDomain >                  domains;
-    std::vector< Grid3DDataVec< double, 3 > >         coords_shell;
-    std::vector< Grid2DDataScalar< double > >         coords_radii;
+    std::vector< Grid3DDataVec< ScalarType, 3 > >     coords_shell;
+    std::vector< Grid2DDataScalar< ScalarType > >     coords_radii;
     std::vector< Grid4DDataScalar< util::MaskType > > mask_data;
 
     for ( int level = prm.min_level; level <= prm.max_level; level++ )
@@ -154,8 +154,8 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         const int idx = level - prm.min_level;
 
         domains.push_back( DistributedDomain::create_uniform_single_subdomain( level, level, prm.r_min, prm.r_max ) );
-        coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords( domains[idx] ) );
-        coords_radii.push_back( grid::shell::subdomain_shell_radii( domains[idx] ) );
+        coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
+        coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
         mask_data.push_back( linalg::setup_mask_data( domains[idx] ) );
     }
 
@@ -280,8 +280,12 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 
         inverse_diagonals.emplace_back(
             "inverse_diagonal_" + std::to_string( level ), domains[level], mask_data[level] );
-        linalg::assign( stok_vecs["tmp_3"].block_1(), 1.0 );
-        linalg::apply( A_diag[level], stok_vecs["tmp_3"].block_1(), inverse_diagonals.back() );
+
+        VectorQ1Vec< ScalarType > tmp(
+            "inverse_diagonal_tmp" + std::to_string( level ), domains[level], mask_data[level] );
+
+        linalg::assign( tmp, 1.0 );
+        linalg::apply( A_diag[level], tmp, inverse_diagonals.back() );
         linalg::invert_entries( inverse_diagonals.back() );
 
         if ( level < num_levels - 1 )
@@ -323,8 +327,9 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     using PrecSchur = linalg::solvers::IdentitySolver< Stokes::Block22Type >;
     PrecSchur prec_22;
 
-    using PrecStokes = linalg::solvers::BlockDiagonalPreconditioner2x2< Stokes, PrecVisc, PrecSchur >;
-    PrecStokes prec_stokes( prec_11, prec_22 );
+    using PrecStokes =
+        linalg::solvers::BlockDiagonalPreconditioner2x2< Stokes, Viscous, Stokes::Block22Type, PrecVisc, PrecSchur >;
+    PrecStokes prec_stokes( K.block_11(), K.block_22(), prec_11, prec_22 );
 
     linalg::solvers::IterativeSolverParameters solver_params{ prm.stokes_bicgstab_max_iterations, 1e-6, 1e-12 };
 
@@ -423,13 +428,13 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     {
         xdmf_output.write();
 
-        auto profiles = shell::radial_profiles_to_table(
+        auto profiles = shell::radial_profiles_to_table< ScalarType >(
             shell::radial_profiles( T ), domains[velocity_level].domain_info().radii() );
         std::ofstream out( "radial_profiles_" + std::to_string( 0 ) + ".csv" );
         profiles.print_csv( out );
     }
 
-    double simulated_time = 0.0;
+    ScalarType simulated_time = 0.0;
 
     // We need some global h. Let's, for simplicity (does not need to be too accurate) just choose the smallest h in
     // radial direction.
@@ -471,9 +476,9 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         table->clear();
 
         // "Normalize" pressure.
-        const double avg_pressure_approximation =
+        const ScalarType avg_pressure_approximation =
             kernels::common::masked_sum( u.block_2().grid_data(), u.block_2().mask_data(), grid::mask_owned() ) /
-            static_cast< double >( num_dofs_pressure );
+            static_cast< ScalarType >( num_dofs_pressure );
         linalg::lincomb( u.block_2(), { 1.0 }, { u.block_2() }, -avg_pressure_approximation );
 
         // Max velocity magnitude.
@@ -570,8 +575,8 @@ int main( int argc, char** argv )
         .r_min                          = 0.5,
         .r_max                          = 1.0,
         .diffusivity                    = 1.0,
-        .rayleigh                       = args.get< double >( "rayleigh", 1e5 ),
-        .pseudo_cfl                     = args.get< double >( "pseudo-cfl", 0.5 ),
+        .rayleigh                       = static_cast< ScalarType >( args.get< double >( "rayleigh", 1e5 ) ),
+        .pseudo_cfl                     = static_cast< ScalarType >( args.get< double >( "pseudo-cfl", 0.5 ) ),
         .t_end                          = 1000.0,
         .max_timesteps                  = 1000,
         .stokes_bicgstab_l              = args.get< int >( "stokes-bicgstab-l", 2 ),

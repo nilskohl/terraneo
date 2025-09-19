@@ -16,31 +16,31 @@ template < typename ScalarT, int VecDim = 3 >
 class Stokes
 {
   public:
-    using SrcVectorType = linalg::VectorQ1IsoQ2Q1< double, VecDim >;
-    using DstVectorType = linalg::VectorQ1IsoQ2Q1< double, VecDim >;
+    using SrcVectorType = linalg::VectorQ1IsoQ2Q1< ScalarT, VecDim >;
+    using DstVectorType = linalg::VectorQ1IsoQ2Q1< ScalarT, VecDim >;
     using ScalarType    = ScalarT;
 
-    using Block11Type = VectorLaplace< double, VecDim >;
-    using Block12Type = Gradient< double >;
-    using Block21Type = Divergence< double >;
-    using Block22Type = Zero< double >;
+    using Block11Type = VectorLaplace< ScalarType, VecDim >;
+    using Block12Type = Gradient< ScalarType >;
+    using Block21Type = Divergence< ScalarType >;
+    using Block22Type = Zero< ScalarType >;
 
   private:
-    VectorLaplace< double, VecDim > A_;
-    Gradient< double >              B_T_;
-    Divergence< double >            B_;
-    Zero< double >                  O_;
+    VectorLaplace< ScalarType, VecDim > A_;
+    Gradient< ScalarType >              B_T_;
+    Divergence< ScalarType >            B_;
+    Zero< ScalarType >                  O_;
 
     bool diagonal_;
 
   public:
     Stokes(
-        const grid::shell::DistributedDomain&   domain_fine,
-        const grid::shell::DistributedDomain&   domain_coarse,
-        const grid::Grid3DDataVec< double, 3 >& grid,
-        const grid::Grid2DDataScalar< double >& radii,
-        bool                                    treat_boundary,
-        bool                                    diagonal )
+        const grid::shell::DistributedDomain&       domain_fine,
+        const grid::shell::DistributedDomain&       domain_coarse,
+        const grid::Grid3DDataVec< ScalarType, 3 >& grid,
+        const grid::Grid2DDataScalar< ScalarType >& radii,
+        bool                                        treat_boundary,
+        bool                                        diagonal )
     : A_( domain_fine, grid, radii, treat_boundary, diagonal )
     , B_T_( domain_fine, domain_coarse, grid, radii, treat_boundary )
     , B_( domain_fine, domain_coarse, grid, radii, treat_boundary )

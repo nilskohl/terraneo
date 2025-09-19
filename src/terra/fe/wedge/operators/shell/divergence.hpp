@@ -17,24 +17,24 @@ template < typename ScalarT >
 class Divergence
 {
   public:
-    using SrcVectorType = linalg::VectorQ1Vec< double, 3 >;
-    using DstVectorType = linalg::VectorQ1Scalar< double >;
+    using SrcVectorType = linalg::VectorQ1Vec< ScalarT, 3 >;
+    using DstVectorType = linalg::VectorQ1Scalar< ScalarT >;
     using ScalarType    = ScalarT;
 
   private:
     grid::shell::DistributedDomain domain_fine_;
     grid::shell::DistributedDomain domain_coarse_;
 
-    grid::Grid3DDataVec< double, 3 > grid_fine_;
-    grid::Grid2DDataScalar< double > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 > grid_fine_;
+    grid::Grid2DDataScalar< ScalarT > radii_;
 
     bool treat_boundary_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double > send_buffers_;
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT > recv_buffers_;
 
     grid::Grid4DDataVec< ScalarType, 3 > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
@@ -43,8 +43,8 @@ class Divergence
     Divergence(
         const grid::shell::DistributedDomain&   domain_fine,
         const grid::shell::DistributedDomain&   domain_coarse,
-        const grid::Grid3DDataVec< double, 3 >& grid_fine,
-        const grid::Grid2DDataScalar< double >& radii_fine,
+        const grid::Grid3DDataVec< ScalarT, 3 >& grid_fine,
+        const grid::Grid2DDataScalar< ScalarT >& radii_fine,
         bool                                    treat_boundary,
         linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
         linalg::OperatorCommunicationMode       operator_communication_mode =
@@ -93,18 +93,18 @@ class Divergence
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
         // Gather surface points for each wedge.
-        dense::Vec< double, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
+        dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
         wedge_surface_physical_coords( wedge_phy_surf, grid_fine_, local_subdomain_id, x_cell, y_cell );
 
         // Gather wedge radii.
-        const double r_1 = radii_( local_subdomain_id, r_cell );
-        const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
+        const ScalarT r_1 = radii_( local_subdomain_id, r_cell );
+        const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // Quadrature points.
         constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
 
-        dense::Vec< double, 3 > quad_points[num_quad_points];
-        double                  quad_weights[num_quad_points];
+        dense::Vec< ScalarT, 3 > quad_points[num_quad_points];
+        ScalarT                  quad_weights[num_quad_points];
 
         quadrature::quad_felippa_1x1_quad_points( quad_points );
         quadrature::quad_felippa_1x1_quad_weights( quad_weights );
@@ -112,7 +112,7 @@ class Divergence
         const int fine_radial_wedge_index = r_cell % 2;
 
         // Compute the local element matrix.
-        dense::Mat< double, 6, 18 > A[num_wedges_per_hex_cell] = {};
+        dense::Mat< ScalarT, 6, 18 > A[num_wedges_per_hex_cell] = {};
 
         for ( int q = 0; q < num_quad_points; q++ )
         {
@@ -148,7 +148,7 @@ class Divergence
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
                 // we are killing columns
-                dense::Mat< double, 6, 18 > boundary_mask;
+                dense::Mat< ScalarT, 6, 18 > boundary_mask;
                 boundary_mask.fill( 1.0 );
                 if ( r_cell == 0 )
                 {
@@ -190,10 +190,10 @@ class Divergence
             }
         }
 
-        dense::Vec< double, 18 > src[num_wedges_per_hex_cell];
+        dense::Vec< ScalarT, 18 > src[num_wedges_per_hex_cell];
         for ( int d = 0; d < 3; d++ )
         {
-            dense::Vec< double, 6 > src_d[num_wedges_per_hex_cell];
+            dense::Vec< ScalarT, 6 > src_d[num_wedges_per_hex_cell];
             extract_local_wedge_vector_coefficients( src_d, local_subdomain_id, x_cell, y_cell, r_cell, d, src_ );
 
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
@@ -205,7 +205,7 @@ class Divergence
             }
         }
 
-        dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
+        dense::Vec< ScalarT, 6 > dst[num_wedges_per_hex_cell];
 
         dst[0] = A[0] * src[0];
         dst[1] = A[1] * src[1];

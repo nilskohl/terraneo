@@ -17,30 +17,30 @@ template < typename ScalarT, int VelocityVecDim = 3 >
 class UnsteadyAdvectionDiffusionSUPG
 {
   public:
-    using SrcVectorType = linalg::VectorQ1Scalar< double >;
-    using DstVectorType = linalg::VectorQ1Scalar< double >;
+    using SrcVectorType = linalg::VectorQ1Scalar< ScalarT >;
+    using DstVectorType = linalg::VectorQ1Scalar< ScalarT >;
     using ScalarType    = ScalarT;
 
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< double, 3 > grid_;
-    grid::Grid2DDataScalar< double > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 > grid_;
+    grid::Grid2DDataScalar< ScalarT > radii_;
 
-    linalg::VectorQ1Vec< double, VelocityVecDim > velocity_;
+    linalg::VectorQ1Vec< ScalarT, VelocityVecDim > velocity_;
 
-    double diffusivity_;
-    double dt_;
+    ScalarT diffusivity_;
+    ScalarT dt_;
 
-    bool   treat_boundary_;
-    bool   diagonal_;
-    double mass_scaling_;
+    bool    treat_boundary_;
+    bool    diagonal_;
+    ScalarT mass_scaling_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double > send_buffers_;
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT > recv_buffers_;
 
     grid::Grid4DDataScalar< ScalarType >              src_;
     grid::Grid4DDataScalar< ScalarType >              dst_;
@@ -48,17 +48,17 @@ class UnsteadyAdvectionDiffusionSUPG
 
   public:
     UnsteadyAdvectionDiffusionSUPG(
-        const grid::shell::DistributedDomain&                domain,
-        const grid::Grid3DDataVec< double, 3 >&              grid,
-        const grid::Grid2DDataScalar< double >&              radii,
-        const linalg::VectorQ1Vec< double, VelocityVecDim >& velocity,
-        const double                                         diffusivity,
-        const double                                         dt,
-        bool                                                 treat_boundary,
-        bool                                                 diagonal,
-        double                                               mass_scaling,
-        linalg::OperatorApplyMode                            operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode                    operator_communication_mode =
+        const grid::shell::DistributedDomain&                 domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&              grid,
+        const grid::Grid2DDataScalar< ScalarT >&              radii,
+        const linalg::VectorQ1Vec< ScalarT, VelocityVecDim >& velocity,
+        const ScalarT                                         diffusivity,
+        const ScalarT                                         dt,
+        bool                                                  treat_boundary,
+        bool                                                  diagonal,
+        ScalarT                                               mass_scaling,
+        linalg::OperatorApplyMode                             operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode                     operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
@@ -76,8 +76,8 @@ class UnsteadyAdvectionDiffusionSUPG
     , recv_buffers_( domain )
     {}
 
-    double&       dt() { return dt_; }
-    const double& dt() const { return dt_; }
+    ScalarT&       dt() { return dt_; }
+    const ScalarT& dt() const { return dt_; }
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
@@ -104,26 +104,26 @@ class UnsteadyAdvectionDiffusionSUPG
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
         // Gather surface points for each wedge.
-        dense::Vec< double, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
+        dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
         wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
 
         // Gather wedge radii.
-        const double r_1 = radii_( local_subdomain_id, r_cell );
-        const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
+        const ScalarT r_1 = radii_( local_subdomain_id, r_cell );
+        const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // Quadrature points.
         constexpr auto num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
 
-        dense::Vec< double, 3 > quad_points[num_quad_points];
-        double                  quad_weights[num_quad_points];
+        dense::Vec< ScalarT, 3 > quad_points[num_quad_points];
+        ScalarT                  quad_weights[num_quad_points];
 
         quadrature::quad_felippa_3x2_quad_points( quad_points );
         quadrature::quad_felippa_3x2_quad_weights( quad_weights );
 
         // Interpolating velocity into quad points.
 
-        dense::Vec< double, VelocityVecDim > vel_interp[num_wedges_per_hex_cell][num_quad_points];
-        dense::Vec< double, 6 >              vel_coeffs[VelocityVecDim][num_wedges_per_hex_cell];
+        dense::Vec< ScalarT, VelocityVecDim > vel_interp[num_wedges_per_hex_cell][num_quad_points];
+        dense::Vec< ScalarT, 6 >              vel_coeffs[VelocityVecDim][num_wedges_per_hex_cell];
 
         for ( int d = 0; d < VelocityVecDim; d++ )
         {
@@ -148,19 +148,20 @@ class UnsteadyAdvectionDiffusionSUPG
 
         // Let's compute the streamline diffusivity.
 
-        double streamline_diffusivity[num_wedges_per_hex_cell];
+        ScalarT streamline_diffusivity[num_wedges_per_hex_cell];
 
         // Far from accurate but for now assume h = r.
         const auto h = r_2 - r_1;
 
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
-            dense::Vec< double, VelocityVecDim > vel_interp_average;
+            dense::Vec< ScalarT, VelocityVecDim > vel_interp_average;
             for ( int q = 0; q < num_quad_points; q++ )
             {
                 vel_interp_average = vel_interp_average + vel_interp[wedge][q];
             }
-            vel_interp_average  = vel_interp_average * ( 1.0 / static_cast< ScalarType >( num_quad_points ) );
+            vel_interp_average =
+                vel_interp_average * ( ScalarType( 1.0 ) / static_cast< ScalarType >( num_quad_points ) );
             const auto vel_norm = vel_interp_average.norm();
 
             const auto element_peclet_number = vel_norm * h / ( 2.0 * diffusivity_ );
@@ -171,7 +172,7 @@ class UnsteadyAdvectionDiffusionSUPG
         }
 
         // Compute the local element matrix.
-        dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};
+        dense::Mat< ScalarT, 6, 6 > A[num_wedges_per_hex_cell] = {};
 
         for ( int q = 0; q < num_quad_points; q++ )
         {
@@ -212,7 +213,7 @@ class UnsteadyAdvectionDiffusionSUPG
         {
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
-                dense::Mat< double, 6, 6 > boundary_mask;
+                dense::Mat< ScalarT, 6, 6 > boundary_mask;
                 boundary_mask.fill( 1.0 );
                 if ( r_cell == 0 )
                 {
@@ -254,10 +255,10 @@ class UnsteadyAdvectionDiffusionSUPG
             A[1] = A[1].diagonal();
         }
 
-        dense::Vec< double, 6 > src[num_wedges_per_hex_cell];
+        dense::Vec< ScalarT, 6 > src[num_wedges_per_hex_cell];
         extract_local_wedge_scalar_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, src_ );
 
-        dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
+        dense::Vec< ScalarT, 6 > dst[num_wedges_per_hex_cell];
 
         dst[0] = A[0] * src[0];
         dst[1] = A[1] * src[1];

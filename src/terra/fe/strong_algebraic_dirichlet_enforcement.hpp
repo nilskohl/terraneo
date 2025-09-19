@@ -107,7 +107,8 @@ void strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
     const util::MaskAndValue&                       dirichlet_boundary_mask )
 {
     // b_elim <- g_D on the Dirichlet boundary
-    kernels::common::assign_masked_else_keep_old( b.block_1().grid_data(), 0.0, mask_data, dirichlet_boundary_mask );
+    kernels::common::assign_masked_else_keep_old(
+        b.block_1().grid_data(), ScalarType( 0 ), mask_data, dirichlet_boundary_mask );
 }
 
 } // namespace terra::fe

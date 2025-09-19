@@ -170,9 +170,8 @@ RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< Scal
 /// @param radii Vector of shell radii. Can for instance be obtained from the DomainInfo.
 /// @return Table with columns: tag, shell_idx, radius, min, max, avg, cnt.
 template < typename ScalarType >
-util::Table radial_profiles_to_table(
-    const RadialProfiles< ScalarType >& radial_profiles,
-    const std::vector< ScalarType >     radii )
+util::Table
+    radial_profiles_to_table( const RadialProfiles< ScalarType >& radial_profiles, const std::vector< double >& radii )
 {
     if ( radii.size() != radial_profiles.radial_min_.extent( 0 ) ||
          radii.size() != radial_profiles.radial_max_.extent( 0 ) ||

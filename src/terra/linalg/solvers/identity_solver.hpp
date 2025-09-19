@@ -12,6 +12,9 @@ namespace terra::linalg::solvers {
 /// the right-hand side to the solution vector: \f$ x \gets b \f$.
 /// Satisfies the SolverLike concept (see solver.hpp).
 /// Can be used as a placeholder for "no preconditioner".
+///
+/// OperatorT is essentially ignored (does not need to be the identity operator).
+///
 /// @tparam OperatorT Operator type (must satisfy OperatorLike).
 template < OperatorLike OperatorT >
 class IdentitySolver

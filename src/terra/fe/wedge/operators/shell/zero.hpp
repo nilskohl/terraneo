@@ -14,8 +14,8 @@ class Zero
     linalg::OperatorApplyMode operator_apply_mode_;
 
   public:
-    using SrcVectorType = linalg::VectorQ1Scalar< double >;
-    using DstVectorType = linalg::VectorQ1Scalar< double >;
+    using SrcVectorType = linalg::VectorQ1Scalar< ScalarT >;
+    using DstVectorType = linalg::VectorQ1Scalar< ScalarT >;
     using ScalarType    = ScalarT;
 
     explicit Zero( linalg::OperatorApplyMode operator_apply_mode = linalg::OperatorApplyMode::Replace )

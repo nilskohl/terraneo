@@ -15,23 +15,23 @@ template < typename ScalarT, int VecDim = 3 >
 class VectorMass
 {
   public:
-    using SrcVectorType = linalg::VectorQ1Vec< double, VecDim >;
-    using DstVectorType = linalg::VectorQ1Vec< double, VecDim >;
+    using SrcVectorType = linalg::VectorQ1Vec< ScalarT, VecDim >;
+    using DstVectorType = linalg::VectorQ1Vec< ScalarT, VecDim >;
     using ScalarType    = ScalarT;
 
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< double, 3 > grid_;
-    grid::Grid2DDataScalar< double > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 > grid_;
+    grid::Grid2DDataScalar< ScalarT > radii_;
 
     bool diagonal_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double, 3 > send_buffers_;
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< double, 3 > recv_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, 3 > send_buffers_;
+    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, 3 > recv_buffers_;
 
     grid::Grid4DDataVec< ScalarType, VecDim > src_;
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
@@ -39,8 +39,8 @@ class VectorMass
   public:
     VectorMass(
         const grid::shell::DistributedDomain&   domain,
-        const grid::Grid3DDataVec< double, 3 >& grid,
-        const grid::Grid2DDataScalar< double >& radii,
+        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
+        const grid::Grid2DDataScalar< ScalarT >& radii,
         const bool                              diagonal,
         linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
         linalg::OperatorCommunicationMode       operator_communication_mode =
@@ -82,44 +82,44 @@ class VectorMass
         // First all the r-independent stuff.
         // Gather surface points for each wedge.
 
-        dense::Vec< double, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
+        dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
         wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
 
         // Compute lateral part of Jacobian.
 
         constexpr auto num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
 
-        dense::Vec< double, 3 > quad_points[num_quad_points];
-        double                  quad_weights[num_quad_points];
+        dense::Vec< ScalarT, 3 > quad_points[num_quad_points];
+        ScalarT                  quad_weights[num_quad_points];
 
         quadrature::quad_felippa_3x2_quad_points( quad_points );
         quadrature::quad_felippa_3x2_quad_weights( quad_weights );
 
-        double det_jac_lat[num_wedges_per_hex_cell][num_quad_points] = {};
+        ScalarT det_jac_lat[num_wedges_per_hex_cell][num_quad_points] = {};
 
         jacobian_lat_determinant( det_jac_lat, wedge_phy_surf, quad_points );
 
         // Only now we introduce radially dependent terms.
-        const double r_1 = radii_( local_subdomain_id, r_cell );
-        const double r_2 = radii_( local_subdomain_id, r_cell + 1 );
+        const ScalarT r_1 = radii_( local_subdomain_id, r_cell );
+        const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // For now, compute the local element matrix. We'll improve that later.
-        dense::Mat< double, 6, 6 > A[num_wedges_per_hex_cell] = {};
+        dense::Mat< ScalarT, 6, 6 > A[num_wedges_per_hex_cell] = {};
 
-        const double grad_r = grad_forward_map_rad( r_1, r_2 );
+        const ScalarT grad_r = grad_forward_map_rad( r_1, r_2 );
 
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
             for ( int q = 0; q < num_quad_points; q++ )
             {
-                const double r = forward_map_rad( r_1, r_2, quad_points[q]( 2 ) );
+                const ScalarT r = forward_map_rad( r_1, r_2, quad_points[q]( 2 ) );
 
                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
                 {
                     for ( int j = 0; j < num_nodes_per_wedge; j++ )
                     {
-                        const double shape_i = shape( i, quad_points[q] );
-                        const double shape_j = shape( j, quad_points[q] );
+                        const ScalarT shape_i = shape( i, quad_points[q] );
+                        const ScalarT shape_j = shape( j, quad_points[q] );
 
                         A[wedge]( i, j ) +=
                             quad_weights[q] * ( shape_i * shape_j * r * r * grad_r * det_jac_lat[wedge][q] );
@@ -136,10 +136,10 @@ class VectorMass
 
         for ( int d = 0; d < VecDim; d++ )
         {
-            dense::Vec< double, 6 > src[num_wedges_per_hex_cell];
+            dense::Vec< ScalarT, 6 > src[num_wedges_per_hex_cell];
             extract_local_wedge_vector_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, d, src_ );
 
-            dense::Vec< double, 6 > dst[num_wedges_per_hex_cell];
+            dense::Vec< ScalarT, 6 > dst[num_wedges_per_hex_cell];
 
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];
