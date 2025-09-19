@@ -31,18 +31,20 @@ using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
 
+using ScalarType = float;
+
 struct VelocityInterpolator
 {
-    Grid3DDataVec< double, 3 > grid_;
-    Grid2DDataScalar< double > radii_;
-    Grid4DDataVec< double, 3 > data_;
-    bool                       only_boundary_;
+    Grid3DDataVec< ScalarType, 3 > grid_;
+    Grid2DDataScalar< ScalarType > radii_;
+    Grid4DDataVec< ScalarType, 3 > data_;
+    bool                           only_boundary_;
 
     VelocityInterpolator(
-        const Grid3DDataVec< double, 3 >& grid,
-        const Grid2DDataScalar< double >& radii,
-        const Grid4DDataVec< double, 3 >& data,
-        bool                              only_boundary )
+        const Grid3DDataVec< ScalarType, 3 >& grid,
+        const Grid2DDataScalar< ScalarType >& radii,
+        const Grid4DDataVec< ScalarType, 3 >& data,
+        bool                                  only_boundary )
     : grid_( grid )
     , radii_( radii )
     , data_( data )
@@ -52,7 +54,7 @@ struct VelocityInterpolator
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
-        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+        const dense::Vec< ScalarType, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
         data_( local_subdomain_id, x, y, r, 0 ) = -coords( 1 );
         data_( local_subdomain_id, x, y, r, 1 ) = coords( 0 );
@@ -62,16 +64,16 @@ struct VelocityInterpolator
 
 struct InitialConditionInterpolator
 {
-    Grid3DDataVec< double, 3 > grid_;
-    Grid2DDataScalar< double > radii_;
-    Grid4DDataScalar< double > data_;
-    bool                       only_boundary_;
+    Grid3DDataVec< ScalarType, 3 > grid_;
+    Grid2DDataScalar< ScalarType > radii_;
+    Grid4DDataScalar< ScalarType > data_;
+    bool                           only_boundary_;
 
     InitialConditionInterpolator(
-        const Grid3DDataVec< double, 3 >& grid,
-        const Grid2DDataScalar< double >& radii,
-        const Grid4DDataScalar< double >& data,
-        bool                              only_boundary )
+        const Grid3DDataVec< ScalarType, 3 >& grid,
+        const Grid2DDataScalar< ScalarType >& radii,
+        const Grid4DDataScalar< ScalarType >& data,
+        bool                                  only_boundary )
     : grid_( grid )
     , radii_( radii )
     , data_( data )
@@ -81,10 +83,10 @@ struct InitialConditionInterpolator
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
-        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+        const dense::Vec< ScalarType, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const dense::Vec< double, 3 > center{ 0.75, 0.0, 0.0 };
-        const double                  radius = 0.1;
+        const dense::Vec< ScalarType, 3 > center{ 0.75, 0.0, 0.0 };
+        const ScalarType                  radius = 0.1;
 
         if ( ( coords - center ).norm() < radius )
         {
@@ -97,8 +99,6 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 {
     Kokkos::Timer timer;
 
-    using ScalarType = double;
-
     const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
 
     auto mask_data = linalg::setup_mask_data( domain );
@@ -107,7 +107,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
     VectorQ1Scalar< ScalarType > f( "f", domain, mask_data );
     VectorQ1Vec< ScalarType >    u( "u", domain, mask_data );
 
-    std::vector< VectorQ1Scalar< double > > tmps;
+    std::vector< VectorQ1Scalar< ScalarType > > tmps;
     for ( int i = 0; i < 8; ++i )
     {
         tmps.emplace_back( "tmpp", domain, mask_data );
@@ -144,7 +144,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 
     Kokkos::fence();
 
-    linalg::solvers::IterativeSolverParameters solver_params{ 1000, 1e-12, 1e-12 };
+    linalg::solvers::IterativeSolverParameters solver_params{ 10, 1e-12, 1e-12 };
 
     linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
