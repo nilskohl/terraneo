@@ -15,6 +15,7 @@
 #include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
+#include "util/timer.hpp"
 
 using namespace terra;
 
@@ -239,6 +240,11 @@ int main( int argc, char** argv )
             table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
         }
         prev_l2_error = l2_error;
+
+        util::TimerTree::instance().aggregate_mpi();
+        std::cout << util::TimerTree::instance().json() << std::endl;
+        std::cout << util::TimerTree::instance().json_aggregate() << std::endl;
+        util::TimerTree::instance().clear();
     }
 
     table->query_rows_not_none( "order" ).select_columns( { "level", "order" } ).print_pretty();

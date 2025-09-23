@@ -186,8 +186,8 @@ BenchmarkData
 void run_all()
 {
     const int min_level  = 2;
-    const int max_level  = 8;
-    const int executions = 100;
+    const int max_level  = 7;
+    const int executions = 5;
 
     for ( auto benchmark : all_benchmark_types )
     {

@@ -7,6 +7,7 @@
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/vector_q1isoq2_q1.hpp"
+#include "util/timer.hpp"
 #include "vector_laplace.hpp"
 #include "zero.hpp"
 
@@ -49,6 +50,8 @@ class Stokes
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
+        util::Timer timer_apply( "stokes_apply" );
+
         if ( !diagonal_ )
         {
             A_.set_operator_apply_and_communication_modes(

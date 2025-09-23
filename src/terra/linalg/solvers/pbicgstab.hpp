@@ -7,6 +7,7 @@
 #include "terra/linalg/solvers/solver.hpp"
 #include "terra/linalg/vector.hpp"
 #include "util/table.hpp"
+#include "util/timer.hpp"
 
 namespace terra::linalg::solvers {
 
@@ -85,6 +86,8 @@ class PBiCGStab
     /// @param b Right-hand side vector (input).
     void solve_impl( OperatorType& A, SolutionVectorType& x, const RHSVectorType& b )
     {
+        util::Timer timer( "pbicgstab" );
+
         linalg::randomize( r_shadow() );
 
         for ( int j = 0; j < l_ + 1; ++j )

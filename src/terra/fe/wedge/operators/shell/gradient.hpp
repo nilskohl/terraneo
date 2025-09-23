@@ -10,6 +10,7 @@
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
+#include "util/timer.hpp"
 
 namespace terra::fe::wedge::operators::shell {
 
@@ -71,6 +72,8 @@ class Gradient
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
+        util::Timer timer_apply( "gradient_apply" );
+
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
@@ -79,10 +82,15 @@ class Gradient
         src_ = src.grid_data();
         dst_ = dst.grid_data();
 
+        util::Timer timer_kernel( "gradient_kernel" );
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_fine_ ), *this );
+        Kokkos::fence();
+        timer_kernel.stop();
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
+            util::Timer timer_comm( "gradient_comm" );
+
             communication::shell::pack_and_send_local_subdomain_boundaries(
                 domain_fine_, dst_, send_buffers_, recv_buffers_ );
             communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_fine_, dst_, recv_buffers_ );

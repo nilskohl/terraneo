@@ -27,6 +27,7 @@
 #include "shell/radial_profiles.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
+#include "util/timer.hpp"
 #include "visualization/xdmf.hpp"
 
 using namespace terra;
@@ -464,6 +465,8 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 
         // Set up rhs data for Stokes.
 
+        util::Timer timer_stokes( "stokes" );
+
         if ( mpi::rank() == 0 )
         {
             std::cout << "Setting up Stokes rhs ..." << std::endl;
@@ -495,16 +498,20 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         table->query_rows_equals( "tag", "pbicgstab_solver" ).print_pretty();
         table->clear();
 
-        if ( mpi::rank() == 0 )
-        {
-            std::cout << "Setting up energy solve ..." << std::endl;
-        }
-
         // "Normalize" pressure.
         const ScalarType avg_pressure_approximation =
             kernels::common::masked_sum( u.block_2().grid_data(), u.block_2().mask_data(), grid::mask_owned() ) /
             static_cast< ScalarType >( num_dofs_pressure );
         linalg::lincomb( u.block_2(), { 1.0 }, { u.block_2() }, -avg_pressure_approximation );
+
+        timer_stokes.stop();
+
+        util::Timer timer_energy( "energy" );
+
+        if ( mpi::rank() == 0 )
+        {
+            std::cout << "Setting up energy solve ..." << std::endl;
+        }
 
         // Max velocity magnitude.
         const auto max_vel = kernels::common::max_vector_magnitude( u.block_1().grid_data() );
@@ -512,8 +519,9 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         // Choose "suitable" small dt for accuracy - we have and implicit time-stepping scheme so we do not really need
         // a CFL in the classical sense. Still useful for time-step size restriction.
         const auto dt_advection = h / max_vel;
-        const auto dt_diffusion = ( h * h ) / prm.diffusivity;
-        const auto dt           = prm.pseudo_cfl * std::min( dt_advection, dt_diffusion );
+        // const auto dt_diffusion = ( h * h ) / prm.diffusivity;
+        // const auto dt           = prm.pseudo_cfl * std::min( dt_advection, dt_diffusion );
+        const auto dt = prm.pseudo_cfl * dt_advection;
 
         if ( mpi::rank() == 0 )
         {
@@ -566,6 +574,8 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
             table->clear();
         }
 
+        timer_energy.stop();
+
         // Output stuff, logging etc.
 
         table->add_row( {} );
@@ -590,6 +600,17 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
             std::cout << "Simulated time: " << simulated_time << " (stopping at " << prm.t_end << ", we're at "
                       << simulated_time / prm.t_end * 100.0 << "%)" << std::endl;
         }
+
+        util::TimerTree::instance().aggregate_mpi();
+        if ( mpi::rank() == 0 )
+        {
+            const auto timer_tree_file = "timer_tree_" + std::to_string( timestep ) + ".json";
+            std::cout << "Writing timer tree to " << timer_tree_file << std::endl;
+            std::ofstream out( timer_tree_file );
+            out << util::TimerTree::instance().json_aggregate();
+            out.close();
+        }
+
         if ( simulated_time >= prm.t_end )
         {
             break;
@@ -606,19 +627,20 @@ int main( int argc, char** argv )
     const auto table = std::make_shared< util::Table >();
 
     const Parameters parameters{
-        .min_level                          = args.get< int >( "min-level", 0 ),
-        .max_level                          = args.get< int >( "max-level", 6 ),
-        .r_min                              = 0.5,
-        .r_max                              = 1.0,
-        .diffusivity                        = 1.0,
-        .rayleigh                           = static_cast< ScalarType >( args.get< double >( "rayleigh", 1e5 ) ),
-        .pseudo_cfl                         = static_cast< ScalarType >( args.get< double >( "pseudo-cfl", 0.5 ) ),
-        .t_end                              = 1000.0,
-        .substeps_per_stokes_solve          = args.get< int >( "substeps-per-stokes-solve", 1 ),
-        .max_timesteps                      = 1000,
-        .stokes_bicgstab_l                  = args.get< int >( "stokes-bicgstab-l", 2 ),
-        .stokes_bicgstab_max_iterations     = args.get< int >( "stokes-bicgstab-max-iterations", 10 ),
-        .stokes_bicgstab_relative_tolerance = 1e-06,
+        .min_level                      = args.get< int >( "min-level", 0 ),
+        .max_level                      = args.get< int >( "max-level", 6 ),
+        .r_min                          = 0.5,
+        .r_max                          = 1.0,
+        .diffusivity                    = 1.0,
+        .rayleigh                       = static_cast< ScalarType >( args.get< double >( "rayleigh", 1e5 ) ),
+        .pseudo_cfl                     = static_cast< ScalarType >( args.get< double >( "pseudo-cfl", 0.5 ) ),
+        .t_end                          = 1000.0,
+        .substeps_per_stokes_solve      = args.get< int >( "substeps-per-stokes-solve", 1 ),
+        .max_timesteps                  = 1000,
+        .stokes_bicgstab_l              = args.get< int >( "stokes-bicgstab-l", 2 ),
+        .stokes_bicgstab_max_iterations = args.get< int >( "stokes-bicgstab-max-iterations", 10 ),
+        .stokes_bicgstab_relative_tolerance =
+            static_cast< ScalarType >( args.get< double >( "stokes-bicgstab-rel-tol", 1e-6 ) ),
         .stokes_bicgstab_absolute_tolerance = 1e-12,
         .stokes_bicgstab_conv_rate_tolerance =
             static_cast< ScalarType >( args.get< double >( "stokes-bicgstab-conv-rate-tolerance", 0.9 ) ),

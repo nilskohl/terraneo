@@ -10,6 +10,7 @@
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
+#include "util/timer.hpp"
 
 namespace terra::fe::wedge::operators::shell {
 
@@ -41,13 +42,13 @@ class Divergence
 
   public:
     Divergence(
-        const grid::shell::DistributedDomain&   domain_fine,
-        const grid::shell::DistributedDomain&   domain_coarse,
+        const grid::shell::DistributedDomain&    domain_fine,
+        const grid::shell::DistributedDomain&    domain_coarse,
         const grid::Grid3DDataVec< ScalarT, 3 >& grid_fine,
         const grid::Grid2DDataScalar< ScalarT >& radii_fine,
-        bool                                    treat_boundary,
-        linalg::OperatorApplyMode               operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode       operator_communication_mode =
+        bool                                     treat_boundary,
+        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode        operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_fine_( domain_fine )
     , domain_coarse_( domain_coarse )
@@ -71,6 +72,8 @@ class Divergence
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
+        util::Timer timer_apply( "divergence_apply" );
+
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
@@ -79,10 +82,15 @@ class Divergence
         src_ = src.grid_data();
         dst_ = dst.grid_data();
 
+        util::Timer timer_kernel( "divergence_kernel" );
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_fine_ ), *this );
+        Kokkos::fence();
+        timer_kernel.stop();
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
+            util::Timer timer_comm( "divergence_comm" );
+
             communication::shell::pack_and_send_local_subdomain_boundaries(
                 domain_coarse_, dst_, send_buffers_, recv_buffers_ );
             communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_coarse_, dst_, recv_buffers_ );
