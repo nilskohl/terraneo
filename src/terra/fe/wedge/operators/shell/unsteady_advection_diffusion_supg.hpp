@@ -153,22 +153,63 @@ class UnsteadyAdvectionDiffusionSUPG
         // Far from accurate but for now assume h = r.
         const auto h = r_2 - r_1;
 
+        // constants
+        const ScalarT eps_vel = ScalarT( 1e-12 );
+        const ScalarT Pe_tol  = ScalarT( 1e-8 );
+
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
-            dense::Vec< ScalarT, VelocityVecDim > vel_interp_average;
-            for ( int q = 0; q < num_quad_points; q++ )
+            ScalarT tau_accum = 0.0;
+            ScalarT waccum    = 0.0;
+
+            for ( int q = 0; q < num_quad_points; ++q )
             {
-                vel_interp_average = vel_interp_average + vel_interp[wedge][q];
+                // get velocity at this quad point
+                const auto&   uq         = vel_interp[wedge][q];
+                const ScalarT vel_norm_q = uq.norm();
+
+                // characteristic length at quad point: if h is cell-based this is fine
+                // otherwise compute a local h_q. Here we use h (cell-size).
+                ScalarT tau_q = 0.0;
+
+                if ( vel_norm_q > eps_vel )
+                {
+                    const ScalarT Pe_q = vel_norm_q * h / ( 2.0 * diffusivity_ );
+
+                    if ( Pe_q > Pe_tol )
+                    {
+                        // coth(Pe) - 1/Pe = 1/tanh(Pe) - 1/Pe
+                        const ScalarT coth_minus = ScalarT( 1.0 ) / Kokkos::tanh( Pe_q ) - ScalarT( 1.0 ) / Pe_q;
+                        tau_q                    = ( h / ( 2.0 * vel_norm_q ) ) * coth_minus;
+                    }
+                    else
+                    {
+                        // diffusion dominated, tau -> limit (expand coth series) ~ h^2/(12*kappa) for small Pe,
+                        // but it's fine to set small tau (or compute series). We'll set small tau to 0 here.
+                        tau_q = 0.0;
+                    }
+
+                    // optional: clamp tau to avoid huge values
+                    const ScalarT tau_max = ScalarT( 10.0 ) * h / Kokkos::max( vel_norm_q, eps_vel );
+                    if ( tau_q > tau_max )
+                    {
+                        tau_q = tau_max;
+                    }
+                }
+                else
+                {
+                    tau_q = 0.0;
+                }
+
+                // quadrature weight for this point (if you have weights)
+                const ScalarT wq = quad_weights[q]; // if not available, use 1.0
+                tau_accum += tau_q * wq;
+                waccum += wq;
             }
-            vel_interp_average =
-                vel_interp_average * ( ScalarType( 1.0 ) / static_cast< ScalarType >( num_quad_points ) );
-            const auto vel_norm = vel_interp_average.norm();
 
-            const auto element_peclet_number = vel_norm * h / ( 2.0 * diffusivity_ );
-
-            const auto sd = ( h / ( 2.0 * element_peclet_number ) ) * ( 1.0 - 1.0 / element_peclet_number );
-
-            streamline_diffusivity[wedge] = element_peclet_number > 1.0 ? sd : 0.0;
+            // final cell/wedge tau: volume-weighted average
+            ScalarT tau_cell              = ( waccum > 0.0 ) ? ( tau_accum / waccum ) : 0.0;
+            streamline_diffusivity[wedge] = tau_cell;
         }
 
         // Compute the local element matrix.
