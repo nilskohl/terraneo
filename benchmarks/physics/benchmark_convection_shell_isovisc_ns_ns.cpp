@@ -26,6 +26,10 @@
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/vector_q1isoq2_q1.hpp"
 #include "shell/radial_profiles.hpp"
+#include "util/cli11_helper.hpp"
+#include "util/cli11_wrapper.hpp"
+#include "util/filesystem.hpp"
+#include "util/info.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 #include "util/timer.hpp"
@@ -61,20 +65,19 @@ struct Parameters
     ScalarType pseudo_cfl;
     ScalarType t_end;
 
-    int substeps_per_stokes_solve;
-
     int max_timesteps;
+
+    int substeps_per_stokes_solve;
 
     int        stokes_bicgstab_l;
     int        stokes_bicgstab_max_iterations;
     ScalarType stokes_bicgstab_relative_tolerance;
     ScalarType stokes_bicgstab_absolute_tolerance;
-    ScalarType stokes_bicgstab_conv_rate_tolerance;
 
     int num_vcycles;
     int num_smoothing_steps_prepost;
 
-    bool xdmf;
+    std::string outdir;
 };
 
 struct InitialConditionInterpolator
@@ -195,8 +198,18 @@ struct NoiseAdder
 
 void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 {
-    // Set up domains for all levels.
+    // Check outdir and create if does not exist.
+    prepare_empty_directory_or_abort( prm.outdir );
 
+    const auto xdmf_dir            = prm.outdir + "/xdmf";
+    const auto radial_profiles_dir = prm.outdir + "/radial_profiles";
+    const auto timer_trees_dir     = prm.outdir + "/timer_trees";
+
+    prepare_empty_directory_or_abort( xdmf_dir );
+    prepare_empty_directory_or_abort( radial_profiles_dir );
+    prepare_empty_directory_or_abort( timer_trees_dir );
+
+    // Set up domains for all levels.
     std::vector< DistributedDomain >                  domains;
     std::vector< Grid3DDataVec< ScalarType, 3 > >     coords_shell;
     std::vector< Grid2DDataScalar< ScalarType > >     coords_radii;
@@ -401,8 +414,6 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     linalg::solvers::PBiCGStab< Stokes, PrecStokes > pbicgstab(
         prm.stokes_bicgstab_l, solver_params, table, tmp_bicgstab, prec_stokes );
 
-    pbicgstab.set_convergence_rate_tolerance( prm.stokes_bicgstab_conv_rate_tolerance );
-
     /////////////////////
     /// ENERGY SOLVER ///
     /////////////////////
@@ -495,21 +506,18 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     table->print_pretty();
     table->clear();
 
-    visualization::XDMFOutput xdmf_output( "xdmf", coords_shell[velocity_level], coords_radii[velocity_level] );
+    visualization::XDMFOutput xdmf_output( xdmf_dir, coords_shell[velocity_level], coords_radii[velocity_level] );
 
     xdmf_output.add( T.grid_data() );
 
     // Time stepping
 
-    if ( prm.xdmf )
-    {
-        xdmf_output.write();
+    xdmf_output.write();
 
-        auto profiles = shell::radial_profiles_to_table< ScalarType >(
-            shell::radial_profiles( T ), domains[velocity_level].domain_info().radii() );
-        std::ofstream out( "radial_profiles_" + std::to_string( 0 ) + ".csv" );
-        profiles.print_csv( out );
-    }
+    auto profiles = shell::radial_profiles_to_table< ScalarType >(
+        shell::radial_profiles( T ), domains[velocity_level].domain_info().radii() );
+    std::ofstream out( radial_profiles_dir + "/radial_profiles_" + std::to_string( 0 ) + ".csv" );
+    profiles.print_csv( out );
 
     ScalarType simulated_time = 0.0;
 
@@ -641,7 +649,6 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 
         table->add_row( {} );
 
-        if ( prm.xdmf )
         {
             if ( mpi::rank() == 0 )
             {
@@ -651,7 +658,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
             xdmf_output.write();
             auto profiles = shell::radial_profiles_to_table(
                 shell::radial_profiles( T ), domains[velocity_level].domain_info().radii() );
-            std::ofstream out( "radial_profiles_" + std::to_string( timestep ) + ".csv" );
+            std::ofstream out( radial_profiles_dir + "/radial_profiles_" + std::to_string( timestep ) + ".csv" );
             profiles.print_csv( out );
         }
 
@@ -665,7 +672,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         util::TimerTree::instance().aggregate_mpi();
         if ( mpi::rank() == 0 )
         {
-            const auto timer_tree_file = "timer_tree_" + std::to_string( timestep ) + ".json";
+            const auto timer_tree_file = timer_trees_dir + "/timer_tree_" + std::to_string( timestep ) + ".json";
             std::cout << "Writing timer tree to " << timer_tree_file << std::endl;
             std::ofstream out( timer_tree_file );
             out << util::TimerTree::instance().json_aggregate();
@@ -683,31 +690,57 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    util::ArgParser args( argc, argv );
+    // Fill with default parameters.
+    Parameters parameters{
+        .min_level                          = 0,
+        .max_level                          = 3,
+        .r_min                              = 0.5,
+        .r_max                              = 1.0,
+        .diffusivity                        = 1.0,
+        .rayleigh                           = 1e5,
+        .pseudo_cfl                         = 0.5,
+        .t_end                              = 1.0,
+        .max_timesteps                      = 1000,
+        .substeps_per_stokes_solve          = 1,
+        .stokes_bicgstab_l                  = 2,
+        .stokes_bicgstab_max_iterations     = 10,
+        .stokes_bicgstab_relative_tolerance = 1e-6,
+        .stokes_bicgstab_absolute_tolerance = 1e-12,
+        .num_vcycles                        = 2,
+        .num_smoothing_steps_prepost        = 2,
+        .outdir                             = "" };
+
+    CLI::App app{ "Isoviscous convection benchmark." };
+
+    // We can just reference the struct entries.
+    // The values therein are defaults.
+    util::add_option_with_default( app, "--min-level", parameters.min_level );
+    util::add_option_with_default( app, "--max-level", parameters.max_level );
+    util::add_option_with_default( app, "--r-min", parameters.r_min );
+    util::add_option_with_default( app, "--r-max", parameters.r_max );
+    util::add_option_with_default( app, "--diffusivity", parameters.diffusivity );
+    util::add_option_with_default( app, "--rayleigh", parameters.rayleigh );
+    util::add_option_with_default( app, "--pseudo-cfl", parameters.pseudo_cfl );
+    util::add_option_with_default( app, "--t-end", parameters.t_end );
+    util::add_option_with_default( app, "--max-timesteps", parameters.max_timesteps );
+    util::add_option_with_default( app, "--substeps-per-stokes-solve", parameters.substeps_per_stokes_solve );
+    util::add_option_with_default( app, "--stokes-bicgstab-l", parameters.stokes_bicgstab_l );
+    util::add_option_with_default( app, "--stokes-bicgstab-max-iterations", parameters.stokes_bicgstab_max_iterations );
+    util::add_option_with_default(
+        app, "--stokes-bicgstab-relative-tolerance", parameters.stokes_bicgstab_relative_tolerance );
+    util::add_option_with_default(
+        app, "--stokes-bicgstab-absolute-tolerance", parameters.stokes_bicgstab_absolute_tolerance );
+    util::add_option_with_default( app, "--num-vcycles", parameters.num_vcycles );
+    util::add_option_with_default( app, "--num-smoothing-steps-prepost", parameters.num_smoothing_steps_prepost );
+    util::add_option_with_default( app, "--outdir", parameters.outdir )->required();
+
+    CLI11_PARSE( app, argc, argv );
+
+    util::print_general_info_on_root( argc, argv, std::cout );
+
+    terra::util::print_cli_summary( app, std::cout );
 
     const auto table = std::make_shared< util::Table >();
-
-    const Parameters parameters{
-        .min_level                      = args.get< int >( "min-level", 0 ),
-        .max_level                      = args.get< int >( "max-level", 4 ),
-        .r_min                          = 0.5,
-        .r_max                          = 1.0,
-        .diffusivity                    = 1.0,
-        .rayleigh                       = static_cast< ScalarType >( args.get< double >( "rayleigh", 1e5 ) ),
-        .pseudo_cfl                     = static_cast< ScalarType >( args.get< double >( "pseudo-cfl", 0.5 ) ),
-        .t_end                          = 1000.0,
-        .substeps_per_stokes_solve      = args.get< int >( "substeps-per-stokes-solve", 1 ),
-        .max_timesteps                  = 1000,
-        .stokes_bicgstab_l              = args.get< int >( "stokes-bicgstab-l", 2 ),
-        .stokes_bicgstab_max_iterations = args.get< int >( "stokes-bicgstab-max-iterations", 10 ),
-        .stokes_bicgstab_relative_tolerance =
-            static_cast< ScalarType >( args.get< double >( "stokes-bicgstab-rel-tol", 1e-6 ) ),
-        .stokes_bicgstab_absolute_tolerance = 1e-12,
-        .stokes_bicgstab_conv_rate_tolerance =
-            static_cast< ScalarType >( args.get< double >( "stokes-bicgstab-conv-rate-tolerance", 0.9 ) ),
-        .num_vcycles                 = args.get< int >( "num-vcycles", 2 ),
-        .num_smoothing_steps_prepost = args.get< int >( "num-smooth", 2 ),
-        .xdmf                        = true };
 
     run( parameters, table );
 
