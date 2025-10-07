@@ -57,6 +57,8 @@ Note the capitalization: it must be `Kokkos_ENABLE_CUDA=ON`, NOT `KOKKOS_ENABLE_
 - [x] FGMRES (BiCGStab works well mostly - but seems to randomly produce NaNs occasionally (not 100% sure if related to the solver but it is very likely))
 - [ ] Galerkin coarsening
 - [ ] iterative refinement
+- [ ] spherical harmonics helper
+- [ ] radial profiles loader
 - [x] radial layer data assimilation
 - [x] timing(tree?)
 - [x] ~~compress VTK(?)~~ XDMF output (binary, actual float data, and ~~/or~~ ~~HDF5/ADIOS2~~ with a single mesh file)
