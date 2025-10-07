@@ -82,36 +82,36 @@ struct Parameters
 
 struct InitialConditionInterpolator
 {
-    Grid3DDataVec< ScalarType, 3 > grid_;
-    Grid2DDataScalar< ScalarType > radii_;
-    Grid4DDataScalar< ScalarType > data_;
-    bool                           only_boundary_;
+    Grid3DDataVec< ScalarType, 3 >     grid_;
+    Grid2DDataScalar< ScalarType >     radii_;
+    Grid4DDataScalar< ScalarType >     data_;
+    Grid4DDataScalar< util::MaskType > mask_data_;
+    bool                               only_boundary_;
 
     InitialConditionInterpolator(
-        const Grid3DDataVec< ScalarType, 3 >& grid,
-        const Grid2DDataScalar< ScalarType >& radii,
-        const Grid4DDataScalar< ScalarType >& data,
-        bool                                  only_boundary )
+        const Grid3DDataVec< ScalarType, 3 >&     grid,
+        const Grid2DDataScalar< ScalarType >&     radii,
+        const Grid4DDataScalar< ScalarType >&     data,
+        const Grid4DDataScalar< util::MaskType >& mask_data,
+        bool                                      only_boundary )
     : grid_( grid )
     , radii_( radii )
     , data_( data )
+    , mask_data_( mask_data )
     , only_boundary_( only_boundary )
     {}
 
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
-        if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
+        const auto mask_value  = mask_data_( local_subdomain_id, x, y, r );
+        const auto is_boundary = util::check_bits( mask_value, grid::shell::mask_domain_boundary() );
+
+        if ( !only_boundary_ || is_boundary )
         {
             const dense::Vec< ScalarType, 3 > coords =
                 grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-
-            const ScalarType radius = coords.norm();
-            const ScalarType perturbation =
-                // ( 0.5 - radius ) * ( 1.0 - radius ) * 0.5 * Kokkos::sin( 10.0 * coords( 0 ) + 3.0 * coords( 1 ) );
-                0.0 * radius;
-
-            data_( local_subdomain_id, x, y, r ) = Kokkos::pow( 2.0 * ( 1.0 - coords.norm() ), 5 ) + perturbation;
+            data_( local_subdomain_id, x, y, r ) = Kokkos::pow( 2.0 * ( 1.0 - coords.norm() ), 5 );
         }
     }
 };
@@ -177,15 +177,15 @@ struct NoiseAdder
     {
         auto generator = rand_pool_.get_state();
 
-        const ScalarType eps         = 1e-1;
-        const auto       pertubation = eps * ( 2.0 * generator.drand() - 1.0 );
+        const ScalarType eps          = 1e-1;
+        const auto       perturbation = eps * ( 2.0 * generator.drand() - 1.0 );
 
-        // if ( !( r == 0 || r == radii_.extent( 1 ) - 1 ) )
-        if ( util::check_bits( mask_( local_subdomain_id, x, y, r ), grid::mask_owned() ) )
+        const auto process_ownes_point = util::check_bits( mask_( local_subdomain_id, x, y, r ), grid::mask_owned() );
+
+        if ( process_ownes_point )
         {
             data_T_( local_subdomain_id, x, y, r ) =
-                Kokkos::clamp( data_T_( local_subdomain_id, x, y, r ) + pertubation, 0.0, 1.0 );
-            // data_T_( local_subdomain_id, x, y, r ) += pertubation;
+                Kokkos::clamp( data_T_( local_subdomain_id, x, y, r ) + perturbation, 0.0, 1.0 );
         }
         else
         {
@@ -465,7 +465,11 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         "initial temp interpolation",
         local_domain_md_range_policy_nodes( domains[velocity_level] ),
         InitialConditionInterpolator(
-            coords_shell[velocity_level], coords_radii[velocity_level], T.grid_data(), false ) );
+            coords_shell[velocity_level],
+            coords_radii[velocity_level],
+            T.grid_data(),
+            mask_data[velocity_level],
+            false ) );
 
     Kokkos::fence();
 
@@ -619,6 +623,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
                     coords_shell[velocity_level],
                     coords_radii[velocity_level],
                     temp_vecs["tmp_0"].grid_data(),
+                    mask_data[velocity_level],
                     true ) );
 
             Kokkos::fence();
