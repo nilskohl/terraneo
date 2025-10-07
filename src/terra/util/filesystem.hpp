@@ -1,0 +1,45 @@
+
+#pragma once
+
+#include <filesystem>
+
+/// @brief Prepares an empty directory with the passed path.
+///
+/// If the directory does not exist:              will create a directory
+///  - if possible                                                                      => returns true
+///  - if creation fails                                                                => returns false
+/// If the directory does exist and is empty:     will do nothing                       => returns true
+/// If the directory does exist and is not empty: will do nothing                       => returns false
+inline bool prepare_empty_directory( const std::string& path_str )
+{
+    namespace fs = std::filesystem;
+
+    fs::path        dir( path_str );
+    std::error_code ec;
+
+    if ( !fs::exists( dir, ec ) )
+    {
+        // Directory doesn't exist: create it
+        if ( !fs::create_directories( dir, ec ) )
+        {
+            return false;
+        }
+    }
+    else if ( !fs::is_empty( dir, ec ) )
+    {
+        // Directory exists and is not empty
+        return false;
+    }
+
+    // Directory either newly created or exists and is empty
+    return true;
+}
+
+/// @brief Like `prepare_empty_directory()` but aborts if empty directory could not be prepared successfully.
+inline void prepare_empty_directory_or_abort( const std::string& path_str )
+{
+    if ( !prepare_empty_directory( path_str ) )
+    {
+        Kokkos::abort( "Could not prepare empty directory." );
+    }
+}
