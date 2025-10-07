@@ -1,6 +1,5 @@
 
 #pragma once
-
 #include "../../quadrature/quadrature.hpp"
 #include "communication/shell/communication.hpp"
 #include "dense/vec.hpp"
@@ -20,7 +19,7 @@ class DivKGrad
   public:
     using SrcVectorType = linalg::VectorQ1Scalar< ScalarT >;
     using DstVectorType = linalg::VectorQ1Scalar< ScalarT >;
-    using KVectorType = linalg::VectorQ1Scalar< ScalarT >;
+    using KVectorType   = linalg::VectorQ1Scalar< ScalarT >;
     using ScalarType    = ScalarT;
 
   private:
@@ -44,19 +43,19 @@ class DivKGrad
 
   public:
     DivKGrad(
-        const grid::shell::DistributedDomain&    domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarT >& radii,
+        const grid::shell::DistributedDomain&       domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&    grid,
+        const grid::Grid2DDataScalar< ScalarT >&    radii,
         const grid::Grid4DDataScalar< ScalarType >& k,
-        bool                                     treat_boundary,
-        bool                                     diagonal,
-        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode        operator_communication_mode =
+        bool                                        treat_boundary,
+        bool                                        diagonal,
+        linalg::OperatorApplyMode                   operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode           operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
-    , k_(k)
+    , k_( k )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
@@ -73,6 +72,12 @@ class DivKGrad
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
+        }
+
+        {
+            util::Timer timer_comm( "laplace_k_comm" );
+            communication::shell::pack_and_send_local_subdomain_boundaries( domain_, k_, send_buffers_, recv_buffers_ );
+            communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_, k_, recv_buffers_ );
         }
 
         src_ = src.grid_data();
@@ -127,7 +132,7 @@ class DivKGrad
 
         ScalarType src_local_hex[8] = { 0 };
         ScalarType dst_local_hex[8] = { 0 };
-        ScalarType k_local_hex[8] = { 0 };
+        ScalarType k_local_hex[8]   = { 0 };
 
         for ( int i = 0; i < 8; i++ )
         {
@@ -137,8 +142,8 @@ class DivKGrad
 
             src_local_hex[i] = src_(
                 local_subdomain_id, x_cell + hex_offset_x[i], y_cell + hex_offset_y[i], r_cell + hex_offset_r[i] );
-            k_local_hex[i] = k_(
-                local_subdomain_id, x_cell + hex_offset_x[i], y_cell + hex_offset_y[i], r_cell + hex_offset_r[i] );
+            k_local_hex[i] =
+                k_( local_subdomain_id, x_cell + hex_offset_x[i], y_cell + hex_offset_y[i], r_cell + hex_offset_r[i] );
         }
 
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
@@ -158,30 +163,34 @@ class DivKGrad
                 // 2. Compute physical gradients for all nodes at this quadrature point.
                 //    Collect shape function evaluations at this quadrature point (for k).
                 dense::Vec< ScalarType, 3 > grad_phy[num_nodes_per_wedge];
-                ScalarType shapef[num_nodes_per_wedge];
+                ScalarType                  shape_eval = 0.0;
                 for ( int k = 0; k < num_nodes_per_wedge; k++ )
                 {
                     grad_phy[k] = J_inv_transposed * grad_shape( k, quad_point );
-                    shapef[k] = shape( k, quad_point );
+                    shape_eval += shape( k, quad_point );
                 }
 
                 if ( diagonal_ )
                 {
-                    diagonal( src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shapef );
+                    diagonal(
+                        src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shape_eval );
                 }
                 else if ( treat_boundary_ && r_cell == 0 )
                 {
                     // Bottom boundary dirichlet
-                    dirichlet_bot( src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shapef );
+                    dirichlet_bot(
+                        src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shape_eval );
                 }
                 else if ( treat_boundary_ && r_cell + 1 == radii_.extent( 1 ) - 1 )
                 {
                     // Top boundary dirichlet
-                    dirichlet_top( src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shapef );
+                    dirichlet_top(
+                        src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shape_eval );
                 }
                 else
                 {
-                    neumann( src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shapef );
+                    neumann(
+                        src_local_hex, dst_local_hex, k_local_hex, wedge, quad_weight, abs_det, grad_phy, shape_eval );
                 }
             }
         }
@@ -207,7 +216,7 @@ class DivKGrad
         const ScalarType                   quad_weight,
         const ScalarType                   abs_det,
         const dense::Vec< ScalarType, 3 >* grad_phy,
-        const ScalarType* shapef  ) const
+        const ScalarType                   shape_eval ) const
     {
         constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
         constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
@@ -225,8 +234,9 @@ class DivKGrad
         // 4. Add the test function contributions.
         for ( int i = 0; i < num_nodes_per_wedge; i++ )
         {
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight * shapef[i] * k_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] * grad_phy[i].dot( grad_u ) * abs_det;
+            int arridx = 4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i];
+            dst_local_hex[arridx] +=
+                quad_weight * shape_eval * k_local_hex[arridx] * grad_phy[i].dot( grad_u ) * abs_det;
         }
     }
 
@@ -238,7 +248,7 @@ class DivKGrad
         const ScalarType                   quad_weight,
         const ScalarType                   abs_det,
         const dense::Vec< ScalarType, 3 >* grad_phy,
-        const ScalarType* shapef ) const
+        const ScalarType                   shape_eval ) const
     {
         constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
         constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
@@ -256,18 +266,19 @@ class DivKGrad
         // 4. Add the test function contributions.
         for ( int i = 3; i < num_nodes_per_wedge; i++ )
         {
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight * shapef[i] * k_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] *  grad_phy[i].dot( grad_u ) * abs_det;
+            int arridx = 4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i];
+            dst_local_hex[arridx] +=
+                quad_weight * shape_eval * k_local_hex[arridx] * grad_phy[i].dot( grad_u ) * abs_det;
         }
 
         // Diagonal for top part
         for ( int i = 0; i < 3; i++ )
         {
-            const auto grad_u_diag =
-                src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] * grad_phy[i];
+            int        arridx      = 4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i];
+            const auto grad_u_diag = src_local_hex[arridx] * grad_phy[i];
 
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight *  shapef[i] * k_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] *  grad_phy[i].dot( grad_u_diag ) * abs_det;
+            dst_local_hex[arridx] +=
+                quad_weight * shape_eval * k_local_hex[arridx] * grad_phy[i].dot( grad_u_diag ) * abs_det;
         }
     }
 
@@ -279,7 +290,7 @@ class DivKGrad
         const ScalarType                   quad_weight,
         const ScalarType                   abs_det,
         const dense::Vec< ScalarType, 3 >* grad_phy,
-        const ScalarType* shapef ) const
+        const ScalarType                   shape_eval ) const
     {
         constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
         constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
@@ -297,18 +308,19 @@ class DivKGrad
         // 4. Add the test function contributions.
         for ( int i = 0; i < 3; i++ )
         {
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight * shapef[i] * k_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] * grad_phy[i].dot( grad_u ) * abs_det;
+            int arridx = 4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i];
+            dst_local_hex[arridx] +=
+                quad_weight * shape_eval * k_local_hex[arridx] * grad_phy[i].dot( grad_u ) * abs_det;
         }
 
         // Diagonal for top part
         for ( int i = 3; i < num_nodes_per_wedge; i++ )
         {
-            const auto grad_u_diag =
-                src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] * grad_phy[i];
+            int        arridx      = 4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i];
+            const auto grad_u_diag = src_local_hex[arridx] * grad_phy[i];
 
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight * shapef[i] * k_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] * grad_phy[i].dot( grad_u_diag ) * abs_det;
+            dst_local_hex[arridx] +=
+                quad_weight * shape_eval * k_local_hex[arridx] * grad_phy[i].dot( grad_u_diag ) * abs_det;
         }
     }
 
@@ -320,7 +332,7 @@ class DivKGrad
         const ScalarType                   quad_weight,
         const ScalarType                   abs_det,
         const dense::Vec< ScalarType, 3 >* grad_phy,
-        const ScalarType* shapef ) const
+        const ScalarType                   shape_eval ) const
     {
         constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
         constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
@@ -330,11 +342,11 @@ class DivKGrad
         // 4. Add the test function contributions.
         for ( int i = 0; i < num_nodes_per_wedge; i++ )
         {
-            const auto grad_u =
-                src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] * grad_phy[i];
+            int        arridx = 4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i];
+            const auto grad_u = src_local_hex[arridx] * grad_phy[i];
 
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight * shapef[i] * k_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] *  grad_phy[i].dot( grad_u ) * abs_det;
+            dst_local_hex[arridx] +=
+                quad_weight * shape_eval * k_local_hex[arridx] * grad_phy[i].dot( grad_u ) * abs_det;
         }
     }
 };
