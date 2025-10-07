@@ -509,6 +509,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     visualization::XDMFOutput xdmf_output( xdmf_dir, coords_shell[velocity_level], coords_radii[velocity_level] );
 
     xdmf_output.add( T.grid_data() );
+    xdmf_output.add( u.block_1().grid_data() );
 
     // Time stepping
 

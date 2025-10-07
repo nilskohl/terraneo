@@ -40,6 +40,6 @@ inline void prepare_empty_directory_or_abort( const std::string& path_str )
 {
     if ( !prepare_empty_directory( path_str ) )
     {
-        Kokkos::abort( "Could not prepare empty directory." );
+        Kokkos::abort( ( "Could not prepare empty directory with path '" + path_str + "'." ).c_str() );
     }
 }
