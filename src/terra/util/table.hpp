@@ -10,11 +10,19 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+
 #include "timestamp.hpp"
+#include "terra/mpi/mpi.hpp"
 
 namespace terra::util {
 
 /// @brief Table class for storing and manipulating tabular data.
+///
+/// Rows are stored as maps from column names to values.
+/// Columns are dynamically added as needed.
+/// Think: each row is a dict-like type. Columns are essentially keys.
+///
+/// @note Each row automatically gets an "id" and "timestamp" column.
 ///
 /// Provides functionality to add rows, select columns, query data, and print in various formats (pretty, JSON lines, CSV).
 ///
@@ -22,12 +30,7 @@ namespace terra::util {
 /// If you need high performance, or millions of rows, consider using a database or specialized library.
 /// But still useful for small to medium datasets, logging, prototyping, and data analysis tasks.
 ///
-/// Rows are stored as maps from column names to values.
-/// Columns are dynamically added as needed.
-///
 /// Supports various value types, including strings, numbers, booleans, and None (null).
-///
-/// @note Each row automatically gets an "id" and "timestamp" column.
 ///
 /// @note For logging, the convention is that most functions use the key "tag" to add some keyword to the table. To
 ///       later sort data, therefore add a "tag" to mark where the data comes from.
