@@ -84,7 +84,7 @@ struct RHSInterpolator
         const double                  value =
             3.5 * x1 * ( Kokkos::sin(coords(2)) + 2 ) * Kokkos::sin( x0 ) - 1.0 * x1 * Kokkos::cos( x0 )*Kokkos::cos(coords(2));
        
-      //const double                  value =
+      //  const double                  value =
       //     7.0*Kokkos::sin(2*coords(0))*Kokkos::sin(2*coords(2))*Kokkos::sinh(coords(1));
         data_( local_subdomain_id, x, y, r ) = value;
     }
@@ -109,7 +109,7 @@ struct KInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        const double                  value  = Kokkos::sin(coords(2)) + 2;
+        const double                  value  = 2+Kokkos::sin(coords(2)) ;
         data_( local_subdomain_id, x, y, r ) = value;
     }
 };
@@ -164,13 +164,6 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using DivKGrad = fe::wedge::operators::shell::DivKGrad< ScalarType >;
 
-    // Set up coefficient data.
-    Kokkos::parallel_for(
-        "coefficient interpolation",
-        local_domain_md_range_policy_nodes( domain ),
-        KInterpolator( coords_shell, coords_radii, k.grid_data() ) );
-
-    Kokkos::fence();
 
     DivKGrad A( domain, coords_shell, coords_radii, k.grid_data(), true, false );
     DivKGrad A_neumann( domain, coords_shell, coords_radii, k.grid_data(), false, false );
@@ -179,6 +172,14 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 
     Mass M( domain, coords_shell, coords_radii, false );
+
+    // Set up coefficient data.
+    Kokkos::parallel_for(
+        "coefficient interpolation",
+        local_domain_md_range_policy_nodes( domain ),
+        KInterpolator( coords_shell, coords_radii, k.grid_data() ) );
+
+    Kokkos::fence();
 
     // Set up solution data.
     Kokkos::parallel_for(
@@ -230,9 +231,11 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         visualization::XDMFOutput< double > xdmf( ".", coords_shell, coords_radii );
         xdmf.add( g.grid_data() );
         xdmf.add( u.grid_data() );
-        xdmf.add( k.grid_data() );
+       // xdmf.add( k.grid_data() );
+        xdmf.add( b.grid_data() );
         xdmf.add( solution.grid_data() );
         xdmf.add( error.grid_data() );
+        xdmf.add( A.k_grid_data());
         xdmf.write();
     }
 
