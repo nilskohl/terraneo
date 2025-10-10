@@ -27,7 +27,7 @@ namespace terra::fe {
 ///    where \f$ b \f$ is the assembled rhs vector for the homogeneous problem
 ///    (the result of evaluating the linear form into a vector or of the matrix-vector product of a vector \f$ f_\text{vec} \f$ where
 ///    the rhs function \f$ f \f$ has been interpolated into, and then \f$ b = M f_\text{vec} \f$ (\f$ M \f$ being the mass matrix))
-/// 5. Set the rhs \f$ b_elim \f$ at the boundary nodes to \f$ g_D \f$, i.e.
+/// 5. Set the rhs \f$ b_\text{elim} \f$ at the boundary nodes to \f$ g_D \f$, i.e.
 ///    \f$ b_\text{elim} \gets g_D \f$ on the Dirichlet boundary
 /// 6. Solve
 ///         \f$ A_\text{elim} x = b_\text{elim} \f$
