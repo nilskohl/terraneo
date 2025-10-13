@@ -446,11 +446,11 @@ void unit_sphere_single_shell_subdomain_coords(
         subdomain_coords_host, subdomain_idx, diamond_id, ntan, start_i, end_i, start_j, end_j );
 }
 
-/// @brief (Sortable) Identifier for a single subdomain of a diamond.
+/// @brief (Sortable) Globally unique identifier for a single subdomain of a diamond.
 ///
 /// Carries the diamond ID, and the subdomain index (x, y, r) inside the diamond.
-/// Is globally unique (also in parallel settings).
-/// Does not carry information about the refinement of a subdomain.
+/// Is globally unique (particularly useful for in parallel settings).
+/// Does not carry information about the refinement of a subdomain (just the index).
 class SubdomainInfo
 {
   public:
@@ -809,13 +809,13 @@ class SubdomainNeighborhood
         case 2:
         case 3:
         case 4:
-            // Part I
+            // Part I (north-north)
             neighborhood_face_[BoundaryFace::F_0YR] = {
                 SubdomainInfo( ( diamond_id + 1 ) % 5, 0, 0, 0 ), BoundaryFace::F_X0R, -1 };
             neighborhood_face_[BoundaryFace::F_X0R] = {
                 SubdomainInfo( ( diamond_id + 4 ) % 5, 0, 0, 0 ), BoundaryFace::F_0YR, -1 };
 
-            // Part II
+            // Part II (north-south)
             neighborhood_face_[BoundaryFace::F_X1R] = {
                 SubdomainInfo( diamond_id + 5, 0, 0, 0 ), BoundaryFace::F_1YR, -1 };
             neighborhood_face_[BoundaryFace::F_1YR] = {
@@ -826,13 +826,13 @@ class SubdomainNeighborhood
         case 7:
         case 8:
         case 9:
-            // Part I
+            // Part I (south-south)
             neighborhood_face_[BoundaryFace::F_0YR] = {
                 SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_X0R, -1 };
             neighborhood_face_[BoundaryFace::F_X0R] = {
                 SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, 0, 0 ), BoundaryFace::F_0YR, -1 };
 
-            // Part II
+            // Part II (south-north)
             neighborhood_face_[BoundaryFace::F_X1R] = {
                 SubdomainInfo( ( diamond_id - 4 ) % 5, 0, 0, 0 ), BoundaryFace::F_1YR, -1 };
             neighborhood_face_[BoundaryFace::F_1YR] = {

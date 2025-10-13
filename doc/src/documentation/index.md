@@ -58,11 +58,66 @@ terraneox/
 └── tests/                    # Tests
 ```
 
-## Topics
+## Framework documentation
 
 ### Model / Partial differential equations
 
 🏗️
+
+-----------
+
+### Grid structure and subdomains (part I - logical structure)
+
+\note This section is just describing the logical organization of data. For details on actual data layout / allocation
+      refer to the Kokkos section. Details on the construction of the thick spherical shell and communication are given
+      in dedicated sections below.
+
+All grid operations are performed on a set of hexahedral subdomains. Those are organized as 4- or 5 dimensional arrays.
+
+```
+    data( local_subdomain_id, node_x, node_y, node_r )                     // for scalar data
+    data( local_subdomain_id, node_x, node_y, node_r, vector_entry )       // for vector-valued data 
+```
+
+The first index specifies the subdomain. Then the x, y, r coordinates of the nodes (we are using r instead of z because
+we will for our application most of the time think in radial directions). For vector-valued data (think velocity vectors
+stored at each node) a fifth index specifies the entry of the vector. In the code, the size of that fifth dimension is
+typically a compile-time constant.
+
+This layout forces all subdomains to be of equal size.
+
+As described in the finite element section, we mostly use wedge elements. The nodes that span wedge elements have the
+same spatial organization of nodes required for hexahedral elements.
+The division of one hexahedron into two wedges is implicitly done in the compute kernels and is not represented by the
+grid data structure.
+
+(Since we are using Lagrangian basis functions nodes directly correspond to coefficients. For the linear cases, we can
+also use the same grid data structure for linear hexahedral finite elements. Such an extension is straightforward and
+just requires respective kernels. One could even mix both - although it is not clear if that is mathematically sound.)
+
+As a convention, the hexahedral elements are split into two wedges diagonally from node (1, 0) to node (0, 1) as 
+follows:
+
+```
+Example of a 5x4 subdomain, that would be extruded in r-direction.
+Each node 'o' either stores a scalar or a vector. 
+
+        o---o---o---o---o
+        |\  |\  |\  |\  |
+        | \ | \ | \ | \ |
+        o---o---o---o---o
+        |\  |\  |\  |\  |
+        | \ | \ | \ | \ |
+        o---o---o---o---o
+   ^    |\  |\  |\  |\  |
+   |    | \ | \ | \ | \ |
+  y|    o---o---o---o---o
+   
+        -->
+        x
+```
+
+Some helper functions to work on this grid structure are supplied in `kernel_helpers.hpp`. 
 
 -----------
 
@@ -168,21 +223,121 @@ refinement compared to the pressure grid.
 
 🏗️
 
------------
+#### Coefficient vectors
 
-### Kokkos
+🏗️
+
+#### Operators
+
+🏗️
+
+#### Solvers
+
+🏗️
+
+#### Multigrid
 
 🏗️
 
 -----------
 
-### Grid structure / Thick spherical shell
+### Grid structure and subdomains (part II - Kokkos)
 
 🏗️
+
+-----------
+
+### Thick spherical shell
+
+The Earth mantle is approximated via a thick spherical shell \f$\Omega\f$ , i.e., a hollow sphere centered at the origin
+
+\f[ \Omega = \{\mathbf{x} \in \mathbb{R}^3 : r_\mathrm{min} \leq \|\mathbf{x}\| \leq r_\mathrm{max} \} \f]
+
+#### Mesh structure
+
+A corresponding mesh is constructed by splitting the outer surface of \f$\Omega\f$ into 10 spherical diamonds that are 
+extruded towards (or equivalently away from) the origin.
+
+The figure below shows the 10 diamonds in a three-dimensional visualization: 
+
+TODO...
+
+Unfolding the surface partitioning, we can visualize the surface of the 10 spherical diamonds as a net that when curved 
+and pieced together recovers the spherical shell: 
+
+\image html figures/thick-spherical-shell-diamond-net.jpg
+
+Note that the extrusion in radial direction is not visible from the net.
+
+Each diamond can (optionally) be subdivided in lateral and radial direction. The radial refinement is straightforward.
+After (uniform) lateral refinement, each subdomain can be associated with a globally unique identifying tuple
+
+``` 
+subdomain_id = (diamond_id, subdomain_x, subdomain_y, subdomain_r)
+```
+
+as illustrated in the figure below:
+
+\image html figures/thick-spherical-shell-subdomains.jpg
+
+The `subdomain_id` is implemented in the class \ref terra::grid::shell::SubdomainInfo.
+
+A domain can be set up using the \ref terra::grid::shell::DomainInfo class.
+This does not compute any node coordinates. It just stores the refinement information, i.e., how many subdomains
+are present for each diamond in either direction.
+In lateral direction, refinement currently has to be uniform.
+In radial direction, the concrete radii of the layers can be specified.
+For more details refer to the documentation of \ref terra::grid::shell::DomainInfo.
+
+#### Local subdomains
+
+Subdomains on the same MPI process are sorted by their global `subdomain_id` (it is sortable and globally unique)
+and continuously assigned to an integer `local_subdomain_id` that ranges from 0 to the number of process-local 
+subdomains minus 1.
+The `local_subdomain_id` is then the first index of the 4D (or 5D) data grids introduced above.
+For instance for a scalar data array `data` the expression
+```
+    data( 3, 55, 20, 4 )
+```
+accesses the node with
+```
+    local_subdomain_id =  3
+    x_index            = 55
+    y_index            = 20
+    r_index            =  4
+```
+The mapping from the `subdomain_id` (`SubdomainInfo`) to the `local_subdomain_id` (`int`) is performed during set up
+and stored together with other information in the corresponding \ref terra::grid::shell::DistributedDomain instance.
+More details can be found the parallelization section.
+
+#### Node coordinates
+
+The concrete coordinates of the nodes are computed with two functions:
+* \ref terra::grid::shell::subdomain_unit_sphere_single_shell_coords - computes the "lateral cartesian coordinates"
+  of all nodes, i.e., computes the cartesian coordinates of a single shell of nodes with radius 1 and returns them in
+  a 4D array `coords_shell( local_subdomain_id, x_index, y_index, cartesian_coord )`.
+* \ref terra::grid::shell::subdomain_shell_radii - computes the radii and stores them in a 2D array
+  `coords_radii( local_subdomain_id, r_index )`
+The cartesian coordinate of a node `( local_subdomain_id, x_index, y_index, r_index )` can then be computed via
+```
+    Vec3 cartesian_coords;
+    cartesian_coords( 0 ) = coords_shell( local_subdomain_id, x_index, y_index, 0 );
+    cartesian_coords( 1 ) = coords_shell( local_subdomain_id, x_index, y_index, 1 );
+    cartesian_coords( 2 ) = coords_shell( local_subdomain_id, x_index, y_index, 2 );
+    return cartesian_coords * coords_radii( local_subdomain_id, r_index );
+```
+This is implemented in \ref terra::grid::shell::coords.
+The radius is obviously just `coords_radii( local_subdomain_id, r_index )`.
 
 -----------
 
 ### Parallelization and communication
+
+🏗️
+
+-----------
+
+### Flag fields and masks
 
 🏗️
 
@@ -200,8 +355,8 @@ and similar functions in that file.
 <p></p>
 
 \note
-A great explanation is given in Wolfgang Bangerth's
-lectures: https://www.math.colostate.edu/~bangerth/videos.676.21.65.html
+A great explanation is given in [Wolfgang Bangerth's
+lectures](https://www.math.colostate.edu/~bangerth/videos.676.21.65.html).
 
 Consider the linear problem
 
@@ -255,7 +410,7 @@ by zeroing out the respective entries of the local element matrices.
 
 ### IO
 
-#### Tablular data
+#### Tabular data
 
 🏗️
 
