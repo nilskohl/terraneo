@@ -127,7 +127,7 @@ int main( int argc, char** argv )
     terra::linalg::VectorQ1Scalar< double > data_scalar( "scalar_data", domain, mask_data );
     terra::linalg::VectorQ1Vec< double >    data_vec( "vec_data", domain, mask_data );
 
-    prepare_empty_directory_or_abort( "test_xdmf_writer_output" );
+    terra::util::prepare_empty_directory_or_abort( "test_xdmf_writer_output" );
 
     terra::visualization::XDMFOutput xdmf( "test_xdmf_writer_output", subdomain_shell_coords, subdomain_radii );
     xdmf.add( data_scalar.grid_data() );
