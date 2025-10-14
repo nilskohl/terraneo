@@ -528,11 +528,15 @@ inline std::ostream& operator<<( std::ostream& os, const SubdomainInfo& si )
     return os;
 }
 
+/// @brief Assigns all subdomains to root (rank 0).
 inline mpi::MPIRank subdomain_to_rank_all_root( const SubdomainInfo& subdomain_info )
 {
     return 0;
 }
 
+/// @brief Distributes whole diamonds to ranks as evenly as possible.
+///
+/// Should only really be used if the number of subdomains per diamond is 1.
 inline mpi::MPIRank subdomain_to_rank_distribute_full_diamonds( const SubdomainInfo& subdomain_info )
 {
     const auto n = mpi::num_processes();
@@ -579,23 +583,42 @@ class DomainInfo
   public:
     DomainInfo() = default;
 
-    /// @brief Constructs a thick spherical shell with one subdomain per diamond (10 subdomains total) and uniformly
-    /// distributed radial shells.
+    /// @brief Constructs a thick spherical shell with one subdomain per diamond (10 subdomains total) and shells at
+    /// specific radii.
+    ///
+    /// @note Use `uniform_shell_radii()` to quickly construct a uniform list of radii.
     ///
     /// Note: a 'shell' is a spherical 2D manifold in 3D space (it is thin),
     ///       a 'layer' is defined as the volume between two 'shells' (it is thick)
     ///
     /// @param diamond_lateral_refinement_level number of lateral diamond refinements
-    /// @param r_min inner radius
-    /// @param r_max outer radius
-    /// @param num_uniform_layers number of layers (uniformly spaced using r_min and r_max)
-    DomainInfo( int diamond_lateral_refinement_level, double r_min, double r_max, int num_uniform_layers )
+    /// @param radii list of shell radii, vector must have at least 2 elements
+    DomainInfo( int diamond_lateral_refinement_level, const std::vector< double >& radii )
+    : DomainInfo( diamond_lateral_refinement_level, radii, 1, 1 )
+    {}
+
+    /// @brief Constructs a thick spherical shell with shells at specific radii.
+    ///
+    /// @note Use `uniform_shell_radii()` to quickly construct a uniform list of radii.
+    ///
+    /// Note: a 'shell' is a spherical 2D manifold in 3D space (it is thin),
+    ///       a 'layer' is defined as the volume between two 'shells' (it is thick)
+    ///
+    /// @param diamond_lateral_refinement_level number of lateral diamond refinements
+    /// @param radii list of shell radii, vector must have at least 2 elements
+    /// @param num_subdomains_in_lateral_direction number of subdomains in lateral direction per diamond
+    /// @param num_subdomains_in_radial_direction number of subdomains in radial direction per diamond
+    DomainInfo(
+        int                          diamond_lateral_refinement_level,
+        const std::vector< double >& radii,
+        int                          num_subdomains_in_lateral_direction,
+        int                          num_subdomains_in_radial_direction )
     : diamond_lateral_refinement_level_( diamond_lateral_refinement_level )
-    , radii_( uniform_shell_radii( r_min, r_max, num_uniform_layers + 1 ) )
-    , num_subdomains_in_lateral_direction_( 1 )
-    , num_subdomains_in_radial_direction_( 1 )
+    , radii_( radii )
+    , num_subdomains_in_lateral_direction_( num_subdomains_in_lateral_direction )
+    , num_subdomains_in_radial_direction_( num_subdomains_in_radial_direction )
     {
-        const int num_layers = num_uniform_layers;
+        const int num_layers = static_cast< int >( radii.size() ) + 1;
         if ( num_layers % num_subdomains_in_radial_direction_ != 0 )
         {
             throw std::invalid_argument(
@@ -714,16 +737,16 @@ class DomainInfo
 
   private:
     /// Number of times each diamond is refined laterally in each direction.
-    int diamond_lateral_refinement_level_;
+    int diamond_lateral_refinement_level_{};
 
     /// Shell radii.
     std::vector< double > radii_;
 
     /// Number of subdomains per diamond (for parallel partitioning) in the lateral direction (at least 1).
-    int num_subdomains_in_lateral_direction_;
+    int num_subdomains_in_lateral_direction_{};
 
     /// Number of subdomains per diamond (for parallel partitioning) in the radial direction (at least 1).
-    int num_subdomains_in_radial_direction_;
+    int num_subdomains_in_radial_direction_{};
 };
 
 /// @brief Neighborhood information of a single subdomain.
@@ -919,7 +942,27 @@ class DistributedDomain
             subdomain_to_rank_distribute_full_diamonds )
     {
         DistributedDomain domain;
-        domain.domain_info_ = DomainInfo( lateral_refinement_level, r_min, r_max, 1 << radial_refinement_level );
+        domain.domain_info_ = DomainInfo(
+            lateral_refinement_level, uniform_shell_radii( r_min, r_max, ( 1 << radial_refinement_level ) + 1 ) );
+        int idx = 0;
+        for ( const auto& subdomain : domain.domain_info_.local_subdomains( subdomain_to_rank ) )
+        {
+            domain.subdomains_[subdomain] = {
+                idx, SubdomainNeighborhood( domain.domain_info_, subdomain, subdomain_to_rank ) };
+            idx++;
+        }
+        return domain;
+    }
+
+    /// @brief Creates a Domain with a single subdomain per diamond and initializes all the subdomain neighborhoods.
+    static DistributedDomain create_uniform_single_subdomain(
+        const int                                                    lateral_refinement_level,
+        const std::vector< double >&                                 radii,
+        const std::function< mpi::MPIRank( const SubdomainInfo& ) >& subdomain_to_rank =
+            subdomain_to_rank_distribute_full_diamonds )
+    {
+        DistributedDomain domain;
+        domain.domain_info_ = DomainInfo( lateral_refinement_level, radii );
         int idx             = 0;
         for ( const auto& subdomain : domain.domain_info_.local_subdomains( subdomain_to_rank ) )
         {

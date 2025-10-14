@@ -3,6 +3,5 @@ target_sources(terra
         bit_masking.hpp
         info.hpp
         init.hpp
-        table.hpp
-        table_printer.hpp)
+        table.hpp)
 

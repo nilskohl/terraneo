@@ -43,9 +43,11 @@ Note the capitalization: it must be `Kokkos_ENABLE_CUDA=ON`, NOT `KOKKOS_ENABLE_
 
 ```
 terraneox/
-├── benchmarks/               # Benchmarks ...
-│   ├── performance/          # ... run time
-│   └── physics/              # ... physics
+├── apps/                     # Applications (benchmarks, tools, ...) using the framework.
+│   ├── benchmarks/           # Benchmarks ...
+│   │   ├── performance/      # ... run time
+│   │   └── physics/          # ... physics
+│   └── tools/                # Tools (e.g., for visualization of meshes)
 ├── data/                     # Stuff that is not exactly library/framework source code
 │   └── scripts/              # Scripts, e.g., for post-processing
 │       └── plotting/         # Scripts for visualization, e.g., timing, radial profiles, ... 
@@ -258,9 +260,25 @@ The Earth mantle is approximated via a thick spherical shell \f$\Omega\f$ , i.e.
 A corresponding mesh is constructed by splitting the outer surface of \f$\Omega\f$ into 10 spherical diamonds that are 
 extruded towards (or equivalently away from) the origin.
 
-The figure below shows the 10 diamonds in a three-dimensional visualization: 
+The figure below shows the diamonds in a three-dimensional visualization (each diamond is refined 4 times in lateral and
+4 times in radial direction).
 
-TODO...
+Diamond with ID 0:
+
+\htmlonly
+<video width="960" controls>
+<source src="diamond_animation.mp4" type="video/mp4">
+</video>
+\endhtmlonly
+\image html figures/diamond_animation.mp4
+
+Northern (diamonds 0 to 4) and southern diamonds (diamonds 5 to 9):
+\htmlonly
+<video width="960" controls>
+<source src="north_south_animation.mp4" type="video/mp4">
+</video>
+\endhtmlonly
+\image html figures/north_south_animation.mp4
 
 Unfolding the surface partitioning, we can visualize the surface of the 10 spherical diamonds as a net that when curved 
 and pieced together recovers the spherical shell: 
