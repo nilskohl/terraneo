@@ -19,7 +19,7 @@ void test( const int level )
         ( 10 * ( number_of_nodes_along_each_diamond_edge - 1 ) * ( number_of_nodes_along_each_diamond_edge - 1 ) + 2 ) *
         number_of_nodes_along_each_diamond_edge;
 
-    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level, level, 0.5, 1.0, terra::grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data = terra::linalg::setup_mask_data( domain );

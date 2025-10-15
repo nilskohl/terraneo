@@ -219,7 +219,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     {
         const int idx = level - prm.min_level;
 
-        domains.push_back( DistributedDomain::create_uniform_single_subdomain( level, level, prm.r_min, prm.r_max ) );
+        domains.push_back( DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, prm.r_min, prm.r_max ) );
         coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
         coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
         mask_data.push_back( linalg::setup_mask_data( domains[idx] ) );

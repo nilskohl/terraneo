@@ -933,7 +933,7 @@ class DistributedDomain
     using LocalSubdomainIdx = int;
 
     /// @brief Creates a Domain with a single subdomain per diamond and initializes all the subdomain neighborhoods.
-    static DistributedDomain create_uniform_single_subdomain(
+    static DistributedDomain create_uniform_single_subdomain_per_diamond(
         const int                                                    lateral_refinement_level,
         const int                                                    radial_refinement_level,
         const real_t                                                 r_min,
@@ -955,7 +955,7 @@ class DistributedDomain
     }
 
     /// @brief Creates a Domain with a single subdomain per diamond and initializes all the subdomain neighborhoods.
-    static DistributedDomain create_uniform_single_subdomain(
+    static DistributedDomain create_uniform_single_subdomain_per_diamond(
         const int                                                    lateral_refinement_level,
         const std::vector< double >&                                 radii,
         const std::function< mpi::MPIRank( const SubdomainInfo& ) >& subdomain_to_rank =

@@ -58,7 +58,7 @@ void test_laplace( int level )
 {
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data = linalg::setup_mask_data( domain );
@@ -127,9 +127,9 @@ void test_prolongation( int level )
         throw std::runtime_error( "level must be >= 1" );
     }
 
-    const auto domain_fine = DistributedDomain::create_uniform_single_subdomain(
+    const auto domain_fine = DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
-    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain(
+    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level - 1, level - 1, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data_fine   = linalg::setup_mask_data( domain_fine );

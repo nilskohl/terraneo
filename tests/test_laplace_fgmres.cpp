@@ -117,7 +117,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     auto mask_data = linalg::setup_mask_data( domain );

@@ -120,7 +120,7 @@ BenchmarkData
          const int           radial_refinement_level,
          const int           executions )
 {
-    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
         lateral_refinement_level, radial_refinement_level, 0.5, 1.0 );
 
     const auto y  = allocate_scalar_grid< T >( "y", domain );

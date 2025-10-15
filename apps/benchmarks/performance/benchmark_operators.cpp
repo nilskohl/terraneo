@@ -90,10 +90,10 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
         Kokkos::abort( "level must be >= 1" );
     }
 
-    const auto domain = grid::shell::DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
-    const auto domain_coarse = grid::shell::DistributedDomain::create_uniform_single_subdomain(
+    const auto domain_coarse = grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level - 1, level - 1, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     const auto coords_shell_double = grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );

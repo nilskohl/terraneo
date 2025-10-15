@@ -74,7 +74,7 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
 {
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
         level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
 
     const auto max_level = domain.domain_info().subdomain_max_refinement_level();
