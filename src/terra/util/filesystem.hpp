@@ -3,6 +3,7 @@
 
 #include <filesystem>
 
+namespace terra::util {
 /// @brief Prepares an empty directory with the passed path.
 ///
 /// If the directory does not exist:              will create a directory
@@ -10,8 +11,15 @@
 ///  - if creation fails                                                                => returns false
 /// If the directory does exist and is empty:     will do nothing                       => returns true
 /// If the directory does exist and is not empty: will do nothing                       => returns false
-inline bool prepare_empty_directory( const std::string& path_str )
+///
+/// Returns true for all non-zero ranks if root_only == true.
+inline bool prepare_empty_directory( const std::string& path_str, bool root_only = true )
 {
+    if ( root_only && mpi::rank() != 0 )
+    {
+        return true;
+    }
+
     namespace fs = std::filesystem;
 
     fs::path        dir( path_str );
@@ -36,10 +44,11 @@ inline bool prepare_empty_directory( const std::string& path_str )
 }
 
 /// @brief Like `prepare_empty_directory()` but aborts if empty directory could not be prepared successfully.
-inline void prepare_empty_directory_or_abort( const std::string& path_str )
+inline void prepare_empty_directory_or_abort( const std::string& path_str, bool root_only = true )
 {
-    if ( !prepare_empty_directory( path_str ) )
+    if ( !prepare_empty_directory( path_str, root_only ) )
     {
         Kokkos::abort( ( "Could not prepare empty directory with path '" + path_str + "'." ).c_str() );
     }
 }
+} // namespace terra::util

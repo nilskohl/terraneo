@@ -198,7 +198,7 @@ struct NoiseAdder
 
 void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
 {
-    // Check outdir and create if does not exist.
+    // Check outdir and create if it does not exist.
     prepare_empty_directory_or_abort( prm.outdir );
 
     const auto xdmf_dir            = prm.outdir + "/xdmf";
@@ -315,22 +315,6 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
         coords_radii[velocity_level],
         true,
         false );
-
-    Stokes K_neumann(
-        domains[velocity_level],
-        domains[pressure_level],
-        coords_shell[velocity_level],
-        coords_radii[velocity_level],
-        false,
-        false );
-
-    Stokes K_neumann_diag(
-        domains[velocity_level],
-        domains[pressure_level],
-        coords_shell[velocity_level],
-        coords_radii[velocity_level],
-        false,
-        true );
 
     ViscousMass M( domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], false );
 
@@ -480,7 +464,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
             coords_shell[velocity_level], coords_radii[velocity_level], T.grid_data(), mask_data[velocity_level] ) );
 
     communication::shell::send_recv(
-        domains[velocity_level], T.grid_data(), communication::shell::CommuncationReduction::SUM );
+        domains[velocity_level], T.grid_data(), communication::shell::CommunicationReduction::SUM );
 
     const auto                                  num_temp_tmps_energy = 14;
     std::vector< VectorQ1Scalar< ScalarType > > tmp_gmres( num_temp_tmps_energy );
