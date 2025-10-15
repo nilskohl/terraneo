@@ -3,7 +3,7 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/epsilon.hpp"
-#include "fe/wedge/operators/shell/epsilon_simple.hpp"
+#include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -115,57 +115,65 @@ struct RHSInterpolator
 
         // x component of rhs
         {
-            const real_t x0  = Kokkos::sinh( coords( 1 ) );
-            const real_t x1  = Kokkos::sin( coords( 2 ) ) + 2;
-            const real_t x2  = 2 * coords( 0 );
-            const real_t x3  = Kokkos::sin( x2 );
-            const real_t x4  = 2 * coords( 2 );
-            const real_t x5  = Kokkos::sin( x4 );
-            const real_t x6  = x0 * x3;
-            const real_t x7  = Kokkos::cos( x2 );
-            const real_t x8  = 2 * coords( 1 );
-            const real_t x9  = Kokkos::sin( x8 );
-            const real_t x10 = x5 * x6;
-            const real_t x11 = 2 * x1;
-            data_( local_subdomain_id, x, y, r, 0 ) =
-                8.0 * x0 * x1 * x3 * x5 - x11 * ( -2.0 * x10 + 4.0 * x7 * x9 * Kokkos::cosh( coords( 2 ) ) ) -
-                x11 * ( 0.5 * x10 + 2.0 * x5 * Kokkos::cos( x8 ) * std::cosh( coords( 0 ) ) ) -
-                2 * ( 1.0 * x6 * Kokkos::cos( x4 ) + 4.0 * x7 * x9 * Kokkos::sinh( coords( 2 ) ) ) *
-                    Kokkos::cos( coords( 2 ) );
+           const real_t x0 = Kokkos::sinh(coords(1));
+const real_t x1 = Kokkos::sin(coords(2)) + 2;
+const real_t x2 = 2*coords(0);
+const real_t x3 = Kokkos::sin(x2);
+const real_t x4 = 2*coords(2);
+const real_t x5 = Kokkos::sin(x4);
+const real_t x6 = x0*x3;
+const real_t x7 = Kokkos::cos(x2);
+const real_t x8 = 2*coords(1);
+const real_t x9 = Kokkos::sin(x8);
+const real_t x10 = x5*x6;
+const real_t x11 = Kokkos::cosh(coords(2));
+const real_t x12 = 2*x1;
+const real_t x13 = x5*Kokkos::cos(x8)*Kokkos::cosh(coords(0));
+return 8.0*x0*x1*x3*x5 + 0.66666666666666663*x1*(-4*x10 + 8*x11*x7*x9 + 4*x13) - x12*(-2.0*x10 + 4.0*x11*x7*x9) - x12*(0.5*x10 + 2.0*x13) - 2*(1.0*x6*Kokkos::cos(x4) + 4.0*x7*x9*Kokkos::sinh(coords(2)))*Kokkos::cos(coords(2));
         }
 
         // y component of rhs
         {
-            const real_t x0  = Kokkos::sinh( coords( 0 ) );
-            const real_t x1  = Kokkos::sin( coords( 2 ) ) + 2;
-            const real_t x2  = 2 * coords( 1 );
-            const real_t x3  = Kokkos::sin( x2 );
-            const real_t x4  = 2 * coords( 2 );
-            const real_t x5  = Kokkos::sin( x4 );
-            const real_t x6  = 2 * coords( 0 );
-            const real_t x7  = 4.0 * Kokkos::sin( x6 ) * Kokkos::cos( x2 );
-            const real_t x8  = x0 * x3;
-            const real_t x9  = 2 * x1;
-            const real_t x10 = 1.0 * x5;
-            data_( local_subdomain_id, x, y, r, 1 ) =
-                16.0 * x0 * x1 * x3 * x5 - x9 * ( x10 * x8 + x10 * Kokkos::cos( x6 ) * Kokkos::cosh( coords( 1 ) ) ) -
-                x9 * ( -4.0 * x5 * x8 + x7 * Kokkos::cosh( coords( 2 ) ) ) -
-                2 * ( x7 * Kokkos::sinh( coords( 2 ) ) + 2.0 * x8 * Kokkos::cos( x4 ) ) * Kokkos::cos( coords( 2 ) );
+          const real_t x0 = Kokkos::sinh(coords(0));
+const real_t x1 = Kokkos::sin(coords(2)) + 2;
+const real_t x2 = 2*coords(1);
+const real_t x3 = Kokkos::sin(x2);
+const real_t x4 = 2*coords(2);
+const real_t x5 = Kokkos::sin(x4);
+const real_t x6 = Kokkos::cos(x2);
+const real_t x7 = 2*coords(0);
+const real_t x8 = Kokkos::sin(x7);
+const real_t x9 = 4.0*x6*x8;
+const real_t x10 = x0*x3;
+const real_t x11 = Kokkos::cosh(coords(2));
+const real_t x12 = x10*x5;
+const real_t x13 = 2*x1;
+const real_t x14 = 1.0*x5;
+const real_t x15 = std::cos(x7)*Kokkos::cosh(coords(1));
+return 16.0*x0*x1*x3*x5 + 0.66666666666666663*x1*(8*x11*x6*x8 - 8*x12 + 2*x15*x5) - x13*(x10*x14 + x14*x15) - x13*(x11*x9 - 4.0*x12) - 2*(2.0*x10*Kokkos::cos(x4) + x9*Kokkos::sinh(coords(2)))*Kokkos::cos(coords(2));
         }
 
         // z component of rhs
         {
-            const real_t x0 = 2 * coords( 0 );
-            const real_t x1 = 2 * coords( 1 );
-            const real_t x2 = 8.0 * Kokkos::sin( x0 ) * Kokkos::sin( x1 );
-            const real_t x3 = Kokkos::sin( coords( 2 ) ) + 2;
-            const real_t x4 = x2 * Kokkos::sinh( coords( 2 ) );
-            const real_t x5 = Kokkos::cos( 2 * coords( 2 ) );
-            const real_t x6 = 2 * x3;
-            data_( local_subdomain_id, x, y, r, 2 ) =
-                -x2 * Kokkos::cos( coords( 2 ) ) * Kokkos::cosh( coords( 2 ) ) - x3 * x4 -
-                x6 * ( -x4 + 2.0 * x5 * Kokkos::cos( x0 ) * Kokkos::sinh( coords( 1 ) ) ) -
-                x6 * ( -x4 + 4.0 * x5 * Kokkos::cos( x1 ) * Kokkos::sinh( coords( 0 ) ) );
+            const real_t x0 = Kokkos::cos(coords(2));
+const real_t x1 = 2*coords(0);
+const real_t x2 = 2*coords(1);
+const real_t x3 = Kokkos::sin(x1)*Kokkos::sin(x2);
+const real_t x4 = x3*Kokkos::cosh(coords(2));
+const real_t x5 = Kokkos::sin(coords(2)) + 2;
+const real_t x6 = x3*Kokkos::sinh(coords(2));
+const real_t x7 = 8.0*x6;
+const real_t x8 = Kokkos::sinh(coords(1));
+const real_t x9 = Kokkos::cos(x1);
+const real_t x10 = 2*coords(2);
+const real_t x11 = Kokkos::cos(x10);
+const real_t x12 = 2*x5;
+const real_t x13 = Kokkos::sinh(coords(0));
+const real_t x14 = Kokkos::cos(x2);
+const real_t x15 = Kokkos::sin(x10);
+const real_t x16 = x8*x9;
+const real_t x17 = x13*x14;
+return -8.0*x0*x4 + 0.66666666666666663*x0*(2*x15*x16 + 4*x15*x17 + 4*x4) - x12*(4.0*x11*x13*x14 - x7) - x12*(2.0*x11*x8*x9 - x7) - x5*x7 + 0.66666666666666663*x5*(4*x11*x16 + 8*x11*x17 + 4*x6);
         }
 
     }
@@ -230,7 +238,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         KInterpolator( subdomain_shell_coords, subdomain_radii, k.grid_data() ) );
 
     Kokkos::fence();
-    using Epsilon = fe::wedge::operators::shell::EpsilonSimple< ScalarType, 3 >;
+    using Epsilon = fe::wedge::operators::shell::EpsilonDivDiv< ScalarType, 3 >;
 
     Epsilon A( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), true, false );
     Epsilon A_neumann( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), false, false );

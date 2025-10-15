@@ -15,5 +15,6 @@ target_sources(terra
         vector_mass.hpp
         div_k_grad.hpp
         epsilon.hpp
+        epsilon_divdiv.hpp
         zero.hpp)
 
