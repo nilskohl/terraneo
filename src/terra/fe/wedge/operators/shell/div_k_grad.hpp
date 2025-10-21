@@ -96,15 +96,13 @@ class DivKGrad
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
             util::Timer timer_comm( "laplace_comm" );
-            communication::shell::pack_and_send_local_subdomain_boundaries(
+            communication::shell::pack_send_and_recv_local_subdomain_boundaries(
                 domain_, dst_, send_buffers_, recv_buffers_ );
-            communication::shell::recv_unpack_and_add_local_subdomain_boundaries( domain_, dst_, recv_buffers_ );
+            communication::shell::unpack_and_reduce_local_subdomain_boundaries( domain_, dst_, recv_buffers_ );
         }
     }
 
-    const grid::Grid4DDataScalar< ScalarType > & k_grid_data() {
-        return k_;
-    }
+    const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
 
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
