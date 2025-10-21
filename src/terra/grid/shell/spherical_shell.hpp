@@ -866,7 +866,7 @@ class DomainInfo
 ///
 /// Let's assume we receive data from the neighbor specified above.
 ///
-/// Sender side:
+/// Sender side (with local boundary `F_1YR`):
 ///
 /// @code
 ///   buffer( y, r ) = send_data( sender_local_subdomain_id, x_size - 1, y, r )
@@ -875,7 +875,7 @@ class DomainInfo
 ///                                                           == const
 /// @endcode
 ///
-/// Receiver side:
+/// Receiver side (with local boundary `F_X1R`):
 ///
 /// @code
 ///   recv_data( receiver_local_subdomain_id, x, y_size - 1, r ) = buffer( x_size - 1 - x, r )
@@ -924,10 +924,7 @@ class SubdomainNeighborhood
     const std::map< BoundaryFace, NeighborSubdomainTupleFace >& neighborhood_face() const { return neighborhood_face_; }
 
   private:
-    void setup_neighborhood(
-        const DomainInfo&                          domain_info,
-        const SubdomainInfo&                       subdomain_info,
-        const SubdomainToRankDistributionFunction& subdomain_to_rank )
+    void setup_neighborhood_faces( const DomainInfo& domain_info, const SubdomainInfo& subdomain_info )
     {
         const mpi::MPIRank rank_will_be_overwritten_later = -1;
 
@@ -938,10 +935,6 @@ class SubdomainNeighborhood
 
         const int num_lateral_subdomains = domain_info.num_subdomains_per_diamond_side();
         const int num_radial_subdomains  = domain_info.num_subdomains_in_radial_direction();
-
-        /////////////////////
-        // Face boundaries //
-        /////////////////////
 
         for ( const auto boundary_face : all_boundary_faces )
         {
@@ -1151,266 +1144,258 @@ class SubdomainNeighborhood
                 }
             }
         }
+    }
 
-        /////////////////////
-        // Edge boundaries //
-        /////////////////////
+    void setup_neighborhood_edges( const DomainInfo& domain_info, const SubdomainInfo& subdomain_info )
+    {
+        const int diamond_id  = subdomain_info.diamond_id();
+        const int subdomain_x = subdomain_info.subdomain_x();
+        const int subdomain_y = subdomain_info.subdomain_y();
+        const int subdomain_r = subdomain_info.subdomain_r();
+
+        const int num_lateral_subdomains = domain_info.num_subdomains_per_diamond_side();
+        const int num_radial_subdomains  = domain_info.num_subdomains_in_radial_direction();
 
         for ( const auto boundary_edge : all_boundary_edges )
         {
-            // Now only the edges at the poles that are not already part of the faces remain.
-            if ( boundary_edge == BoundaryEdge::E_00R && subdomain_x == 0 && subdomain_y == 0 )
-            {
-                // Only the 00R edge needs to perform communication beyond diamonds.
-                // That's at the poles.
-
-                switch ( diamond_id )
-                {
-                case 0:
-                case 1:
-                case 2:
-                case 3:
-                case 4:
-                    // North Pole.
-                    neighborhood_edge_[BoundaryEdge::E_00R] = {
-                        { SubdomainInfo( ( diamond_id + 2 ) % 5, 0, 0, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 },
-                        { SubdomainInfo( ( diamond_id + 3 ) % 5, 0, 0, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 } };
-                    break;
-                case 5:
-                case 6:
-                case 7:
-                case 8:
-                case 9:
-                    // South Pole.
-                    neighborhood_edge_[BoundaryEdge::E_00R] = {
-                        { SubdomainInfo( ( diamond_id + 2 ) % 5 + 5, 0, 0, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 },
-                        { SubdomainInfo( ( diamond_id + 3 ) % 5 + 5, 0, 0, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 } };
-                    break;
-                default:
-                    throw std::logic_error( "Invalid diamond id." );
-                }
-            }
-
             // Edges in radial direction (beyond diamond boundaries).
 
             if ( diamond_id >= 0 && diamond_id <= 4 )
             {
-                if ( boundary_edge == BoundaryEdge::E_00R && subdomain_x == 0 && subdomain_y > 0 )
+                if ( boundary_edge == BoundaryEdge::E_00R )
                 {
-                    // Northern hemisphere to the right.
-                    neighborhood_edge_[boundary_edge].emplace_back(
-                        SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y - 1, 0, subdomain_r ),
-                        BoundaryEdge::E_10R,
-                        BoundaryDirection::FORWARD,
-                        -1 );
+                    if ( subdomain_x == 0 && subdomain_y == 0 )
+                    {
+                        // North pole
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 2 ) % 5, 0, 0, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 3 ) % 5, 0, 0, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_x == 0 && subdomain_y > 0 )
+                    {
+                        // Northern hemisphere to the right.
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y - 1, 0, subdomain_r ),
+                            BoundaryEdge::E_10R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_x > 0 && subdomain_y == 0 )
+                    {
+                        // Northern hemisphere to the left.
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x - 1, subdomain_r ),
+                            BoundaryEdge::E_01R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
-                else if ( boundary_edge == BoundaryEdge::E_00R && subdomain_x > 0 && subdomain_y == 0 )
+                else if ( boundary_edge == BoundaryEdge::E_01R )
                 {
-                    // Northern hemisphere to the left.
-                    neighborhood_edge_[boundary_edge].emplace_back(
-                        SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x - 1, subdomain_r ),
-                        BoundaryEdge::E_01R,
-                        BoundaryDirection::FORWARD,
-                        -1 );
+                    if ( subdomain_x == 0 && subdomain_y < num_lateral_subdomains - 1 )
+                    {
+                        // Northern hemisphere to the right
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y + 1, 0, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_x > 0 && subdomain_y == num_lateral_subdomains - 1 )
+                    {
+                        // Northern hemisphere to the right and southern
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                diamond_id + 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x,
+                                subdomain_r ),
+                            BoundaryEdge::E_10R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
-
-                if ( boundary_edge == BoundaryEdge::E_01R && subdomain_x == 0 &&
-                     subdomain_y < num_lateral_subdomains - 1 )
+                else if ( boundary_edge == BoundaryEdge::E_10R )
                 {
-                    // Northern hemisphere to the right
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y + 1, 0, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    if ( subdomain_y == 0 && subdomain_x < num_lateral_subdomains - 1 )
+                    {
+                        // Northern hemisphere to the left
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x + 1, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_y > 0 && subdomain_x == num_lateral_subdomains - 1 )
+                    {
+                        // Northern hemisphere to the left and southern
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 4 ) % 5 + 5,
+                                num_lateral_subdomains - subdomain_y,
+                                num_lateral_subdomains - 1,
+                                subdomain_r ),
+                            BoundaryEdge::E_01R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
-
-                else if (
-                    boundary_edge == BoundaryEdge::E_01R && subdomain_x > 0 &&
-                    subdomain_y == num_lateral_subdomains - 1 )
+                else if ( boundary_edge == BoundaryEdge::E_11R )
                 {
-                    // Northern hemisphere to the right and southern
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id + 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - subdomain_x,
-                              subdomain_r ),
-                          BoundaryEdge::E_10R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-
-                if ( boundary_edge == BoundaryEdge::E_10R && subdomain_y == 0 &&
-                     subdomain_x < num_lateral_subdomains - 1 )
-                {
-                    // Northern hemisphere to the left
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x + 1, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-                else if (
-                    boundary_edge == BoundaryEdge::E_10R && subdomain_y > 0 &&
-                    subdomain_x == num_lateral_subdomains - 1 )
-                {
-                    // Northern hemisphere to the left and southern
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id + 4 ) % 5 + 5,
-                              num_lateral_subdomains - subdomain_y,
-                              num_lateral_subdomains - 1,
-                              subdomain_r ),
-                          BoundaryEdge::E_01R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-
-                if ( boundary_edge == BoundaryEdge::E_11R && subdomain_x < num_lateral_subdomains - 1 &&
-                     subdomain_y == num_lateral_subdomains - 1 )
-                {
-                    // Northern hemi to southern (right)
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id + 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - subdomain_x - 2,
-                              subdomain_r ),
-                          BoundaryEdge::E_11R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-                else if (
-                    boundary_edge == BoundaryEdge::E_11R && subdomain_y < num_lateral_subdomains - 1 &&
-                    subdomain_x == num_lateral_subdomains - 1 )
-                {
-                    // Northern hemi to southern (left)
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id + 4 ) % 5 + 5,
-                              num_lateral_subdomains - subdomain_y - 2,
-                              num_lateral_subdomains - 1,
-                              subdomain_r ),
-                          BoundaryEdge::E_11R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    if ( subdomain_x < num_lateral_subdomains - 1 && subdomain_y == num_lateral_subdomains - 1 )
+                    {
+                        // Northern hemi to southern (right)
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                diamond_id + 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x - 2,
+                                subdomain_r ),
+                            BoundaryEdge::E_11R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_y < num_lateral_subdomains - 1 && subdomain_x == num_lateral_subdomains - 1 )
+                    {
+                        // Northern hemi to southern (left)
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 4 ) % 5 + 5,
+                                num_lateral_subdomains - subdomain_y - 2,
+                                num_lateral_subdomains - 1,
+                                subdomain_r ),
+                            BoundaryEdge::E_11R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
             }
             else if ( diamond_id >= 5 && diamond_id <= 9 )
             {
-                if ( boundary_edge == BoundaryEdge::E_00R && subdomain_x == 0 && subdomain_y > 0 )
+                if ( boundary_edge == BoundaryEdge::E_00R )
                 {
-                    // Southern hemisphere to the right.
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y - 1, 0, subdomain_r ),
-                          BoundaryEdge::E_10R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-                else if ( boundary_edge == BoundaryEdge::E_00R && subdomain_x > 0 && subdomain_y == 0 )
-                {
-                    // Southern hemisphere to the left.
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, subdomain_x - 1, subdomain_r ),
-                          BoundaryEdge::E_01R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    if ( subdomain_x == 0 && subdomain_y == 0 )
+                    {
+                        // South pole
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 2 ) % 5 + 5, 0, 0, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 3 ) % 5 + 5, 0, 0, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+
+                    if ( subdomain_x == 0 && subdomain_y > 0 )
+                    {
+                        // Southern hemisphere to the right.
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y - 1, 0, subdomain_r ),
+                            BoundaryEdge::E_10R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_x > 0 && subdomain_y == 0 )
+                    {
+                        // Southern hemisphere to the left.
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, subdomain_x - 1, subdomain_r ),
+                            BoundaryEdge::E_01R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
 
-                if ( boundary_edge == BoundaryEdge::E_01R && subdomain_x == 0 &&
-                     subdomain_y < num_lateral_subdomains - 1 )
+                if ( boundary_edge == BoundaryEdge::E_01R )
                 {
-                    // Southern hemisphere to the right
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y + 1, 0, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    if ( subdomain_x == 0 && subdomain_y < num_lateral_subdomains - 1 )
+                    {
+                        // Southern hemisphere to the right
+                        neighborhood_edge_[boundary_edge].push_back(
+                            { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y + 1, 0, subdomain_r ),
+                              BoundaryEdge::E_00R,
+                              BoundaryDirection::FORWARD,
+                              -1 } );
+                    }
+                    else if ( subdomain_x > 0 && subdomain_y == num_lateral_subdomains - 1 )
+                    {
+                        // Southern hemisphere to the right and north
+                        neighborhood_edge_[boundary_edge].push_back(
+                            { SubdomainInfo(
+                                  ( diamond_id + 1 ) % 5,
+                                  num_lateral_subdomains - 1,
+                                  num_lateral_subdomains - subdomain_x,
+                                  subdomain_r ),
+                              BoundaryEdge::E_10R,
+                              BoundaryDirection::FORWARD,
+                              -1 } );
+                    }
                 }
 
-                else if (
-                    boundary_edge == BoundaryEdge::E_01R && subdomain_x > 0 &&
-                    subdomain_y == num_lateral_subdomains - 1 )
+                if ( boundary_edge == BoundaryEdge::E_10R )
                 {
-                    // Southern hemisphere to the right and north
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id + 1 ) % 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - subdomain_x,
-                              subdomain_r ),
-                          BoundaryEdge::E_10R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    if ( subdomain_y == 0 && subdomain_x < num_lateral_subdomains - 1 )
+                    {
+                        // Southern hemisphere to the left
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x + 1, subdomain_r ),
+                            BoundaryEdge::E_00R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_y > 0 && subdomain_x == num_lateral_subdomains - 1 )
+                    {
+                        // Southern hemisphere to the left and northern
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                diamond_id - 5,
+                                num_lateral_subdomains - subdomain_y,
+                                num_lateral_subdomains - 1,
+                                subdomain_r ),
+                            BoundaryEdge::E_01R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
 
-                if ( boundary_edge == BoundaryEdge::E_10R && subdomain_y == 0 &&
-                     subdomain_x < num_lateral_subdomains - 1 )
+                if ( boundary_edge == BoundaryEdge::E_11R )
                 {
-                    // Southern hemisphere to the left
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x + 1, subdomain_r ),
-                          BoundaryEdge::E_00R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-                else if (
-                    boundary_edge == BoundaryEdge::E_10R && subdomain_y > 0 &&
-                    subdomain_x == num_lateral_subdomains - 1 )
-                {
-                    // Southern hemisphere to the left and northern
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id - 5,
-                              num_lateral_subdomains - subdomain_y,
-                              num_lateral_subdomains - 1,
-                              subdomain_r ),
-                          BoundaryEdge::E_01R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-
-                if ( boundary_edge == BoundaryEdge::E_11R && subdomain_x < num_lateral_subdomains - 1 &&
-                     subdomain_y == num_lateral_subdomains - 1 )
-                {
-                    // Southern hemi to northern (right)
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id - 4 ) % 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - subdomain_x - 2,
-                              subdomain_r ),
-                          BoundaryEdge::E_11R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
-                }
-                else if (
-                    boundary_edge == BoundaryEdge::E_11R && subdomain_y < num_lateral_subdomains - 1 &&
-                    subdomain_x == num_lateral_subdomains - 1 )
-                {
-                    // Southern hemi to northern (left)
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id - 5,
-                              num_lateral_subdomains - subdomain_y - 2,
-                              num_lateral_subdomains - 1,
-                              subdomain_r ),
-                          BoundaryEdge::E_11R,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    if ( subdomain_x < num_lateral_subdomains - 1 && subdomain_y == num_lateral_subdomains - 1 )
+                    {
+                        // Southern hemi to northern (right)
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id - 4 ) % 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x - 2,
+                                subdomain_r ),
+                            BoundaryEdge::E_11R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
+                    else if ( subdomain_y < num_lateral_subdomains - 1 && subdomain_x == num_lateral_subdomains - 1 )
+                    {
+                        // Southern hemi to northern (left)
+                        neighborhood_edge_[boundary_edge].emplace_back(
+                            SubdomainInfo(
+                                diamond_id - 5,
+                                num_lateral_subdomains - subdomain_y - 2,
+                                num_lateral_subdomains - 1,
+                                subdomain_r ),
+                            BoundaryEdge::E_11R,
+                            BoundaryDirection::FORWARD,
+                            -1 );
+                    }
                 }
             }
             else
@@ -1422,46 +1407,45 @@ class SubdomainNeighborhood
 
             if ( diamond_id >= 0 && diamond_id <= 4 )
             {
-                // Northern hemi
                 if ( boundary_edge == BoundaryEdge::E_0Y0 && subdomain_x == 0 && subdomain_r > 0 )
                 {
                     // Northern hemi to the right + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y, 0, subdomain_r - 1 ),
-                          BoundaryEdge::E_X01,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y, 0, subdomain_r - 1 ),
+                        BoundaryEdge::E_X01,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_0Y1 && subdomain_x == 0 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Northern hemi to the right + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y, 0, subdomain_r + 1 ),
-                          BoundaryEdge::E_X00,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y, 0, subdomain_r + 1 ),
+                        BoundaryEdge::E_X00,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
                 else if ( boundary_edge == BoundaryEdge::E_X00 && subdomain_y == 0 && subdomain_r > 0 )
                 {
                     // Northern hemi to the left + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x, subdomain_r - 1 ),
-                          BoundaryEdge::E_0Y1,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x, subdomain_r - 1 ),
+                        BoundaryEdge::E_0Y1,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_X01 && subdomain_y == 0 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Northern hemi to the left + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x, subdomain_r + 1 ),
-                          BoundaryEdge::E_0Y0,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x, subdomain_r + 1 ),
+                        BoundaryEdge::E_0Y0,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
 
                 // Northern to southern
@@ -1469,60 +1453,60 @@ class SubdomainNeighborhood
                      subdomain_r > 0 )
                 {
                     // Northern hemi to the bottom right + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id + 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - 1 - subdomain_x,
-                              subdomain_r - 1 ),
-                          BoundaryEdge::E_1Y1,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            diamond_id + 5,
+                            num_lateral_subdomains - 1,
+                            num_lateral_subdomains - 1 - subdomain_x,
+                            subdomain_r - 1 ),
+                        BoundaryEdge::E_1Y1,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_X11 && subdomain_y == num_lateral_subdomains - 1 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Northern hemi to the bottom right + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id + 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - 1 - subdomain_x,
-                              subdomain_r + 1 ),
-                          BoundaryEdge::E_1Y0,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            diamond_id + 5,
+                            num_lateral_subdomains - 1,
+                            num_lateral_subdomains - 1 - subdomain_x,
+                            subdomain_r + 1 ),
+                        BoundaryEdge::E_1Y0,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_1Y0 && subdomain_x == num_lateral_subdomains - 1 &&
                     subdomain_r > 0 )
                 {
                     // Northern hemi to the bottom left + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id + 4 ) % 5 + 5,
-                              num_lateral_subdomains - 1 - subdomain_y,
-                              num_lateral_subdomains - 1,
-                              subdomain_r - 1 ),
-                          BoundaryEdge::E_X11,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            ( diamond_id + 4 ) % 5 + 5,
+                            num_lateral_subdomains - 1 - subdomain_y,
+                            num_lateral_subdomains - 1,
+                            subdomain_r - 1 ),
+                        BoundaryEdge::E_X11,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_1Y1 && subdomain_x == num_lateral_subdomains - 1 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Northern hemi to the bottom left + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id + 4 ) % 5 + 5,
-                              num_lateral_subdomains - 1 - subdomain_y,
-                              num_lateral_subdomains - 1,
-                              subdomain_r + 1 ),
-                          BoundaryEdge::E_X10,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            ( diamond_id + 4 ) % 5 + 5,
+                            num_lateral_subdomains - 1 - subdomain_y,
+                            num_lateral_subdomains - 1,
+                            subdomain_r + 1 ),
+                        BoundaryEdge::E_X10,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
             }
             else if ( diamond_id >= 5 && diamond_id <= 9 )
@@ -1530,42 +1514,42 @@ class SubdomainNeighborhood
                 if ( boundary_edge == BoundaryEdge::E_0Y0 && subdomain_x == 0 && subdomain_r > 0 )
                 {
                     // Southern hemi to the right + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y, 0, subdomain_r - 1 ),
-                          BoundaryEdge::E_X01,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y, 0, subdomain_r - 1 ),
+                        BoundaryEdge::E_X01,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_0Y1 && subdomain_x == 0 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Southern hemi to the right + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y, 0, subdomain_r + 1 ),
-                          BoundaryEdge::E_X00,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y, 0, subdomain_r + 1 ),
+                        BoundaryEdge::E_X00,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
                 else if ( boundary_edge == BoundaryEdge::E_X00 && subdomain_y == 0 && subdomain_r > 0 )
                 {
                     // Southern hemi to the left + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x, subdomain_r - 1 ),
-                          BoundaryEdge::E_0Y1,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x, subdomain_r - 1 ),
+                        BoundaryEdge::E_0Y1,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_X01 && subdomain_y == 0 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Southern hemi to the left + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x, subdomain_r + 1 ),
-                          BoundaryEdge::E_0Y0,
-                          BoundaryDirection::FORWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x, subdomain_r + 1 ),
+                        BoundaryEdge::E_0Y0,
+                        BoundaryDirection::FORWARD,
+                        -1 );
                 }
 
                 // Southern to northern
@@ -1573,60 +1557,60 @@ class SubdomainNeighborhood
                      subdomain_r > 0 )
                 {
                     // Southern hemi to the top right + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id - 4 ) % 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - 1 - subdomain_x,
-                              subdomain_r - 1 ),
-                          BoundaryEdge::E_1Y1,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            ( diamond_id - 4 ) % 5,
+                            num_lateral_subdomains - 1,
+                            num_lateral_subdomains - 1 - subdomain_x,
+                            subdomain_r - 1 ),
+                        BoundaryEdge::E_1Y1,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_X11 && subdomain_y == num_lateral_subdomains - 1 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Southern hemi to the top right + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              ( diamond_id - 4 ) % 5,
-                              num_lateral_subdomains - 1,
-                              num_lateral_subdomains - 1 - subdomain_x,
-                              subdomain_r + 1 ),
-                          BoundaryEdge::E_1Y0,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            ( diamond_id - 4 ) % 5,
+                            num_lateral_subdomains - 1,
+                            num_lateral_subdomains - 1 - subdomain_x,
+                            subdomain_r + 1 ),
+                        BoundaryEdge::E_1Y0,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_1Y0 && subdomain_x == num_lateral_subdomains - 1 &&
                     subdomain_r > 0 )
                 {
                     // Southern hemi to the top left + cmb
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id - 5,
-                              num_lateral_subdomains - 1 - subdomain_y,
-                              num_lateral_subdomains - 1,
-                              subdomain_r - 1 ),
-                          BoundaryEdge::E_X11,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            diamond_id - 5,
+                            num_lateral_subdomains - 1 - subdomain_y,
+                            num_lateral_subdomains - 1,
+                            subdomain_r - 1 ),
+                        BoundaryEdge::E_X11,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
                 else if (
                     boundary_edge == BoundaryEdge::E_1Y1 && subdomain_x == num_lateral_subdomains - 1 &&
                     subdomain_r < num_radial_subdomains - 1 )
                 {
                     // Southern hemi to the top left + surface
-                    neighborhood_edge_[boundary_edge].push_back(
-                        { SubdomainInfo(
-                              diamond_id - 5,
-                              num_lateral_subdomains - 1 - subdomain_y,
-                              num_lateral_subdomains - 1,
-                              subdomain_r + 1 ),
-                          BoundaryEdge::E_X10,
-                          BoundaryDirection::BACKWARD,
-                          -1 } );
+                    neighborhood_edge_[boundary_edge].emplace_back(
+                        SubdomainInfo(
+                            diamond_id - 5,
+                            num_lateral_subdomains - 1 - subdomain_y,
+                            num_lateral_subdomains - 1,
+                            subdomain_r + 1 ),
+                        BoundaryEdge::E_X10,
+                        BoundaryDirection::BACKWARD,
+                        -1 );
                 }
             }
             else
@@ -1640,123 +1624,130 @@ class SubdomainNeighborhood
 
             if ( boundary_edge == BoundaryEdge::E_00R && subdomain_x > 0 && subdomain_y > 0 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y - 1, subdomain_r ),
-                      BoundaryEdge::E_11R,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y - 1, subdomain_r ),
+                    BoundaryEdge::E_11R,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_10R && subdomain_x < num_lateral_subdomains - 1 && subdomain_y > 0 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y - 1, subdomain_r ),
-                      BoundaryEdge::E_01R,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y - 1, subdomain_r ),
+                    BoundaryEdge::E_01R,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_01R && subdomain_x > 0 && subdomain_y < num_lateral_subdomains - 1 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y + 1, subdomain_r ),
-                      BoundaryEdge::E_10R,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y + 1, subdomain_r ),
+                    BoundaryEdge::E_10R,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_11R && subdomain_x < num_lateral_subdomains - 1 &&
                 subdomain_y < num_lateral_subdomains - 1 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y + 1, subdomain_r ),
-                      BoundaryEdge::E_00R,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y + 1, subdomain_r ),
+                    BoundaryEdge::E_00R,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
 
             // Edges in Y direction
 
             else if ( boundary_edge == BoundaryEdge::E_0Y0 && subdomain_x > 0 && subdomain_r > 0 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y, subdomain_r - 1 ),
-                      BoundaryEdge::E_1Y1,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y, subdomain_r - 1 ),
+                    BoundaryEdge::E_1Y1,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_1Y0 && subdomain_x < num_lateral_subdomains - 1 && subdomain_r > 0 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y, subdomain_r - 1 ),
-                      BoundaryEdge::E_0Y1,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y, subdomain_r - 1 ),
+                    BoundaryEdge::E_0Y1,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_0Y1 && subdomain_x > 0 && subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y, subdomain_r + 1 ),
-                      BoundaryEdge::E_1Y0,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y, subdomain_r + 1 ),
+                    BoundaryEdge::E_1Y0,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_1Y1 && subdomain_x < num_lateral_subdomains - 1 &&
                 subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y, subdomain_r + 1 ),
-                      BoundaryEdge::E_0Y0,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y, subdomain_r + 1 ),
+                    BoundaryEdge::E_0Y0,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
 
             // Radial (Y fixed)
 
             else if ( boundary_edge == BoundaryEdge::E_X00 && subdomain_y > 0 && subdomain_r > 0 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x, subdomain_y - 1, subdomain_r - 1 ),
-                      BoundaryEdge::E_X11,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x, subdomain_y - 1, subdomain_r - 1 ),
+                    BoundaryEdge::E_X11,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_X10 && subdomain_y < num_lateral_subdomains - 1 && subdomain_r > 0 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x, subdomain_y + 1, subdomain_r - 1 ),
-                      BoundaryEdge::E_X01,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x, subdomain_y + 1, subdomain_r - 1 ),
+                    BoundaryEdge::E_X01,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_X01 && subdomain_y > 0 && subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x, subdomain_y - 1, subdomain_r + 1 ),
-                      BoundaryEdge::E_X10,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x, subdomain_y - 1, subdomain_r + 1 ),
+                    BoundaryEdge::E_X10,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
             else if (
                 boundary_edge == BoundaryEdge::E_X11 && subdomain_y < num_lateral_subdomains - 1 &&
                 subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_edge_[boundary_edge].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x, subdomain_y + 1, subdomain_r + 1 ),
-                      BoundaryEdge::E_X00,
-                      BoundaryDirection::FORWARD,
-                      -1 } );
+                neighborhood_edge_[boundary_edge].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x, subdomain_y + 1, subdomain_r + 1 ),
+                    BoundaryEdge::E_X00,
+                    BoundaryDirection::FORWARD,
+                    -1 );
             }
         }
+    }
 
-        ///////////////////////
-        // Vertex boundaries //
-        ///////////////////////
+    void setup_neighborhood_vertices( const DomainInfo& domain_info, const SubdomainInfo& subdomain_info )
+    {
+        const int diamond_id  = subdomain_info.diamond_id();
+        const int subdomain_x = subdomain_info.subdomain_x();
+        const int subdomain_y = subdomain_info.subdomain_y();
+        const int subdomain_r = subdomain_info.subdomain_r();
+
+        const int num_lateral_subdomains = domain_info.num_subdomains_per_diamond_side();
+        const int num_radial_subdomains  = domain_info.num_subdomains_in_radial_direction();
 
         for ( const auto boundary_vertex : all_boundary_vertices )
         {
@@ -1768,18 +1759,18 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x == 0 && subdomain_y == 0 &&
                          subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_000].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 2 ) % 5, 0, 0, subdomain_r - 1 ), BoundaryVertex::V_001, -1 );
-                        neighborhood_vertex_[BoundaryVertex::V_000].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 3 ) % 5, 0, 0, subdomain_r - 1 ), BoundaryVertex::V_001, -1 );
                     }
 
                     if ( boundary_vertex == BoundaryVertex::V_001 && subdomain_x == 0 && subdomain_y == 0 &&
                          subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_001].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 2 ) % 5, 0, 0, subdomain_r + 1 ), BoundaryVertex::V_000, -1 );
-                        neighborhood_vertex_[BoundaryVertex::V_001].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 3 ) % 5, 0, 0, subdomain_r + 1 ), BoundaryVertex::V_000, -1 );
                     }
                 }
@@ -1790,7 +1781,7 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x == 0 && subdomain_y > 0 &&
                          subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_000].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y - 1, 0, subdomain_r - 1 ),
                             BoundaryVertex::V_101,
                             -1 );
@@ -1799,7 +1790,7 @@ class SubdomainNeighborhood
                         boundary_vertex == BoundaryVertex::V_001 && subdomain_x == 0 && subdomain_y > 0 &&
                         subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_001].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y - 1, 0, subdomain_r + 1 ),
                             BoundaryVertex::V_100,
                             -1 );
@@ -1812,7 +1803,7 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x > 0 && subdomain_y == 0 &&
                          subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_000].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x - 1, subdomain_r - 1 ),
                             BoundaryVertex::V_011,
                             -1 );
@@ -1821,7 +1812,7 @@ class SubdomainNeighborhood
                         boundary_vertex == BoundaryVertex::V_001 && subdomain_x > 0 && subdomain_y == 0 &&
                         subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_001].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x - 1, subdomain_r + 1 ),
                             BoundaryVertex::V_010,
                             -1 );
@@ -1834,19 +1825,19 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_010 && subdomain_x == 0 &&
                          subdomain_y < num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_010].push_back(
-                            { SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y + 1, 0, subdomain_r - 1 ),
-                              BoundaryVertex::V_001,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y + 1, 0, subdomain_r - 1 ),
+                            BoundaryVertex::V_001,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_011 && subdomain_x == 0 &&
                         subdomain_y < num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_011].push_back(
-                            { SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y + 1, 0, subdomain_r + 1 ),
-                              BoundaryVertex::V_000,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5, subdomain_y + 1, 0, subdomain_r + 1 ),
+                            BoundaryVertex::V_000,
+                            -1 );
                     }
                 }
 
@@ -1856,27 +1847,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_010 && subdomain_x > 0 &&
                          subdomain_y == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_010].push_back(
-                            { SubdomainInfo(
-                                  diamond_id + 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_101,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id + 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_101,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_011 && subdomain_x > 0 &&
                         subdomain_y == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_011].push_back(
-                            { SubdomainInfo(
-                                  diamond_id + 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_100,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id + 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_100,
+                            -1 );
                     }
                 }
 
@@ -1886,19 +1877,19 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_100 && subdomain_y == 0 &&
                          subdomain_x < num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_100].push_back(
-                            { SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x + 1, subdomain_r - 1 ),
-                              BoundaryVertex::V_001,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x + 1, subdomain_r - 1 ),
+                            BoundaryVertex::V_001,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_101 && subdomain_y == 0 &&
                         subdomain_x < num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_101].push_back(
-                            { SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x + 1, subdomain_r + 1 ),
-                              BoundaryVertex::V_000,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5, 0, subdomain_x + 1, subdomain_r + 1 ),
+                            BoundaryVertex::V_000,
+                            -1 );
                     }
                 }
 
@@ -1908,27 +1899,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_100 && subdomain_y > 0 &&
                          subdomain_x == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_100].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id + 4 ) % 5 + 5,
-                                  num_lateral_subdomains - subdomain_y,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_011,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 4 ) % 5 + 5,
+                                num_lateral_subdomains - subdomain_y,
+                                num_lateral_subdomains - 1,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_011,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_101 && subdomain_y > 0 &&
                         subdomain_x == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_101].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id + 4 ) % 5 + 5,
-                                  num_lateral_subdomains - subdomain_y,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_010,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 4 ) % 5 + 5,
+                                num_lateral_subdomains - subdomain_y,
+                                num_lateral_subdomains - 1,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_010,
+                            -1 );
                     }
                 }
 
@@ -1938,27 +1929,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_110 && subdomain_x < num_lateral_subdomains - 1 &&
                          subdomain_y == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_110].push_back(
-                            { SubdomainInfo(
-                                  diamond_id + 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x - 2,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_111,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id + 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x - 2,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_111,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_111 && subdomain_x < num_lateral_subdomains - 1 &&
                         subdomain_y == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_111].push_back(
-                            { SubdomainInfo(
-                                  diamond_id + 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x - 2,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_110,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id + 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x - 2,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_110,
+                            -1 );
                     }
                 }
 
@@ -1968,27 +1959,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_110 && subdomain_y < num_lateral_subdomains - 1 &&
                          subdomain_x == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_110].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id + 4 ) % 5 + 5,
-                                  num_lateral_subdomains - subdomain_y - 2,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_111,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 4 ) % 5 + 5,
+                                num_lateral_subdomains - subdomain_y - 2,
+                                num_lateral_subdomains - 1,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_111,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_111 && subdomain_y < num_lateral_subdomains - 1 &&
                         subdomain_x == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_111].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id + 4 ) % 5 + 5,
-                                  num_lateral_subdomains - subdomain_y - 2,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_110,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 4 ) % 5 + 5,
+                                num_lateral_subdomains - subdomain_y - 2,
+                                num_lateral_subdomains - 1,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_110,
+                            -1 );
                     }
                 }
             }
@@ -1999,11 +1990,11 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x == 0 && subdomain_y == 0 &&
                          subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_000].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 2 ) % 5 + 5, 0, 0, subdomain_r - 1 ),
                             BoundaryVertex::V_001,
                             -1 );
-                        neighborhood_vertex_[BoundaryVertex::V_000].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 3 ) % 5 + 5, 0, 0, subdomain_r - 1 ),
                             BoundaryVertex::V_001,
                             -1 );
@@ -2012,11 +2003,11 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_001 && subdomain_x == 0 && subdomain_y == 0 &&
                          subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_001].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 2 ) % 5 + 5, 0, 0, subdomain_r + 1 ),
                             BoundaryVertex::V_000,
                             -1 );
-                        neighborhood_vertex_[BoundaryVertex::V_001].emplace_back(
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
                             SubdomainInfo( ( diamond_id + 3 ) % 5 + 5, 0, 0, subdomain_r + 1 ),
                             BoundaryVertex::V_000,
                             -1 );
@@ -2029,19 +2020,19 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x == 0 && subdomain_y > 0 &&
                          subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_000].push_back(
-                            { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y - 1, 0, subdomain_r - 1 ),
-                              BoundaryVertex::V_101,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y - 1, 0, subdomain_r - 1 ),
+                            BoundaryVertex::V_101,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_001 && subdomain_x == 0 && subdomain_y > 0 &&
                         subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_001].push_back(
-                            { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y - 1, 0, subdomain_r + 1 ),
-                              BoundaryVertex::V_100,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y - 1, 0, subdomain_r + 1 ),
+                            BoundaryVertex::V_100,
+                            -1 );
                     }
                 }
 
@@ -2051,19 +2042,19 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x > 0 && subdomain_y == 0 &&
                          subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_000].push_back(
-                            { SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, subdomain_x - 1, subdomain_r - 1 ),
-                              BoundaryVertex::V_011,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, subdomain_x - 1, subdomain_r - 1 ),
+                            BoundaryVertex::V_011,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_001 && subdomain_x > 0 && subdomain_y == 0 &&
                         subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_001].push_back(
-                            { SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, subdomain_x - 1, subdomain_r + 1 ),
-                              BoundaryVertex::V_010,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 4 ) % 5 + 5, 0, subdomain_x - 1, subdomain_r + 1 ),
+                            BoundaryVertex::V_010,
+                            -1 );
                     }
                 }
 
@@ -2073,19 +2064,19 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_010 && subdomain_x == 0 &&
                          subdomain_y < num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_010].push_back(
-                            { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y + 1, 0, subdomain_r - 1 ),
-                              BoundaryVertex::V_001,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y + 1, 0, subdomain_r - 1 ),
+                            BoundaryVertex::V_001,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_011 && subdomain_x == 0 &&
                         subdomain_y < num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_011].push_back(
-                            { SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y + 1, 0, subdomain_r + 1 ),
-                              BoundaryVertex::V_000,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id + 1 ) % 5 + 5, subdomain_y + 1, 0, subdomain_r + 1 ),
+                            BoundaryVertex::V_000,
+                            -1 );
                     }
                 }
 
@@ -2095,27 +2086,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_010 && subdomain_x > 0 &&
                          subdomain_y == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_010].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id + 1 ) % 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_101,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 1 ) % 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_101,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_011 && subdomain_x > 0 &&
                         subdomain_y == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_011].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id + 1 ) % 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_100,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id + 1 ) % 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_100,
+                            -1 );
                     }
                 }
 
@@ -2125,19 +2116,19 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_100 && subdomain_y == 0 &&
                          subdomain_x < num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_100].push_back(
-                            { SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x + 1, subdomain_r - 1 ),
-                              BoundaryVertex::V_001,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x + 1, subdomain_r - 1 ),
+                            BoundaryVertex::V_001,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_101 && subdomain_y == 0 &&
                         subdomain_x < num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_101].push_back(
-                            { SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x + 1, subdomain_r + 1 ),
-                              BoundaryVertex::V_000,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo( ( diamond_id - 1 ) % 5 + 5, 0, subdomain_x + 1, subdomain_r + 1 ),
+                            BoundaryVertex::V_000,
+                            -1 );
                     }
                 }
 
@@ -2147,27 +2138,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_100 && subdomain_y > 0 &&
                          subdomain_x == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_100].push_back(
-                            { SubdomainInfo(
-                                  diamond_id - 5,
-                                  num_lateral_subdomains - subdomain_y,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_011,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id - 5,
+                                num_lateral_subdomains - subdomain_y,
+                                num_lateral_subdomains - 1,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_011,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_101 && subdomain_y > 0 &&
                         subdomain_x == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_101].push_back(
-                            { SubdomainInfo(
-                                  diamond_id - 5,
-                                  num_lateral_subdomains - subdomain_y,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_010,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id - 5,
+                                num_lateral_subdomains - subdomain_y,
+                                num_lateral_subdomains - 1,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_010,
+                            -1 );
                     }
                 }
 
@@ -2177,27 +2168,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_110 && subdomain_x < num_lateral_subdomains - 1 &&
                          subdomain_y == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_110].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id - 4 ) % 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x - 2,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_111,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id - 4 ) % 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x - 2,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_111,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_111 && subdomain_x < num_lateral_subdomains - 1 &&
                         subdomain_y == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_111].push_back(
-                            { SubdomainInfo(
-                                  ( diamond_id - 4 ) % 5,
-                                  num_lateral_subdomains - 1,
-                                  num_lateral_subdomains - subdomain_x - 2,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_110,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                ( diamond_id - 4 ) % 5,
+                                num_lateral_subdomains - 1,
+                                num_lateral_subdomains - subdomain_x - 2,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_110,
+                            -1 );
                     }
                 }
 
@@ -2206,27 +2197,27 @@ class SubdomainNeighborhood
                     if ( boundary_vertex == BoundaryVertex::V_110 && subdomain_y < num_lateral_subdomains - 1 &&
                          subdomain_x == num_lateral_subdomains - 1 && subdomain_r > 0 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_110].push_back(
-                            { SubdomainInfo(
-                                  diamond_id - 5,
-                                  num_lateral_subdomains - subdomain_y - 2,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r - 1 ),
-                              BoundaryVertex::V_111,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id - 5,
+                                num_lateral_subdomains - subdomain_y - 2,
+                                num_lateral_subdomains - 1,
+                                subdomain_r - 1 ),
+                            BoundaryVertex::V_111,
+                            -1 );
                     }
                     else if (
                         boundary_vertex == BoundaryVertex::V_111 && subdomain_y < num_lateral_subdomains - 1 &&
                         subdomain_x == num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
                     {
-                        neighborhood_vertex_[BoundaryVertex::V_111].push_back(
-                            { SubdomainInfo(
-                                  diamond_id - 5,
-                                  num_lateral_subdomains - subdomain_y - 2,
-                                  num_lateral_subdomains - 1,
-                                  subdomain_r + 1 ),
-                              BoundaryVertex::V_110,
-                              -1 } );
+                        neighborhood_vertex_[boundary_vertex].emplace_back(
+                            SubdomainInfo(
+                                diamond_id - 5,
+                                num_lateral_subdomains - subdomain_y - 2,
+                                num_lateral_subdomains - 1,
+                                subdomain_r + 1 ),
+                            BoundaryVertex::V_110,
+                            -1 );
                     }
                 }
             }
@@ -2239,78 +2230,81 @@ class SubdomainNeighborhood
 
             if ( boundary_vertex == BoundaryVertex::V_000 && subdomain_x > 0 && subdomain_y > 0 && subdomain_r > 0 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y - 1, subdomain_r - 1 ),
-                      BoundaryVertex::V_111,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y - 1, subdomain_r - 1 ),
+                    BoundaryVertex::V_111,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_100 && subdomain_x < num_lateral_subdomains - 1 &&
                 subdomain_y > 0 && subdomain_r > 0 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y - 1, subdomain_r - 1 ),
-                      BoundaryVertex::V_011,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y - 1, subdomain_r - 1 ),
+                    BoundaryVertex::V_011,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_010 && subdomain_x > 0 &&
                 subdomain_y < num_lateral_subdomains - 1 && subdomain_r > 0 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y + 1, subdomain_r - 1 ),
-                      BoundaryVertex::V_101,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y + 1, subdomain_r - 1 ),
+                    BoundaryVertex::V_101,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_001 && subdomain_x > 0 && subdomain_y > 0 &&
                 subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y - 1, subdomain_r + 1 ),
-                      BoundaryVertex::V_110,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y - 1, subdomain_r + 1 ),
+                    BoundaryVertex::V_110,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_110 && subdomain_x < num_lateral_subdomains - 1 &&
                 subdomain_y < num_lateral_subdomains - 1 && subdomain_r > 0 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y + 1, subdomain_r - 1 ),
-                      BoundaryVertex::V_001,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y + 1, subdomain_r - 1 ),
+                    BoundaryVertex::V_001,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_101 && subdomain_x < num_lateral_subdomains - 1 &&
                 subdomain_y > 0 && subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y - 1, subdomain_r + 1 ),
-                      BoundaryVertex::V_010,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y - 1, subdomain_r + 1 ),
+                    BoundaryVertex::V_010,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_011 && subdomain_x > 0 &&
                 subdomain_y < num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y + 1, subdomain_r + 1 ),
-                      BoundaryVertex::V_100,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x - 1, subdomain_y + 1, subdomain_r + 1 ),
+                    BoundaryVertex::V_100,
+                    -1 );
             }
             else if (
                 boundary_vertex == BoundaryVertex::V_111 && subdomain_x < num_lateral_subdomains - 1 &&
                 subdomain_y < num_lateral_subdomains - 1 && subdomain_r < num_radial_subdomains - 1 )
             {
-                neighborhood_vertex_[boundary_vertex].push_back(
-                    { SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y + 1, subdomain_r + 1 ),
-                      BoundaryVertex::V_000,
-                      -1 } );
+                neighborhood_vertex_[boundary_vertex].emplace_back(
+                    SubdomainInfo( diamond_id, subdomain_x + 1, subdomain_y + 1, subdomain_r + 1 ),
+                    BoundaryVertex::V_000,
+                    -1 );
             }
         }
+    }
 
-        // Assigning ranks.
-
+    void setup_neighborhood_ranks(
+        const DomainInfo&                          domain_info,
+        const SubdomainToRankDistributionFunction& subdomain_to_rank )
+    {
         for ( auto& neighbors : neighborhood_vertex_ | std::views::values )
         {
             for ( auto& [neighbor_subdomain_info, neighbor_boundary_vertex, neighbor_rank] : neighbors )
@@ -2341,6 +2335,17 @@ class SubdomainNeighborhood
                 domain_info.num_subdomains_per_diamond_side(),
                 domain_info.num_subdomains_in_radial_direction() );
         }
+    }
+
+    void setup_neighborhood(
+        const DomainInfo&                          domain_info,
+        const SubdomainInfo&                       subdomain_info,
+        const SubdomainToRankDistributionFunction& subdomain_to_rank )
+    {
+        setup_neighborhood_faces( domain_info, subdomain_info );
+        setup_neighborhood_edges( domain_info, subdomain_info );
+        setup_neighborhood_vertices( domain_info, subdomain_info );
+        setup_neighborhood_ranks( domain_info, subdomain_to_rank );
     }
 
     std::map< BoundaryVertex, std::vector< NeighborSubdomainTupleVertex > > neighborhood_vertex_;
