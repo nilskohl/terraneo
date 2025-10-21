@@ -1,8 +1,12 @@
 # Documentation {#main}
 
+> ❗️This file is best read in HTML format after generating the documentation via running `doxygen` inside of `doc/src/`.
+
 ## About
 
-🏗️
+TerraNeoX is a mantle convection code based on [Kokkos](https://github.com/kokkos/kokkos) for performance portability.
+
+\docseplarge
 
 ## Building
 
@@ -39,6 +43,8 @@ $ make -j16
 
 Note the capitalization: it must be `Kokkos_ENABLE_CUDA=ON`, NOT `KOKKOS_ENABLE_CUDA=ON`.
 
+\docseplarge
+
 ## Project Structure
 
 ```
@@ -60,21 +66,23 @@ terraneox/
 └── tests/                    # Tests
 ```
 
+\docseplarge
+
 ## Framework documentation
 
 ### Model / Partial differential equations
 
 🏗️
 
------------
+\docsepsmall
 
 ### Grid structure and subdomains (part I - logical structure)
 
 \note This section is just describing the logical organization of data. For details on memory layout / allocation
-      refer to the Kokkos section. Details on the construction of the thick spherical shell and communication are given
-      in the dedicated sections below.
+refer to the Kokkos section. Details on the construction of the thick spherical shell and communication are given
+in the dedicated sections below.
 
-All grid operations are performed on a set of hexahedral subdomains (block-structured grid). 
+All grid operations are performed on a set of hexahedral subdomains (block-structured grid).
 The corresponding grid data is organized via 4- or 5 dimensional arrays.
 
 ```
@@ -94,12 +102,12 @@ same spatial organization of nodes required for hexahedral elements.
 The division of one hexahedron into two wedges is implicitly done in the compute kernels and is not represented by the
 grid data structure.
 
-(Since we are using linear Lagrangian basis functions, nodes directly correspond to coefficients. For the linear cases, 
-we can also use the same grid data structure for linear hexahedral finite elements. Such an extension is straightforward 
-and just requires respective kernels. One could even mix both - although it is not clear if that is mathematically 
+(Since we are using linear Lagrangian basis functions, nodes directly correspond to coefficients. For the linear cases,
+we can also use the same grid data structure for linear hexahedral finite elements. Such an extension is straightforward
+and just requires respective kernels. One could even mix both - although it is not clear if that is mathematically
 sound.)
 
-As a convention, the hexahedral elements are split into two wedges diagonally from node (1, 0) to node (0, 1) as 
+As a convention, the hexahedral elements are split into two wedges diagonally from node (1, 0) to node (0, 1) as
 follows:
 
 ```
@@ -121,22 +129,23 @@ Each node 'o' either stores a scalar or a vector.
         x
 ```
 
------------
+\docsepsmall
 
 ### Finite element discretization
 
 The partial differential equations and their solutions are approximated using the finite element method.
 
-We are using linear wedge elements for all spaces, unless specified otherwise. This is very similar to the 
+We are using linear wedge elements for all spaces, unless specified otherwise. This is very similar to the
 implementation in Terra.
 
 \note
-See helper functions and documentation in [integrands.hpp](@ref integrands.hpp) or the 
+See helper functions and documentation in [integrands.hpp](@ref integrands.hpp) or the
 [namespace terra::fe:wedge](@ref terra::fe::wedge) for details, and other, derived
 quantities like gradients, Jacobians, determinants, etc.
 
 Linear wedge (or prism) elements are formed by extruding a linear triangular element in the radial direction.
-The base triangle lies in the lateral plane (parameterized by \f$\xi\f$,\f$\eta\f$), while the extrusion occurs along the radial
+The base triangle lies in the lateral plane (parameterized by \f$\xi\f$,\f$\eta\f$), while the extrusion occurs along
+the radial
 coordinate \f$\zeta\f$.
 
 \note
@@ -147,75 +156,75 @@ triangular surfaces living on two shell-slices, and the connecting beams being r
 #### Geometry
 
 Lateral reference coordinates:
-  \f[ \xi, \eta \in [0, 1] \f]
+\f[ \xi, \eta \in [0, 1] \f]
 
 Radial reference coordinates:
-  \f[ \zeta \in [-1, 1] \f]
+\f[ \zeta \in [-1, 1] \f]
 
 With
-  \f[ 0 \leq \xi + \eta \leq 1 \f]
+\f[ 0 \leq \xi + \eta \leq 1 \f]
 
 #### Node enumeration
 
-  \code
+\code
 
-  Case I: 
-    
+Case I:
+
     radial_node_idx == radial_cell_idx + 1 (outer triangle of wedge):
 
     5
     |\
     | \
     3--4
-  \endcode
 
-  \code
+\endcode
 
-  Case II: 
-  
+\code
+
+Case II:
+
     radial_node_idx == radial_cell_idx (inner triangle of wedge):
 
     2
     |\
     | \
     0--1
-  \endcode
+
+\endcode
 
 #### Shape functions
 
 Lateral:
 
-  \f[
-  \begin{align}
-    N^\mathrm{lat}_0 = N^\mathrm{lat}_3 &= 1 - \xi - \eta \\
-    N^\mathrm{lat}_1 = N^\mathrm{lat}_4 &= \xi \\
-    N^\mathrm{lat}_2 = N^\mathrm{lat}_5 &= \eta
-  \end{align}
-  \f]
+\f[
+\begin{align}
+N^\mathrm{lat}_0 = N^\mathrm{lat}_3 &= 1 - \xi - \eta \\
+N^\mathrm{lat}_1 = N^\mathrm{lat}_4 &= \xi \\
+N^\mathrm{lat}_2 = N^\mathrm{lat}_5 &= \eta
+\end{align}
+\f]
 
 Radial:
 
-  \f[
-  \begin{align}
-    N^\mathrm{rad}_0 = N^\mathrm{rad}_1 = N^\mathrm{rad}_2 &= \frac{1}{2} ( 1 - \zeta ) \\
-    N^\mathrm{rad}_3 = N^\mathrm{rad}_4 = N^\mathrm{rad}_5 &= \frac{1}{2} ( 1 + \zeta ) \\
-  \end{align}
-  \f]
+\f[
+\begin{align}
+N^\mathrm{rad}_0 = N^\mathrm{rad}_1 = N^\mathrm{rad}_2 &= \frac{1}{2} ( 1 - \zeta ) \\
+N^\mathrm{rad}_3 = N^\mathrm{rad}_4 = N^\mathrm{rad}_5 &= \frac{1}{2} ( 1 + \zeta ) \\
+\end{align}
+\f]
 
 Full:
 
-  \f[
-  N_i = N^\mathrm{lat}_i N^\mathrm{rad}_i
-  \f]
-
+\f[
+N_i = N^\mathrm{lat}_i N^\mathrm{rad}_i
+\f]
 
 #### Physical coordinates
 
-  \code
-  r_1, r_2                     radii of bottom and top (r_1 < r_2)
-  p1_phy, p2_phy, p3_phy       coords of triangle on unit sphere
-  \endcode
-
+\code
+r_1, r_2 radii of bottom and top (r_1 < r_2)
+p1_phy, p2_phy, p3_phy coords of triangle on unit sphere
+\endcode
 
 #### Spaces:
 
@@ -223,7 +232,7 @@ For the Stokes system we employ the stable (\f$P_1\f$-iso-\f$P_2\f$, \f$P_1\f$) 
 the velocity and pressure are discretized with linear wedge elements, with the velocity living on a grid with additional
 refinement compared to the pressure grid.
 
------------
+\docsepsmall
 
 ### Linear algebra
 
@@ -245,13 +254,13 @@ refinement compared to the pressure grid.
 
 🏗️
 
------------
+\docsepsmall
 
 ### Grid structure and subdomains (part II - Kokkos)
 
 🏗️
 
------------
+\docsepsmall
 
 ### Thick spherical shell
 
@@ -261,10 +270,10 @@ The Earth mantle is approximated via a thick spherical shell \f$\Omega\f$ , i.e.
 
 #### Mesh structure
 
-A corresponding mesh is constructed by splitting the outer surface of \f$\Omega\f$ into 10 spherical diamonds that are 
+A corresponding mesh is constructed by splitting the outer surface of \f$\Omega\f$ into 10 spherical diamonds that are
 extruded towards (or equivalently away from) the origin.
 
-The figures/videos below show the diamonds in a three-dimensional visualization (each diamond is refined 4 times in 
+The figures/videos below show the diamonds in a three-dimensional visualization (each diamond is refined 4 times in
 lateral and 4 times in radial direction).
 
 Single diamond (`diamond_id == 0`):
@@ -283,8 +292,8 @@ Northern (`0 <= diamond_id <= 4`) and southern diamonds (`5 <= diamond_id <= 9`)
 \endhtmlonly
 \image html figures/north_south_animation.mp4
 
-Unfolding the surface partitioning, we can visualize the surface of the 10 spherical diamonds as a net that when curved 
-and pieced together recovers the spherical shell: 
+Unfolding the surface partitioning, we can visualize the surface of the 10 spherical diamonds as a net that when curved
+and pieced together recovers the spherical shell:
 
 \image html figures/thick-spherical-shell-diamond-net.jpg
 
@@ -313,40 +322,46 @@ In the radial direction, the concrete radii of the layers can be specified.
 For more details refer to the documentation of \ref terra::grid::shell::DomainInfo.
 
 \note You typically do not construct the \ref terra::grid::shell::DomainInfo class yourself. Instead, you use the
-\ref terra::grid::shell::DistributedDomain class. 
+\ref terra::grid::shell::DistributedDomain class.
 
 #### Local subdomains
 
 Subdomains on the same MPI process are sorted by their global `subdomain_id` (it is sortable and globally unique)
-and continuously assigned to an integer `local_subdomain_id` that ranges from 0 to the number of process-local 
+and continuously assigned to an integer `local_subdomain_id` that ranges from 0 to the number of process-local
 subdomains minus 1.
 The `local_subdomain_id` is then the first index of the 4D (or 5D) data grids introduced above.
 
 For instance, for a scalar data array `data` the expression
+
 ```
     data( 3, 55, 20, 4 )
 ```
+
 accesses the node with
+
 ```
     local_subdomain_id =  3
     x_index            = 55
     y_index            = 20
     r_index            =  4
 ```
+
 The mapping from the `subdomain_id` (type `SubdomainInfo`) to the `local_subdomain_id` (type `int`) is performed during
-set up and stored together with other information in the corresponding \ref terra::grid::shell::DistributedDomain 
+set up and stored together with other information in the corresponding \ref terra::grid::shell::DistributedDomain
 instance.
 More details are found in the parallelization section.
 
 #### Node coordinates
 
 The concrete coordinates of the nodes are computed with two functions:
+
 * \ref terra::grid::shell::subdomain_unit_sphere_single_shell_coords - computes the "lateral cartesian coordinates"
   of all nodes, i.e., computes the cartesian coordinates of a single shell of nodes with radius 1 and returns them in
   a 4D array `coords_shell( local_subdomain_id, x_index, y_index, cartesian_coord )`.
 * \ref terra::grid::shell::subdomain_shell_radii - computes the radii and stores them in a 2D array
   `coords_radii( local_subdomain_id, r_index )`
-The cartesian coordinate of a node `( local_subdomain_id, x_index, y_index, r_index )` can then be computed via
+  The cartesian coordinate of a node `( local_subdomain_id, x_index, y_index, r_index )` can then be computed via
+
 ```
     Vec3 cartesian_coords;
     cartesian_coords( 0 ) = coords_shell( local_subdomain_id, x_index, y_index, 0 );
@@ -354,42 +369,43 @@ The cartesian coordinate of a node `( local_subdomain_id, x_index, y_index, r_in
     cartesian_coords( 2 ) = coords_shell( local_subdomain_id, x_index, y_index, 2 );
     return cartesian_coords * coords_radii( local_subdomain_id, r_index );
 ```
+
 This is implemented in \ref terra::grid::shell::coords.
 The radius is obviously just `coords_radii( local_subdomain_id, r_index )`.
 
------------
+\docsepsmall
 
 ### Parallelization
 
 🏗️
 
------------
+\docsepsmall
 
 ### Communication
 
 For operations that do not only work locally (such as matrix-vector products) information has to be communicated
 across boundaries of neighboring subdomains.
-At subdomain boundaries, mesh nodes are duplicated: the same mesh node exists on multiple subdomains. 
+At subdomain boundaries, mesh nodes are duplicated: the same mesh node exists on multiple subdomains.
 
-Generally, we **assume that the values at the mesh nodes are holding the correct values whenever entering linear 
-algebra building blocks**. That means we have to ensure that data is communicated **after** computations such as 
+Generally, we **assume that the values at the mesh nodes are holding the correct values whenever entering linear
+algebra building blocks**. That means we have to ensure that data is communicated **after** computations such as
 matrix-vector multiplications.
 
 A map of neighboring subdomains and metadata is generated via the class \ref terra::grid::shell::SubdomainNeighborhood.
-That is done internally in the \ref terra::grid::shell::DistributedDomain.  
+That is done internally in the \ref terra::grid::shell::DistributedDomain.
 
 #### Vector-vector operations (excluding dot products)
 
-Vector-vector operations (such as daxpy etc.) do not require any communication as long as the duplicated nodes are 
-updated for each subdomain. Technically that means we perform redundant computations at the benefit of avoiding 
+Vector-vector operations (such as daxpy etc.) do not require any communication as long as the duplicated nodes are
+updated for each subdomain. Technically that means we perform redundant computations at the benefit of avoiding
 communication and having very simple kernels (you can just loop over the entire subdomain without conditionals).
 
 #### Dot products (and other reductions)
 
-The computation of dot products and other reductions must be performed carefully since we must not include duplicated 
+The computation of dot products and other reductions must be performed carefully since we must not include duplicated
 nodes twice. To ensure that, we store a flag field (mostly called `mask_data` in the code) that assigns in a setup phase
 (typically once at the start of the program) an `owned` flag to exactly one of the duplicated nodes. The dot
-product kernel (or any kind of reduction) then skips the nodes that are not marked as `owned`. See also the 
+product kernel (or any kind of reduction) then skips the nodes that are not marked as `owned`. See also the
 [section on masks / flag fields](#flag-fields-and-masks).
 
 #### Assigning random values
@@ -408,24 +424,25 @@ and write that sum to all duplicated nodes.
 After a kernel has been executed, additive communication is performed using two buffers (send and recv) for
 each interface that a local subdomain has with another subdomain.
 The boundary data is written to the send buffer and sent to the receiver side (via MPI).
-After receiving the data from the other subdomains, that data is added from the recv buffers to the respective local 
-subdomains. 
+After receiving the data from the other subdomains, that data is added from the recv buffers to the respective local
+subdomains.
 Subdomain faces only have at most one interface with a different subdomain, whereas there can be more than one neighbor
 for edges and vertices of a subdomain.
 
 In some cases, the data has to be rotated in some way to match the nodes at the receiver side.
 The convention here is that data is packed without rotation and is properly rotated during unpacking.
 
-By coincidence, the subdomain structure of the thick spherical shell only ever requires a small subset of 
-rotations. Note that vertex-vertex interfaces require no rotation since only data of a single 
+By coincidence, the subdomain structure of the thick spherical shell only ever requires a small subset of
+rotations. Note that vertex-vertex interfaces require no rotation since only data of a single
 node is sent. Edge-edge interfaces only require checking for one rotation type (either we unpack forward, or backward).
 
-Face-face interfaces technically have a larger space of possible rotations. 
+Face-face interfaces technically have a larger space of possible rotations.
 Let's look at all cases to see why there are only a few types to consider:
 
 ##### Radial direction
 
 This is the simplest case because the iteration pattern is the same in x and y direction. So the pattern is
+
 ```
    send_data( local_subdomain_id_sender, x, y, FIXED_TOP_OR_BOTTOM )
 => buffer( x, y )
@@ -516,18 +533,18 @@ E.g.:
 
 While the number of rotations is small, deriving the neighborhood of a subdomain is a bit tricky for all types
 of interfaces.
-It depends on the boundary type, the subdomain index, and whether the subdomain boundary 
+It depends on the boundary type, the subdomain index, and whether the subdomain boundary
 is located at the boundary of a diamond.
-The logic is implemented in the \ref terra::grid::shell::SubdomainNeighborhood class and executed once during the 
+The logic is implemented in the \ref terra::grid::shell::SubdomainNeighborhood class and executed once during the
 construction (which is done in the \ref terra::grid::shell::DistributedDomain class).
 
------------
+\docsepsmall
 
 ### Flag fields and masks {#flag-fields-and-masks}
 
 🏗️
 
------------
+\docsepsmall
 
 ### Boundary conditions
 
@@ -592,7 +609,7 @@ by zeroing out the respective entries of the local element matrices.
 
 🏗️
 
------------
+\docsepsmall
 
 ### IO
 
@@ -610,7 +627,7 @@ by zeroing out the respective entries of the local element matrices.
 
 🏗️
 
-------------
+\docseplarge
 
 ## TODO
 

@@ -291,6 +291,8 @@ TAB_SIZE               = 4
 # @} or use a double escape (\\{ and \\})
 
 ALIASES                = KOKKOS_INLINE_FUNCTION="inline"
+ALIASES               += docsepsmall="<div style=\"text-align:center;\"><sub>◆</sub></div>"
+ALIASES               += docseplarge="<div style=\"text-align:center;\"><sub>◆◆</sub></div>"
 
 # Set the OPTIMIZE_OUTPUT_FOR_C tag to YES if your project consists of C sources
 # only. Doxygen will then generate output that is more tailored for C. For
