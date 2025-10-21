@@ -25,8 +25,9 @@ class Laplace
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 > grid_;
-    grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 >        grid_;
+    grid::Grid2DDataScalar< ScalarT >        radii_;
+    grid::Grid4DDataScalar< util::MaskType > mask_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -42,17 +43,19 @@ class Laplace
 
   public:
     Laplace(
-        const grid::shell::DistributedDomain&    domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarT >& radii,
-        bool                                     treat_boundary,
-        bool                                     diagonal,
-        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode        operator_communication_mode =
+        const grid::shell::DistributedDomain&           domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&        grid,
+        const grid::Grid2DDataScalar< ScalarT >&        radii,
+        const grid::Grid4DDataScalar< util::MaskType >& mask,
+        bool                                            treat_boundary,
+        bool                                            diagonal,
+        linalg::OperatorApplyMode                       operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode               operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
+    , mask_( mask )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
@@ -134,6 +137,11 @@ class Laplace
                 local_subdomain_id, x_cell + hex_offset_x[i], y_cell + hex_offset_y[i], r_cell + hex_offset_r[i] );
         }
 
+        const bool at_bot_boundary = util::check_bits(
+            mask_( local_subdomain_id, x_cell, y_cell, r_cell ), grid::shell::mask_domain_boundary_cmb() );
+        const bool at_top_boundary = util::check_bits(
+            mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), grid::shell::mask_domain_boundary_surface() );
+
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
             for ( int q = 0; q < num_quad_points; q++ )
@@ -159,12 +167,12 @@ class Laplace
                 {
                     diagonal( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else if ( treat_boundary_ && r_cell == 0 )
+                else if ( treat_boundary_ && at_bot_boundary )
                 {
                     // Bottom boundary dirichlet
                     dirichlet_bot( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else if ( treat_boundary_ && r_cell + 1 == radii_.extent( 1 ) - 1 )
+                else if ( treat_boundary_ && at_top_boundary )
                 {
                     // Top boundary dirichlet
                     dirichlet_top( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );

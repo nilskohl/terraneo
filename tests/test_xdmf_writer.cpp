@@ -109,12 +109,8 @@ int main( int argc, char** argv )
     constexpr double r_min                    = 0.5;
     constexpr double r_max                    = 1.0;
 
-    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain(
-        lateral_refinement_level,
-        radial_refinement_level,
-        r_min,
-        r_max,
-        terra::grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond(
+        lateral_refinement_level, radial_refinement_level, r_min, r_max );
 
     const auto subdomain_shell_coords =
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );
@@ -127,7 +123,7 @@ int main( int argc, char** argv )
     terra::linalg::VectorQ1Scalar< double > data_scalar( "scalar_data", domain, mask_data );
     terra::linalg::VectorQ1Vec< double >    data_vec( "vec_data", domain, mask_data );
 
-    terra::util::prepare_empty_directory_or_abort( "test_xdmf_writer_output" );
+    terra::util::prepare_empty_directory( "test_xdmf_writer_output" );
 
     terra::visualization::XDMFOutput xdmf( "test_xdmf_writer_output", subdomain_shell_coords, subdomain_radii );
     xdmf.add( data_scalar.grid_data() );

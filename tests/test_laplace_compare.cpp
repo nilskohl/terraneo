@@ -66,8 +66,7 @@ void test( int level, bool treat_boundary, bool diagonal )
 
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
     auto mask_data = linalg::setup_mask_data( domain );
 
@@ -89,7 +88,7 @@ void test( int level, bool treat_boundary, bool diagonal )
     using LaplaceB = fe::wedge::operators::shell::Laplace< ScalarType >;
 
     LaplaceA A( domain, coords_shell, coords_radii, treat_boundary, diagonal );
-    LaplaceB B( domain, coords_shell, coords_radii, treat_boundary, diagonal );
+    LaplaceB B( domain, coords_shell, coords_radii, mask_data, treat_boundary, diagonal );
 
     // Set up solution data.
     Kokkos::parallel_for(

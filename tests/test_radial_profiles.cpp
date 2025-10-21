@@ -68,8 +68,7 @@ void test( int level )
 {
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain(
-        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
     const auto coords_shell = grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );

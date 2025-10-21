@@ -233,9 +233,7 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
     {
         const int idx = level - min_level;
 
-        domains.push_back(
-            DistributedDomain::create_uniform_single_subdomain(
-                level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds ) );
+        domains.push_back( DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 ) );
         coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
         coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
         mask_data.push_back( linalg::setup_mask_data( domains[idx] ) );

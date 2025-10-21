@@ -84,47 +84,99 @@ constexpr int grid_data_vec_dim()
     return -1;
 }
 
+enum class BoundaryPosition : int
+{
+    P0 = 0, // start
+    P1 = 1, // end
+    PV = 2  // variable
+};
+
+constexpr int boundary_position_encoding( const BoundaryPosition x, const BoundaryPosition y, const BoundaryPosition r )
+{
+    return ( static_cast< int >( x ) << 4 ) | ( static_cast< int >( y ) << 2 ) | ( static_cast< int >( r ) << 0 );
+}
+
 enum class BoundaryVertex : int
 {
-    V_000 = 0, // (x=0, y=0, r=0)
-    V_100,
-    V_010,
-    V_110,
-    V_001,
-    V_101,
-    V_011,
-    V_111,
+    // (x=0, y=0, r=0)
+    V_000 = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::P0, BoundaryPosition::P0 ),
+    V_100 = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::P0, BoundaryPosition::P0 ),
+    V_010 = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::P1, BoundaryPosition::P0 ),
+    V_110 = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::P1, BoundaryPosition::P0 ),
+    V_001 = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::P0, BoundaryPosition::P1 ),
+    V_101 = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::P0, BoundaryPosition::P1 ),
+    V_011 = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::P1, BoundaryPosition::P1 ),
+    V_111 = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::P1, BoundaryPosition::P1 ),
 };
 
 enum class BoundaryEdge : int
 {
-    E_X00 = 0, // edge along x, y=0, r=0, (:, 0, 0) in slice notation
-    E_X10,
-    E_X01,
-    E_X11,
+    // edge along x, y=0, r=0, (:,BoundaryPosition::START,BoundaryPosition::START) in slice notation
+    E_X00 = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::P0, BoundaryPosition::P0 ),
+    E_X10 = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::P1, BoundaryPosition::P0 ),
+    E_X01 = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::P0, BoundaryPosition::P1 ),
+    E_X11 = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::P1, BoundaryPosition::P1 ),
 
-    E_0Y0, // (0, :, 0) in slice notation
-    E_1Y0,
-    E_0Y1,
-    E_1Y1,
+    // (0, :,BoundaryPosition::START) in slice notation
+    E_0Y0 = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::PV, BoundaryPosition::P0 ),
+    E_1Y0 = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::PV, BoundaryPosition::P0 ),
+    E_0Y1 = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::PV, BoundaryPosition::P1 ),
+    E_1Y1 = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::PV, BoundaryPosition::P1 ),
 
-    E_00R,
-    E_10R,
-    E_01R,
-    E_11R,
+    E_00R = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::P0, BoundaryPosition::PV ),
+    E_10R = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::P0, BoundaryPosition::PV ),
+    E_01R = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::P1, BoundaryPosition::PV ),
+    E_11R = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::P1, BoundaryPosition::PV ),
 };
 
 enum class BoundaryFace : int
 {
-    F_XY0 = 0, // facet orthogonal to r, r=0
-    F_XY1,
+    // facet orthogonal to r, r=0
+    F_XY0 = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::PV, BoundaryPosition::P0 ),
+    F_XY1 = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::PV, BoundaryPosition::P1 ),
 
-    F_X0R,
-    F_X1R,
+    F_X0R = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::P0, BoundaryPosition::PV ),
+    F_X1R = boundary_position_encoding( BoundaryPosition::PV, BoundaryPosition::P1, BoundaryPosition::PV ),
 
-    F_0YR,
-    F_1YR,
+    F_0YR = boundary_position_encoding( BoundaryPosition::P0, BoundaryPosition::PV, BoundaryPosition::PV ),
+    F_1YR = boundary_position_encoding( BoundaryPosition::P1, BoundaryPosition::PV, BoundaryPosition::PV ),
 };
+
+enum class BoundaryDirection : int
+{
+    FORWARD = 0,
+    BACKWARD
+};
+
+template < typename BoundaryType >
+constexpr BoundaryPosition boundary_position_from_boundary_type_x( const BoundaryType& boundary_type )
+{
+    static_assert(
+        std::is_same_v< BoundaryType, BoundaryVertex > || std::is_same_v< BoundaryType, BoundaryEdge > ||
+        std::is_same_v< BoundaryType, BoundaryFace > );
+
+    return static_cast< BoundaryPosition >( ( static_cast< int >( boundary_type ) & 0b110000 ) >> 4 );
+}
+
+template < typename BoundaryType >
+constexpr BoundaryPosition boundary_position_from_boundary_type_y( const BoundaryType& boundary_type )
+{
+    static_assert(
+        std::is_same_v< BoundaryType, BoundaryVertex > || std::is_same_v< BoundaryType, BoundaryEdge > ||
+        std::is_same_v< BoundaryType, BoundaryFace > );
+
+    return static_cast< BoundaryPosition >( ( static_cast< int >( boundary_type ) & 0b001100 ) >> 2 );
+}
+
+template < typename BoundaryType >
+constexpr BoundaryPosition boundary_position_from_boundary_type_r( const BoundaryType& boundary_type )
+{
+    static_assert(
+        std::is_same_v< BoundaryType, BoundaryVertex > || std::is_same_v< BoundaryType, BoundaryEdge > ||
+        std::is_same_v< BoundaryType, BoundaryFace > );
+
+    return static_cast< BoundaryPosition >( ( static_cast< int >( boundary_type ) & 0b000011 ) >> 0 );
+}
 
 constexpr bool is_edge_boundary_radial( const BoundaryEdge id )
 {
@@ -137,7 +189,16 @@ constexpr bool is_face_boundary_normal_to_radial_direction( const BoundaryFace i
     return id == BoundaryFace::F_XY0 || id == BoundaryFace::F_XY1;
 }
 
-constexpr std::array all_local_vertex_ids = {
+constexpr BoundaryVertex other_side_r( BoundaryVertex boundary_vertex )
+{
+    return static_cast< BoundaryVertex >( boundary_position_encoding(
+        boundary_position_from_boundary_type_x( boundary_vertex ),
+        boundary_position_from_boundary_type_y( boundary_vertex ),
+        boundary_position_from_boundary_type_r( boundary_vertex ) == BoundaryPosition::P0 ? BoundaryPosition::P1 :
+                                                                                            BoundaryPosition::P0 ) );
+}
+
+constexpr std::array all_boundary_vertices = {
     BoundaryVertex::V_000,
     BoundaryVertex::V_100,
     BoundaryVertex::V_010,
@@ -147,7 +208,7 @@ constexpr std::array all_local_vertex_ids = {
     BoundaryVertex::V_011,
     BoundaryVertex::V_111 };
 
-constexpr std::array all_local_edge_ids = {
+constexpr std::array all_boundary_edges = {
     BoundaryEdge::E_X00,
     BoundaryEdge::E_X10,
     BoundaryEdge::E_X01,
@@ -164,7 +225,7 @@ constexpr std::array all_local_edge_ids = {
     BoundaryEdge::E_11R,
 };
 
-constexpr std::array all_local_face_ids = {
+constexpr std::array all_boundary_faces = {
     BoundaryFace::F_XY0,
     BoundaryFace::F_XY1,
     BoundaryFace::F_X0R,

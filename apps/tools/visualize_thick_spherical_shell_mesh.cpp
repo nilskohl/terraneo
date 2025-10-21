@@ -26,8 +26,8 @@ struct Parameters
     int                   radial_refinement_level  = 2;
     std::vector< double > radii                    = { -1.0 };
 
-    int lateral_subdomains = 1;
-    int radial_subdomains  = 1;
+    int lateral_subdomain_level = 0;
+    int radial_subdomain_level  = 0;
 
     std::string output_directory = "visualize_thick_spherical_shell_mesh_output";
     bool        overwrite        = false;
@@ -63,6 +63,18 @@ int main( int argc, char** argv )
     add_option_with_default( app, "--radii", parameters.radii, "Explicit list of shell radii." )
         ->excludes( radial_level_option );
 
+    add_option_with_default(
+        app,
+        "--lateral-subdomain-level",
+        parameters.lateral_subdomain_level,
+        "Subdomain refinement level in lateral direction." );
+
+    add_option_with_default(
+        app,
+        "--radial-subdomain-level",
+        parameters.radial_subdomain_level,
+        "Subdomain refinement level in radial direction." );
+
     // Parse arguments (it's a simple macro that handles exceptions nicely).
     CLI11_PARSE( app, argc, argv );
 
@@ -92,10 +104,12 @@ int main( int argc, char** argv )
 
     logroot << std::endl;
 
-    const auto domain = terra::grid::shell::DistributedDomain::create_uniform_single_subdomain(
+    const auto domain = terra::grid::shell::DistributedDomain::create_uniform(
         parameters.lateral_refinement_level,
         parameters.radii,
-        terra::grid::shell::subdomain_to_rank_distribute_full_diamonds );
+        parameters.lateral_subdomain_level,
+        parameters.radial_subdomain_level,
+        terra::grid::shell::subdomain_to_rank_iterate_diamond_subdomains );
 
     const auto subdomain_shell_coords =
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );

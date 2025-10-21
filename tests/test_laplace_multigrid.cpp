@@ -150,8 +150,7 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
 
     for ( int level = 0; level <= max_level; level++ )
     {
-        auto domain = DistributedDomain::create_uniform_single_subdomain(
-            level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+        auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
         domains.push_back( domain );
 
         subdomain_shell_coords.push_back(
@@ -169,7 +168,7 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
             "tmp_smoothers_level_" + std::to_string( level ), domains[level], mask_data[level] );
         VectorQ1Scalar< ScalarType > inverse_diagonal(
             "inv_diag_level_" + std::to_string( level ), domains[level], mask_data[level] );
-        Laplace A_diag( domains[level], subdomain_shell_coords[level], subdomain_radii[level], true, true );
+        Laplace A_diag( domains[level], subdomain_shell_coords[level], subdomain_radii[level], mask_data[level], true, true );
         assign( tmp_smoother, 1.0 );
         apply( A_diag, tmp_smoother, inverse_diagonal );
 
@@ -192,7 +191,8 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
             tmp_r_c.emplace_back( "tmp_r_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
             tmp_e_c.emplace_back( "tmp_e_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
 
-            A_c.emplace_back( domains[level], subdomain_shell_coords[level], subdomain_radii[level], true, false );
+            A_c.emplace_back(
+                domains[level], subdomain_shell_coords[level], subdomain_radii[level], mask_data[level], true, false );
 
             if constexpr ( std::is_same_v<
                                Prolongation,
@@ -224,9 +224,11 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
     const auto num_dofs = kernels::common::count_masked< long >( mask_data.back(), grid::mask_owned() );
     std::cout << "num_dofs = " << num_dofs << std::endl;
 
-    Laplace A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), true, false );
-    Laplace A_neumann( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), false, false );
-    Laplace A_neumann_diag( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), false, true );
+    Laplace A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), mask_data.back(), true, false );
+    Laplace A_neumann(
+        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), mask_data.back(), false, false );
+    Laplace A_neumann_diag(
+        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), mask_data.back(), false, true );
 
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 

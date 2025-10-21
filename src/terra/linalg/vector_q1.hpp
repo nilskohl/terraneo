@@ -46,7 +46,10 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
         domain, tmp_data_for_global_subdomain_indices, send_buffers, recv_buffers );
 
     terra::communication::shell::unpack_and_reduce_local_subdomain_boundaries(
-        domain, tmp_data_for_global_subdomain_indices, recv_buffers, communication::shell::CommunicationReduction::MIN );
+        domain,
+        tmp_data_for_global_subdomain_indices,
+        recv_buffers,
+        communication::CommunicationReduction::MIN );
 
     // Set all nodes to 1 if the global_subdomain_id matches - 0 otherwise.
     for ( const auto& [subdomain_info, value] : domain.subdomains() )
@@ -56,7 +59,7 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
         const auto global_subdomain_id = subdomain_info.global_id();
 
         Kokkos::parallel_for(
-            "set_flags",
+            "set_node_owner_flags",
             Kokkos::MDRangePolicy(
                 { 0, 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ), mask_data.extent( 3 ) } ),
             KOKKOS_LAMBDA( const int x, const int y, const int r ) {
@@ -73,12 +76,9 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
         Kokkos::fence();
     }
 
-    if ( domain.domain_info().num_subdomains_in_radial_direction() != 1 )
-    {
-        throw std::runtime_error( "setup_mask_data: not implemented for more than one subdomain in radial direction" );
-    }
-
-    const int num_shells = domain.domain_info().subdomain_num_nodes_radially();
+    // Setting boundary flags.
+    // First set all nodes to inner.
+    // Then overwrite for outer and inner subdomains if the nodes are at the actual boundary.
 
     Kokkos::parallel_for(
         "set_boundary_flags",
@@ -86,19 +86,37 @@ inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::she
             { 0, 0, 0, 0 },
             { mask_data.extent( 0 ), mask_data.extent( 1 ), mask_data.extent( 2 ), mask_data.extent( 3 ) } ),
         KOKKOS_LAMBDA( const int local_subdomain_id, const int x, const int y, const int r ) {
-            if ( r == 0 )
-            {
-                util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_domain_boundary_cmb() );
-            }
-            else if ( r == num_shells - 1 )
-            {
-                util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_domain_boundary_surface() );
-            }
-            else
-            {
-                util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_domain_inner() );
-            }
+            util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_domain_inner() );
         } );
+
+    const int num_radial_subdomains = domain.domain_info().num_subdomains_in_radial_direction();
+
+    for ( const auto& [subdomain_info, data] : domain.subdomains() )
+    {
+        const auto& [local_subdomain_id, neighborhood] = data;
+
+        if ( subdomain_info.subdomain_r() == 0 )
+        {
+            Kokkos::parallel_for(
+                "set_boundary_flags",
+                Kokkos::MDRangePolicy( { 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ) } ),
+                KOKKOS_LAMBDA( const int x, const int y ) {
+                    util::set_bits( mask_data( local_subdomain_id, x, y, 0 ), grid::shell::mask_domain_boundary_cmb() );
+                } );
+        }
+
+        if ( subdomain_info.subdomain_r() == num_radial_subdomains - 1 )
+        {
+            Kokkos::parallel_for(
+                "set_boundary_flags",
+                Kokkos::MDRangePolicy( { 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ) } ),
+                KOKKOS_LAMBDA( const int x, const int y ) {
+                    util::set_bits(
+                        mask_data( local_subdomain_id, x, y, mask_data.extent( 3 ) - 1 ),
+                        grid::shell::mask_domain_boundary_surface() );
+                } );
+        }
+    }
 
     Kokkos::fence();
 

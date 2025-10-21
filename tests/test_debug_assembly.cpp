@@ -58,20 +58,20 @@ void test_laplace( int level )
 {
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
     auto mask_data = linalg::setup_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > u_src( "u_src", domain, mask_data );
     VectorQ1Scalar< ScalarType > u_dst( "u_dst", domain, mask_data );
 
-    const auto subdomain_shell_coords = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
-    const auto subdomain_radii        = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );
+    const auto subdomain_shell_coords =
+        terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
+    const auto subdomain_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );
 
     using Laplace = fe::wedge::operators::shell::Laplace< ScalarType >;
 
-    Laplace A( domain, subdomain_shell_coords, subdomain_radii, false, false );
+    Laplace A( domain, subdomain_shell_coords, subdomain_radii, mask_data, false, false );
 
     // First let's get the sparse matrix and vector
 
@@ -127,10 +127,9 @@ void test_prolongation( int level )
         throw std::runtime_error( "level must be >= 1" );
     }
 
-    const auto domain_fine = DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
-    const auto domain_coarse = DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level - 1, level - 1, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain_fine = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
+    const auto domain_coarse =
+        DistributedDomain::create_uniform_single_subdomain_per_diamond( level - 1, level - 1, 0.5, 1.0 );
 
     auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
     auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );

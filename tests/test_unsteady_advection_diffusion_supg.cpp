@@ -99,7 +99,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 {
     Kokkos::Timer timer;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain( level, level, 0.5, 1.0 );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
     auto mask_data = linalg::setup_mask_data( domain );
 
