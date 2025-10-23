@@ -73,7 +73,7 @@ void test( int level )
     const auto coords_shell = grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data = grid::setup_node_ownership_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > u( "u", domain, mask_data );
 

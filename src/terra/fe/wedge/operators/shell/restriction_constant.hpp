@@ -34,7 +34,7 @@ class RestrictionConstant
     grid::Grid4DDataScalar< ScalarType > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
 
-    grid::Grid4DDataScalar< util::MaskType > mask_src_;
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag > mask_src_;
 
   public:
     RestrictionConstant(
@@ -116,9 +116,9 @@ class RestrictionConstant
                     fine_stencil_x, fine_stencil_y, fine_stencil_r, x_coarse, y_coarse, r_coarse );
 
                 const auto mask_weight =
-                    util::check_bits(
+                    util::has_flag(
                         mask_src_( local_subdomain_id, fine_stencil_x, fine_stencil_y, fine_stencil_r ),
-                        grid::mask_owned() ) ?
+                        grid::NodeOwnershipFlag::OWNED ) ?
                         1.0 :
                         0.0;
 
@@ -149,7 +149,7 @@ class RestrictionVecConstant
     grid::Grid4DDataVec< ScalarType, VecDim > src_;
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
 
-    grid::Grid4DDataScalar< util::MaskType > mask_src_;
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag > mask_src_;
 
   public:
     RestrictionVecConstant(
@@ -231,9 +231,9 @@ class RestrictionVecConstant
                     fine_stencil_x, fine_stencil_y, fine_stencil_r, x_coarse, y_coarse, r_coarse );
 
                 const auto mask_weight =
-                    util::check_bits(
+                    util::has_flag(
                         mask_src_( local_subdomain_id, fine_stencil_x, fine_stencil_y, fine_stencil_r ),
-                        grid::mask_owned() ) ?
+                        grid::NodeOwnershipFlag::OWNED ) ?
                         1.0 :
                         0.0;
 

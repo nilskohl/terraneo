@@ -33,18 +33,18 @@ using linalg::VectorQ1Scalar;
 
 struct SolutionInterpolator
 {
-    Grid3DDataVec< double, 3 >         grid_;
-    Grid2DDataScalar< double >         radii_;
-    Grid4DDataScalar< double >         data_;
-    Grid4DDataScalar< util::MaskType > mask_;
-    bool                               only_boundary_;
+    Grid3DDataVec< double, 3 >                         grid_;
+    Grid2DDataScalar< double >                         radii_;
+    Grid4DDataScalar< double >                         data_;
+    Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
+    bool                                               only_boundary_;
 
     SolutionInterpolator(
-        const Grid3DDataVec< double, 3 >&         grid,
-        const Grid2DDataScalar< double >&         radii,
-        const Grid4DDataScalar< double >&         data,
-        const Grid4DDataScalar< util::MaskType >& mask,
-        bool                                      only_boundary )
+        const Grid3DDataVec< double, 3 >&                         grid,
+        const Grid2DDataScalar< double >&                         radii,
+        const Grid4DDataScalar< double >&                         data,
+        const Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
+        bool                                                      only_boundary )
     : grid_( grid )
     , radii_( radii )
     , data_( data )
@@ -60,7 +60,7 @@ struct SolutionInterpolator
         const double value = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
 
         const bool on_boundary =
-            util::check_bits( mask_( local_subdomain_id, x, y, r ), grid::shell::mask_domain_boundary() );
+            util::has_flag( mask_( local_subdomain_id, x, y, r ), grid::shell::ShellBoundaryFlag::BOUNDARY );
 
         if ( !only_boundary_ || on_boundary )
         {
@@ -103,7 +103,8 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
 
     const auto domain = DistributedDomain::create_uniform( level, level, 0.5, 1.0, level_subdomains, level_subdomains );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data          = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > u( "u", domain, mask_data );
     VectorQ1Scalar< ScalarType > g( "g", domain, mask_data );
@@ -114,7 +115,7 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
     VectorQ1Scalar< ScalarType > b( "b", domain, mask_data );
     VectorQ1Scalar< ScalarType > r( "r", domain, mask_data );
 
-    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::NodeOwnershipFlag::OWNED );
     logroot << "num_dofs = " << num_dofs << std::endl;
 
     const auto coords_shell = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
@@ -122,9 +123,9 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
 
     using Laplace = fe::wedge::operators::shell::Laplace< ScalarType >;
 
-    Laplace A( domain, coords_shell, coords_radii, mask_data, true, false );
-    Laplace A_neumann( domain, coords_shell, coords_radii, mask_data, false, false );
-    Laplace A_neumann_diag( domain, coords_shell, coords_radii, mask_data, false, true );
+    Laplace A( domain, coords_shell, coords_radii, boundary_mask_data, true, false );
+    Laplace A_neumann( domain, coords_shell, coords_radii, boundary_mask_data, false, false );
+    Laplace A_neumann_diag( domain, coords_shell, coords_radii, boundary_mask_data, false, true );
 
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 
@@ -134,7 +135,7 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
     Kokkos::parallel_for(
         "solution interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( coords_shell, coords_radii, solution.grid_data(), mask_data, false ) );
+        SolutionInterpolator( coords_shell, coords_radii, solution.grid_data(), boundary_mask_data, false ) );
 
     Kokkos::fence();
 
@@ -142,7 +143,7 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
     Kokkos::parallel_for(
         "boundary interpolation",
         local_domain_md_range_policy_nodes( domain ),
-        SolutionInterpolator( coords_shell, coords_radii, g.grid_data(), mask_data, true ) );
+        SolutionInterpolator( coords_shell, coords_radii, g.grid_data(), boundary_mask_data, true ) );
 
     Kokkos::fence();
 
@@ -157,7 +158,7 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
     linalg::apply( M, tmp, b );
 
     fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-        A_neumann, A_neumann_diag, g, tmp, b, mask_data, grid::shell::mask_domain_boundary() );
+        A_neumann, A_neumann_diag, g, tmp, b, boundary_mask_data, grid::shell::ShellBoundaryFlag::BOUNDARY );
 
     Kokkos::fence();
 

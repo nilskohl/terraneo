@@ -84,7 +84,7 @@ RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< Scal
             { 0, 0, 0, 0 },
             { data_grid.extent( 0 ), data_grid.extent( 1 ), data_grid.extent( 2 ), data_grid.extent( 3 ) } ),
         KOKKOS_LAMBDA( int local_subdomain_id, int x, int y, int r ) {
-            if ( util::check_bits( data_mask( local_subdomain_id, x, y, r ), grid::mask_non_owned() ) )
+            if ( !util::has_flag( data_mask( local_subdomain_id, x, y, r ), grid::NodeOwnershipFlag::OWNED ) )
             {
                 return;
             }

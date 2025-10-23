@@ -30,7 +30,6 @@ using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
-using util::MaskType;
 
 struct SolutionInterpolator
 {
@@ -79,7 +78,8 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
     const auto max_level = domain.domain_info().subdomain_max_refinement_level();
     std::cout << "Max level: " << max_level << std::endl;
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data          = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > T( "T", domain, mask_data );
     VectorQ1Scalar< ScalarType > T_prev( "T_prev", domain, mask_data );
@@ -160,7 +160,13 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
             SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), dt * ts, true ) );
 
         fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-            A_bdf1_neumann, A_bdf1_neumann_diag, g, tmps[1], f, mask_data, grid::shell::mask_domain_boundary() );
+            A_bdf1_neumann,
+            A_bdf1_neumann_diag,
+            g,
+            tmps[1],
+            f,
+            boundary_mask_data,
+            grid::shell::ShellBoundaryFlag::BOUNDARY );
 
         linalg::solvers::solve( bicgstab, A_bdf1, T, f );
 
@@ -203,7 +209,13 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
             SolutionInterpolator( subdomain_shell_coords, subdomain_radii, g.grid_data(), dt * ts, true ) );
 
         fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-            A_bdf2_neumann, A_bdf2_neumann_diag, g, tmps[1], f, mask_data, grid::shell::mask_domain_boundary() );
+            A_bdf2_neumann,
+            A_bdf2_neumann_diag,
+            g,
+            tmps[1],
+            f,
+            boundary_mask_data,
+            grid::shell::ShellBoundaryFlag::BOUNDARY );
 
         linalg::solvers::solve( bicgstab, A_bdf2, T, f );
 

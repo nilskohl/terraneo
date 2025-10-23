@@ -125,21 +125,21 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using ScalarType = double;
 
-    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level, level, 0.5, 1.0 );
+    const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto ownership_mask_data = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data  = grid::shell::setup_boundary_mask_data( domain );
 
-    VectorQ1Vec< ScalarType > u( "u", domain, mask_data );
-    VectorQ1Vec< ScalarType > g( "g", domain, mask_data );
-    VectorQ1Vec< ScalarType > Adiagg( "Adiagg", domain, mask_data );
-    VectorQ1Vec< ScalarType > tmp( "tmp", domain, mask_data );
-    VectorQ1Vec< ScalarType > solution( "solution", domain, mask_data );
-    VectorQ1Vec< ScalarType > error( "error", domain, mask_data );
-    VectorQ1Vec< ScalarType > b( "b", domain, mask_data );
-    VectorQ1Vec< ScalarType > r( "r", domain, mask_data );
+    VectorQ1Vec< ScalarType > u( "u", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > g( "g", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > Adiagg( "Adiagg", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > tmp( "tmp", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > solution( "solution", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > error( "error", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > b( "b", domain, ownership_mask_data );
+    VectorQ1Vec< ScalarType > r( "r", domain, ownership_mask_data );
 
-    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
+    const auto num_dofs = kernels::common::count_masked< long >( ownership_mask_data, grid::NodeOwnershipFlag::OWNED );
 
     const auto subdomain_shell_coords =
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );

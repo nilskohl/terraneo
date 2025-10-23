@@ -77,7 +77,7 @@ void test( int level, bool treat_boundary, bool diagonal )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data = grid::setup_node_ownership_mask_data( domain );
 
     VectorQ1Vec< ScalarType > src( "src", domain, mask_data );
     VectorQ1Vec< ScalarType > dst_a( "dst_a", domain, mask_data );
@@ -88,7 +88,7 @@ void test( int level, bool treat_boundary, bool diagonal )
     VectorQ1Vec< ScalarType > error_c( "error_c", domain, mask_data );
     VectorQ1Vec< ScalarType > error_d( "error_d", domain, mask_data );
 
-    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::NodeOwnershipFlag::OWNED );
 
     const auto coords_shell = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );

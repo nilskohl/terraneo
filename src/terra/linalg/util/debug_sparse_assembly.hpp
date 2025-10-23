@@ -22,7 +22,7 @@ Eigen::SparseVector< ScalarType > debug_sparse_assembly_vector_vec_q1_scalar( co
         throw std::runtime_error( "debug_sparse_assembly_vector_vec_q1_scalar: vec must be on host space" );
     }
 
-    const auto rows = kernels::common::count_masked< long >( vec.mask_data(), grid::mask_owned() );
+    const auto rows = kernels::common::count_masked< long >( vec.mask_data(), grid::NodeOwnershipFlag::OWNED );
 
     Eigen::SparseVector< ScalarType > result( rows );
 
@@ -36,7 +36,8 @@ Eigen::SparseVector< ScalarType > debug_sparse_assembly_vector_vec_q1_scalar( co
             {
                 for ( int idx_3 = 0; idx_3 < vec.grid_data().extent( 3 ); ++idx_3 )
                 {
-                    if ( !terra::util::check_bits( vec.mask_data()( idx_0, idx_1, idx_2, idx_3 ), grid::mask_owned() ) )
+                    if ( !terra::util::has_flag(
+                             vec.mask_data()( idx_0, idx_1, idx_2, idx_3 ), grid::NodeOwnershipFlag::OWNED ) )
                     {
                         continue;
                     }
@@ -87,8 +88,8 @@ Eigen::SparseMatrix< double > debug_sparse_assembly_operator_vec_q1_scalar(
         throw std::runtime_error( "debug_sparse_assembly_vec_q1_scalar: tmp_src must be on host space" );
     }
 
-    const auto rows = kernels::common::count_masked< long >( tmp_dst.mask_data(), grid::mask_owned() );
-    const auto cols = kernels::common::count_masked< long >( tmp_src.mask_data(), grid::mask_owned() );
+    const auto rows = kernels::common::count_masked< long >( tmp_dst.mask_data(), grid::NodeOwnershipFlag::OWNED );
+    const auto cols = kernels::common::count_masked< long >( tmp_src.mask_data(), grid::NodeOwnershipFlag::OWNED );
 
     Eigen::SparseMatrix< double > mat( rows, cols );
 
@@ -104,8 +105,8 @@ Eigen::SparseMatrix< double > debug_sparse_assembly_operator_vec_q1_scalar(
             {
                 for ( int idx_3 = 0; idx_3 < tmp_src.grid_data().extent( 3 ); ++idx_3 )
                 {
-                    if ( !terra::util::check_bits(
-                             tmp_src.mask_data()( idx_0, idx_1, idx_2, idx_3 ), grid::mask_owned() ) )
+                    if ( !terra::util::has_flag(
+                             tmp_src.mask_data()( idx_0, idx_1, idx_2, idx_3 ), grid::NodeOwnershipFlag::OWNED ) )
                     {
                         continue;
                     }
@@ -128,9 +129,9 @@ Eigen::SparseMatrix< double > debug_sparse_assembly_operator_vec_q1_scalar(
                             {
                                 for ( int iidx_3 = 0; iidx_3 < tmp_dst.grid_data().extent( 3 ); ++iidx_3 )
                                 {
-                                    if ( !terra::util::check_bits(
+                                    if ( !terra::util::has_flag(
                                              tmp_dst.mask_data()( iidx_0, iidx_1, iidx_2, iidx_3 ),
-                                             grid::mask_owned() ) )
+                                             grid::NodeOwnershipFlag::OWNED ) )
                                     {
                                         continue;
                                     }

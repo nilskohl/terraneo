@@ -45,8 +45,8 @@ void test_constant( int level )
     const auto domain_coarse =
         DistributedDomain::create_uniform_single_subdomain_per_diamond( level - 1, level - 1, 0.5, 1.0 );
 
-    auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
-    auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
+    auto mask_data_fine   = grid::setup_node_ownership_mask_data( domain_fine );
+    auto mask_data_coarse = grid::setup_node_ownership_mask_data( domain_coarse );
 
     VectorQ1Scalar< ScalarType > u_coarse( "u_coarse", domain_coarse, mask_data_coarse );
     VectorQ1Scalar< ScalarType > u_fine( "u_fine", domain_fine, mask_data_fine );
@@ -99,8 +99,8 @@ void test_linear( int level )
     const auto domain_coarse =
         DistributedDomain::create_uniform_single_subdomain_per_diamond( level - 1, level - 1, 0.5, 1.0 );
 
-    auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
-    auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
+    auto mask_data_fine   = grid::setup_node_ownership_mask_data( domain_fine );
+    auto mask_data_coarse = grid::setup_node_ownership_mask_data( domain_coarse );
 
     VectorQ1Scalar< ScalarType > u_coarse( "u_coarse", domain_coarse, mask_data_coarse );
     VectorQ1Scalar< ScalarType > u_fine( "u_fine", domain_fine, mask_data_fine );

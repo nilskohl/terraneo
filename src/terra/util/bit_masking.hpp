@@ -7,50 +7,49 @@
 
 namespace terra::util {
 
-using MaskType = unsigned char;
+/// @concept FlagLike
+/// @brief Concept for types that behave like bitmask flags.
+///
+/// This concept checks if a type `E` is an enum with an unsigned integral underlying type,
+/// has a `NO_FLAG` value equal to 0, and supports bitwise OR (`|`) and AND (`&`) operations.
+/// @tparam E The enum type to check.
+template < typename E >
+concept FlagLike = std::is_enum_v< E > && std::unsigned_integral< std::underlying_type_t< E > > &&
+                   ( static_cast< std::underlying_type_t< E > >( E::NO_FLAG ) == 0 );
 
-struct MaskAndValue
+template < FlagLike E >
+KOKKOS_INLINE_FUNCTION constexpr E operator|( E a, E b )
 {
-    const MaskType mask;
-    const MaskType value;
+    using T = std::underlying_type_t< E >;
+    return static_cast< E >( static_cast< T >( a ) | static_cast< T >( b ) );
+}
 
-    [[nodiscard]] MaskAndValue combine( const MaskAndValue other ) const
+template < FlagLike E >
+KOKKOS_INLINE_FUNCTION constexpr E operator&( E a, E b )
+{
+    using T = std::underlying_type_t< E >;
+    return static_cast< E >( static_cast< T >( a ) & static_cast< T >( b ) );
+}
+
+/// @brief Checks if a bitmask value contains a specific flag.
+///
+/// This function checks if the bitmask value `mask_value` has the flag `flag` set.
+/// If `flag` is `E::NO_FLAG`, it checks if `mask_value` is also `E::NO_FLAG`.
+/// @tparam E The enum type representing the bitmask.
+/// @param mask_value The bitmask value to check.
+/// @param flag The flag to check for in `mask_value`.
+/// @return `true` if `mask_value` contains `flag`, otherwise `false`.
+template < FlagLike E >
+KOKKOS_INLINE_FUNCTION constexpr bool has_flag( E mask_value, E flag ) noexcept
+{
+    using U = std::underlying_type_t< E >;
+
+    if ( flag == E::NO_FLAG )
     {
-        if ( ( mask & other.mask ) != 0 )
-        {
-            Kokkos::abort( "Masks are overlapping and cannot be combined safely." );
-        }
-        const MaskType combined_mask  = mask | other.mask;
-        const MaskType combined_value = value | other.value;
-        return { combined_mask, combined_value };
+        return mask_value == E::NO_FLAG;
     }
-};
 
-template < std::unsigned_integral ValueType, std::unsigned_integral MaskT >
-KOKKOS_INLINE_FUNCTION constexpr void set_bits( ValueType& value, MaskT mask, MaskT masked_field_value )
-{
-    // Clear the bits in the mask, then set the masked value
-    static_assert( sizeof( ValueType ) >= sizeof( MaskT ) );
-    value = ( value & ~mask ) | ( masked_field_value & mask );
-}
-
-template < std::unsigned_integral ValueType >
-KOKKOS_INLINE_FUNCTION constexpr void set_bits( ValueType& value, const MaskAndValue& mask_and_value )
-{
-    set_bits( value, mask_and_value.mask, mask_and_value.value );
-}
-
-template < std::unsigned_integral ValueType, std::unsigned_integral MaskT >
-KOKKOS_INLINE_FUNCTION constexpr bool check_bits( ValueType value, MaskT mask, MaskT expected_masked_value )
-{
-    static_assert( sizeof( ValueType ) >= sizeof( MaskT ) );
-    return ( value & mask ) == ( expected_masked_value & mask );
-}
-
-template < std::unsigned_integral ValueType >
-KOKKOS_INLINE_FUNCTION constexpr bool check_bits( ValueType& value, const MaskAndValue& mask_and_value )
-{
-    return check_bits( value, mask_and_value.mask, mask_and_value.value );
+    return static_cast< U >( mask_value & flag ) == static_cast< U >( flag );
 }
 
 } // namespace terra::util

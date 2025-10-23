@@ -60,7 +60,8 @@ void test_laplace( int level )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data          = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > u_src( "u_src", domain, mask_data );
     VectorQ1Scalar< ScalarType > u_dst( "u_dst", domain, mask_data );
@@ -71,7 +72,7 @@ void test_laplace( int level )
 
     using Laplace = fe::wedge::operators::shell::Laplace< ScalarType >;
 
-    Laplace A( domain, subdomain_shell_coords, subdomain_radii, mask_data, false, false );
+    Laplace A( domain, subdomain_shell_coords, subdomain_radii, boundary_mask_data, false, false );
 
     // First let's get the sparse matrix and vector
 
@@ -131,8 +132,8 @@ void test_prolongation( int level )
     const auto domain_coarse =
         DistributedDomain::create_uniform_single_subdomain_per_diamond( level - 1, level - 1, 0.5, 1.0 );
 
-    auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
-    auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
+    auto mask_data_fine   = grid::setup_node_ownership_mask_data( domain_fine );
+    auto mask_data_coarse = grid::setup_node_ownership_mask_data( domain_coarse );
 
     VectorQ1Scalar< ScalarType > u_coarse( "u_coarse", domain_coarse, mask_data_coarse );
     VectorQ1Scalar< ScalarType > u_fine( "u_fine", domain_fine, mask_data_fine );

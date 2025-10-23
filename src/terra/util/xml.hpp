@@ -2,13 +2,13 @@
 
 #pragma once
 
-namespace terra::util {
-
 #include <map>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace terra::util {
 
 class XML
 {

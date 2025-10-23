@@ -38,15 +38,15 @@ namespace terra::fe {
 ///    We still have \f$ \mathrm{diag}(A) = \mathrm{diag}(A_\text{elim}) \f$ .
 /// 7. \f$ x \f$ is the solution of the original problem. No boundary correction should be necessary.
 ///
-template < typename ScalarType, linalg::OperatorLike OperatorType >
+template < typename ScalarType, linalg::OperatorLike OperatorType, typename FlagType >
 void strong_algebraic_dirichlet_enforcement_poisson_like(
-    OperatorType&                                   A_neumann,
-    OperatorType&                                   A_neumann_diag,
-    const linalg::VectorQ1Scalar< ScalarType >&     g,
-    linalg::VectorQ1Scalar< ScalarType >&           tmp,
-    linalg::VectorQ1Scalar< ScalarType >&           b,
-    const grid::Grid4DDataScalar< util::MaskType >& mask_data,
-    const util::MaskAndValue&                       dirichlet_boundary_mask )
+    OperatorType&                               A_neumann,
+    OperatorType&                               A_neumann_diag,
+    const linalg::VectorQ1Scalar< ScalarType >& g,
+    linalg::VectorQ1Scalar< ScalarType >&       tmp,
+    linalg::VectorQ1Scalar< ScalarType >&       b,
+    const grid::Grid4DDataScalar< FlagType >&   mask_data,
+    const FlagType&                             dirichlet_boundary_mask )
 {
     // g_A <- A * g
     linalg::apply( A_neumann, g, tmp );
@@ -64,26 +64,26 @@ void strong_algebraic_dirichlet_enforcement_poisson_like(
 /// @brief Same as strong_algebraic_dirichlet_enforcement_poisson_like() for homogenous boundary conditions (\f$ g = 0 \f$).
 ///
 /// Does not require most of the steps since \f$ g = g_A = g_D = 0 \f$. Still requires solving \f$ A_\text{elim} x = b_elim \f$after this.
-template < typename ScalarType >
+template < typename ScalarType, util::FlagLike FlagType >
 void strong_algebraic_homogeneous_dirichlet_enforcement_poisson_like(
-    linalg::VectorQ1Scalar< ScalarType >&           b,
-    const grid::Grid4DDataScalar< util::MaskType >& mask_data,
-    const util::MaskAndValue&                       dirichlet_boundary_mask )
+    linalg::VectorQ1Scalar< ScalarType >&     b,
+    const grid::Grid4DDataScalar< FlagType >& mask_data,
+    const FlagType&                           dirichlet_boundary_mask )
 {
     // b_elim <- 0 on the Dirichlet boundary
     kernels::common::assign_masked_else_keep_old( b.grid_data(), 0.0, mask_data, dirichlet_boundary_mask );
 }
 
 /// @brief Same as strong_algebraic_dirichlet_enforcement_poisson_like() for Stokes-like systems (with strong enforcement of velocity boundary conditions).
-template < typename ScalarType, linalg::OperatorLike OperatorType >
+template < typename ScalarType, linalg::OperatorLike OperatorType, util::FlagLike FlagType >
 void strong_algebraic_velocity_dirichlet_enforcement_stokes_like(
-    OperatorType&                                   K_neumann,
-    OperatorType&                                   K_neumann_diag,
-    const linalg::VectorQ1IsoQ2Q1< ScalarType >&    g,
-    linalg::VectorQ1IsoQ2Q1< ScalarType >&          tmp,
-    linalg::VectorQ1IsoQ2Q1< ScalarType >&          b,
-    const grid::Grid4DDataScalar< util::MaskType >& mask_data,
-    const util::MaskAndValue&                       dirichlet_boundary_mask )
+    OperatorType&                                K_neumann,
+    OperatorType&                                K_neumann_diag,
+    const linalg::VectorQ1IsoQ2Q1< ScalarType >& g,
+    linalg::VectorQ1IsoQ2Q1< ScalarType >&       tmp,
+    linalg::VectorQ1IsoQ2Q1< ScalarType >&       b,
+    const grid::Grid4DDataScalar< FlagType >&    mask_data,
+    const FlagType&                              dirichlet_boundary_mask )
 {
     // g_A <- A * g
     linalg::apply( K_neumann, g, tmp );
@@ -100,11 +100,11 @@ void strong_algebraic_velocity_dirichlet_enforcement_stokes_like(
 }
 
 /// @brief Same as strong_algebraic_homogeneous_dirichlet_enforcement_poisson_like() for Stokes-like systems (with strong enforcement of zero velocity boundary conditions).
-template < typename ScalarType >
+template < typename ScalarType, util::FlagLike FlagType >
 void strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
-    linalg::VectorQ1IsoQ2Q1< ScalarType >&          b,
-    const grid::Grid4DDataScalar< util::MaskType >& mask_data,
-    const util::MaskAndValue&                       dirichlet_boundary_mask )
+    linalg::VectorQ1IsoQ2Q1< ScalarType >&    b,
+    const grid::Grid4DDataScalar< FlagType >& mask_data,
+    const FlagType&                           dirichlet_boundary_mask )
 {
     // b_elim <- g_D on the Dirichlet boundary
     kernels::common::assign_masked_else_keep_old(

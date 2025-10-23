@@ -10,7 +10,6 @@
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
-#include "shell/boundary_flags.hpp"
 
 namespace terra::fe::wedge::operators::shell {
 
@@ -28,10 +27,10 @@ class BoundaryMass
     grid::Grid3DDataVec< ScalarT, 3 > grid_;
     grid::Grid2DDataScalar< ScalarT > radii_;
 
-    grid::Grid4DDataScalar< util::MaskType > mask_;
+    grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
 
-    terra::shell::BoundaryFlag boundary_flag_;
-    ScalarT                    zeta_boundary_;
+    grid::shell::ShellBoundaryFlag boundary_flag_;
+    ScalarT                         zeta_boundary_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
@@ -44,20 +43,20 @@ class BoundaryMass
 
   public:
     BoundaryMass(
-        const grid::shell::DistributedDomain&           domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >&        grid,
-        const grid::Grid2DDataScalar< ScalarT >&        radii,
-        const grid::Grid4DDataScalar< util::MaskType >& mask,
-        const terra::shell::BoundaryFlag                boundary_flag,
-        linalg::OperatorApplyMode                       operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode               operator_communication_mode =
+        const grid::shell::DistributedDomain&                            domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                         grid,
+        const grid::Grid2DDataScalar< ScalarT >&                         radii,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
+        const grid::shell::ShellBoundaryFlag                            boundary_flag,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
     , mask_( mask )
     , boundary_flag_( boundary_flag )
-    , zeta_boundary_( boundary_flag == terra::shell::BoundaryFlag::Inner ? -1.0 : 1.0 )
+    , zeta_boundary_( boundary_flag == grid::shell::ShellBoundaryFlag::CMB ? -1.0 : 1.0 )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
@@ -80,7 +79,7 @@ class BoundaryMass
         src_ = src.grid_data();
         dst_ = dst.grid_data();
 
-        if ( boundary_flag_ == terra::shell::BoundaryFlag::Inner )
+        if ( boundary_flag_ == grid::shell::ShellBoundaryFlag::CMB )
         {
             Kokkos::parallel_for(
                 "matvec",
@@ -92,7 +91,7 @@ class BoundaryMass
                       1 } ),
                 *this );
         }
-        else if ( boundary_flag_ == terra::shell::BoundaryFlag::Outer )
+        else if ( boundary_flag_ == grid::shell::ShellBoundaryFlag::SURFACE )
         {
             Kokkos::parallel_for(
                 "matvec",

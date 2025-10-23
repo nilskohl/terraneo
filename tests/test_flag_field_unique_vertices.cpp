@@ -24,7 +24,7 @@ void test( const int level, const int subdomain_level )
     const auto domain = terra::grid::shell::DistributedDomain::create_uniform(
         level, level, 0.5, 1.0, subdomain_level, subdomain_level );
 
-    auto mask_data = terra::linalg::setup_mask_data( domain );
+    auto mask_data = terra::grid::setup_node_ownership_mask_data( domain );
 
     auto coords_lat = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );
     auto coords_rad = terra::grid::shell::subdomain_shell_radii< double >( domain );
@@ -37,7 +37,8 @@ void test( const int level, const int subdomain_level )
     auto mask_data_long = terra::grid::shell::allocate_scalar_grid< long >( "mask_data_long", domain );
     terra::kernels::common::set_constant( ones, 1l );
     terra::kernels::common::set_constant( ones_comm, 1.0 );
-    terra::kernels::common::assign_masked_else_keep_old( mask_data_long, ones, mask_data, terra::grid::mask_owned() );
+    terra::kernels::common::assign_masked_else_keep_old(
+        mask_data_long, ones, mask_data, terra::grid::NodeOwnershipFlag::OWNED );
 
     const auto number_of_nodes_mask = terra::kernels::common::sum_of_absolutes( mask_data_long );
 

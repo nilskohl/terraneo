@@ -224,10 +224,11 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
     // Set up domains for all levels.
 
-    std::vector< DistributedDomain >                  domains;
-    std::vector< Grid3DDataVec< double, 3 > >         coords_shell;
-    std::vector< Grid2DDataScalar< double > >         coords_radii;
-    std::vector< Grid4DDataScalar< util::MaskType > > mask_data;
+    std::vector< DistributedDomain >                                  domains;
+    std::vector< Grid3DDataVec< double, 3 > >                         coords_shell;
+    std::vector< Grid2DDataScalar< double > >                         coords_radii;
+    std::vector< Grid4DDataScalar< grid::NodeOwnershipFlag > >        mask_data;
+    std::vector< Grid4DDataScalar< grid::shell::ShellBoundaryFlag > > boundary_mask_data;
 
     for ( int level = min_level; level <= max_level; level++ )
     {
@@ -236,7 +237,8 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
         domains.push_back( DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 ) );
         coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
         coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
-        mask_data.push_back( linalg::setup_mask_data( domains[idx] ) );
+        mask_data.push_back( grid::setup_node_ownership_mask_data( domains[idx] ) );
+        boundary_mask_data.push_back( grid::shell::setup_boundary_mask_data( domains[idx] ) );
     }
 
     const auto num_levels     = domains.size();
@@ -288,9 +290,9 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
     // Counting DoFs.
 
     const auto num_dofs_velocity =
-        3 * kernels::common::count_masked< long >( mask_data[num_levels - 1], grid::mask_owned() );
+        3 * kernels::common::count_masked< long >( mask_data[num_levels - 1], grid::NodeOwnershipFlag::OWNED );
     const auto num_dofs_pressure =
-        kernels::common::count_masked< long >( mask_data[num_levels - 2], grid::mask_owned() );
+        kernels::common::count_masked< long >( mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
 
     // Set up operators.
 
@@ -405,8 +407,8 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
         stok_vecs["tmp_0"],
         stok_vecs["tmp_1"],
         stok_vecs["f"],
-        mask_data[velocity_level],
-        grid::shell::mask_domain_boundary() );
+        boundary_mask_data[velocity_level],
+        grid::shell::ShellBoundaryFlag::BOUNDARY );
 
     // Set up solvers.
 
@@ -465,10 +467,11 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
     const double avg_pressure_solution =
         kernels::common::masked_sum(
-            solution.block_2().grid_data(), solution.block_2().mask_data(), grid::mask_owned() ) /
+            solution.block_2().grid_data(), solution.block_2().mask_data(), grid::NodeOwnershipFlag::OWNED ) /
         num_dofs_pressure;
     const double avg_pressure_approximation =
-        kernels::common::masked_sum( u.block_2().grid_data(), u.block_2().mask_data(), grid::mask_owned() ) /
+        kernels::common::masked_sum(
+            u.block_2().grid_data(), u.block_2().mask_data(), grid::NodeOwnershipFlag::OWNED ) /
         num_dofs_pressure;
 
     linalg::lincomb( solution.block_2(), { 1.0 }, { solution.block_2() }, -avg_pressure_solution );

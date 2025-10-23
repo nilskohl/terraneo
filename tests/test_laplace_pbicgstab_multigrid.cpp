@@ -134,7 +134,8 @@ double
     std::vector< Grid3DDataVec< ScalarType, 3 > > subdomain_shell_coords;
     std::vector< Grid2DDataScalar< ScalarType > > subdomain_radii;
 
-    std::vector< Grid4DDataScalar< util::MaskType > > mask_data;
+    std::vector< Grid4DDataScalar< grid::NodeOwnershipFlag > >        mask_data;
+    std::vector< Grid4DDataScalar< grid::shell::ShellBoundaryFlag > > boundary_mask_data;
 
     std::vector< VectorQ1Scalar< ScalarType > > tmp_r_c;
     std::vector< VectorQ1Scalar< ScalarType > > tmp_e_c;
@@ -159,7 +160,8 @@ double
             terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain ) );
         subdomain_radii.push_back( terra::grid::shell::subdomain_shell_radii< ScalarType >( domain ) );
 
-        mask_data.push_back( linalg::setup_mask_data( domain ) );
+        mask_data.push_back( grid::setup_node_ownership_mask_data( domain ) );
+        boundary_mask_data.push_back( grid::shell::setup_boundary_mask_data( domain ) );
     }
 
     for ( int level = min_level; level <= max_level; level++ )
@@ -171,7 +173,12 @@ double
         VectorQ1Scalar< ScalarType > inverse_diagonal(
             "inv_diag_level_" + std::to_string( level ), domains[level], mask_data[level] );
         Laplace A_diag(
-            domains[level], subdomain_shell_coords[level], subdomain_radii[level], mask_data[level], true, true );
+            domains[level],
+            subdomain_shell_coords[level],
+            subdomain_radii[level],
+            boundary_mask_data[level],
+            true,
+            true );
         assign( tmp_smoother, 1.0 );
         apply( A_diag, tmp_smoother, inverse_diagonal );
 
@@ -195,7 +202,12 @@ double
             tmp_e_c.emplace_back( "tmp_e_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
 
             A_c.emplace_back(
-                domains[level], subdomain_shell_coords[level], subdomain_radii[level], mask_data[level], true, false );
+                domains[level],
+                subdomain_shell_coords[level],
+                subdomain_radii[level],
+                boundary_mask_data[level],
+                true,
+                false );
 
             if constexpr ( std::is_same_v<
                                Prolongation,
@@ -232,14 +244,20 @@ double
     VectorQ1Scalar< ScalarType > solution( "solution", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > error( "error", domains.back(), mask_data.back() );
 
-    const auto num_dofs = kernels::common::count_masked< long >( mask_data.back(), grid::mask_owned() );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data.back(), grid::NodeOwnershipFlag::OWNED );
     std::cout << "num_dofs = " << num_dofs << std::endl;
 
-    Laplace A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), mask_data.back(), true, false );
+    Laplace A(
+        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), boundary_mask_data.back(), true, false );
     Laplace A_neumann(
-        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), mask_data.back(), false, false );
+        domains.back(),
+        subdomain_shell_coords.back(),
+        subdomain_radii.back(),
+        boundary_mask_data.back(),
+        false,
+        false );
     Laplace A_neumann_diag(
-        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), mask_data.back(), false, true );
+        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), boundary_mask_data.back(), false, true );
 
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 
@@ -275,7 +293,7 @@ double
     Kokkos::fence();
 
     fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-        A_neumann, A_neumann_diag, u, error, f, mask_data.back(), grid::shell::mask_domain_boundary() );
+        A_neumann, A_neumann_diag, u, error, f, boundary_mask_data.back(), grid::shell::ShellBoundaryFlag::BOUNDARY );
 
     assign( u, 0.0 );
     assign( error, 0.0 );

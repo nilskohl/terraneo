@@ -37,11 +37,11 @@ class VectorQ1IsoQ2Q1
     /// @param mask_data_fine Mask data for the vector block.
     /// @param mask_data_coarse Mask data for the scalar block.
     VectorQ1IsoQ2Q1(
-        const std::string&                              label,
-        const grid::shell::DistributedDomain&           distributed_domain_fine,
-        const grid::shell::DistributedDomain&           distributed_domain_coarse,
-        const grid::Grid4DDataScalar< util::MaskType >& mask_data_fine,
-        const grid::Grid4DDataScalar< util::MaskType >& mask_data_coarse )
+        const std::string&                                       label,
+        const grid::shell::DistributedDomain&                    distributed_domain_fine,
+        const grid::shell::DistributedDomain&                    distributed_domain_coarse,
+        const grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data_fine,
+        const grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data_coarse )
     : u_( label + "_u", distributed_domain_fine, mask_data_fine )
     , p_( label + "_p", distributed_domain_coarse, mask_data_coarse )
     {}

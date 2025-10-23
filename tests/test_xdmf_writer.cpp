@@ -116,7 +116,7 @@ int main( int argc, char** argv )
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );
     const auto subdomain_radii = terra::grid::shell::subdomain_shell_radii< double >( domain );
 
-    auto mask_data = terra::linalg::setup_mask_data( domain );
+    auto mask_data = terra::grid::setup_node_ownership_mask_data( domain );
 
     auto rank = terra::grid::shell::allocate_scalar_grid< double >( "rank_data", domain );
 

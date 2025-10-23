@@ -101,7 +101,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data = grid::setup_node_ownership_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > T( "T", domain, mask_data );
     VectorQ1Scalar< ScalarType > f( "f", domain, mask_data );
@@ -113,7 +113,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
         tmps.emplace_back( "tmpp", domain, mask_data );
     }
 
-    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::NodeOwnershipFlag::OWNED );
     std::cout << "Number of dofs: " << num_dofs << std::endl;
 
     const auto subdomain_shell_coords =

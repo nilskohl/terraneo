@@ -226,8 +226,8 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain_coarse );
     const auto subdomain_coarse_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain_coarse );
 
-    auto mask_data_fine   = linalg::setup_mask_data( domain_fine );
-    auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
+    auto mask_data_fine   = grid::setup_node_ownership_mask_data( domain_fine );
+    auto mask_data_coarse = grid::setup_node_ownership_mask_data( domain_coarse );
 
     // K w = b
 
@@ -248,8 +248,10 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
     VectorQ1IsoQ2Q1< ScalarType > tmp_5( "tmp_5", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
     VectorQ1IsoQ2Q1< ScalarType > tmp_6( "tmp_6", domain_fine, domain_coarse, mask_data_fine, mask_data_coarse );
 
-    const auto num_dofs_velocity = 3 * kernels::common::count_masked< long >( mask_data_fine, grid::mask_owned() );
-    const auto num_dofs_pressure = kernels::common::count_masked< long >( mask_data_coarse, grid::mask_owned() );
+    const auto num_dofs_velocity =
+        3 * kernels::common::count_masked< long >( mask_data_fine, grid::NodeOwnershipFlag::OWNED );
+    const auto num_dofs_pressure =
+        kernels::common::count_masked< long >( mask_data_coarse, grid::NodeOwnershipFlag::OWNED );
 
     using Stokes = fe::wedge::operators::shell::Stokes< ScalarType >;
 
@@ -312,10 +314,11 @@ std::pair< double, double > test( int level, const std::shared_ptr< util::Table 
 
     const double avg_pressure_solution =
         kernels::common::masked_sum(
-            solution.block_2().grid_data(), solution.block_2().mask_data(), grid::mask_owned() ) /
+            solution.block_2().grid_data(), solution.block_2().mask_data(), grid::NodeOwnershipFlag::OWNED ) /
         num_dofs_pressure;
     const double avg_pressure_approximation =
-        kernels::common::masked_sum( w.block_2().grid_data(), w.block_2().mask_data(), grid::mask_owned() ) /
+        kernels::common::masked_sum(
+            w.block_2().grid_data(), w.block_2().mask_data(), grid::NodeOwnershipFlag::OWNED ) /
         num_dofs_pressure;
 
     linalg::lincomb( solution.block_2(), { 1.0 }, { solution.block_2() }, -avg_pressure_solution );

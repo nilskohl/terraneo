@@ -144,7 +144,8 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto mask_data          = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
 
     VectorQ1Scalar< ScalarType > u( "u", domain, mask_data );
     VectorQ1Scalar< ScalarType > g( "g", domain, mask_data );
@@ -156,7 +157,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     VectorQ1Scalar< ScalarType > r( "r", domain, mask_data );
     VectorQ1Scalar< ScalarType > k( "k", domain, mask_data );
 
-    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
+    const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::NodeOwnershipFlag::OWNED );
 
     const auto coords_shell = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );
@@ -206,7 +207,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     linalg::apply( M, tmp, b );
 
     fe::strong_algebraic_dirichlet_enforcement_poisson_like(
-        A_neumann, A_neumann_diag, g, tmp, b, mask_data, grid::shell::mask_domain_boundary() );
+        A_neumann, A_neumann_diag, g, tmp, b, boundary_mask_data, grid::shell::ShellBoundaryFlag::BOUNDARY );
 
     Kokkos::fence();
 

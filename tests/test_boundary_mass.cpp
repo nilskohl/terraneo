@@ -30,7 +30,7 @@ struct SurfaceData
     ScalarType error;
 };
 
-SurfaceData test( int level, shell::BoundaryFlag boundary_flag )
+SurfaceData test( int level, grid::shell::ShellBoundaryFlag boundary_flag )
 {
     constexpr ScalarType r_inner = 0.5;
     constexpr ScalarType r_outer = 1.0;
@@ -38,19 +38,20 @@ SurfaceData test( int level, shell::BoundaryFlag boundary_flag )
     const auto domain =
         DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, r_inner, r_outer );
 
-    auto mask_data = linalg::setup_mask_data( domain );
+    auto ownership_mask_data = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data  = grid::shell::setup_boundary_mask_data( domain );
 
-    VectorQ1Scalar< ScalarType > ones( "ones", domain, mask_data );
-    VectorQ1Scalar< ScalarType > dst( "dst", domain, mask_data );
+    VectorQ1Scalar< ScalarType > ones( "ones", domain, ownership_mask_data );
+    VectorQ1Scalar< ScalarType > dst( "dst", domain, ownership_mask_data );
 
     const auto coords_shell = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );
 
-    const auto r_boundary = boundary_flag == shell::BoundaryFlag::Inner ? r_inner : r_outer;
+    const auto r_boundary = boundary_flag == grid::shell::ShellBoundaryFlag::CMB ? r_inner : r_outer;
 
     using BoundaryMass = fe::wedge::operators::shell::BoundaryMass< ScalarType >;
 
-    BoundaryMass M( domain, coords_shell, coords_radii, mask_data, boundary_flag );
+    BoundaryMass M( domain, coords_shell, coords_radii, boundary_mask_data, boundary_flag );
 
     assign( ones, 1.0 );
 
@@ -58,12 +59,8 @@ SurfaceData test( int level, shell::BoundaryFlag boundary_flag )
 
     const auto analytical_surface = 4.0 * Kokkos::numbers::pi * r_boundary * r_boundary;
 
-    const auto boundary_mask = boundary_flag == shell::BoundaryFlag::Inner ?
-                                   grid::shell::mask_domain_boundary_cmb() :
-                                   grid::shell::mask_domain_boundary_surface();
-
-    const auto surface =
-        kernels::common::masked_sum( dst.grid_data(), mask_data, boundary_mask.combine( grid::mask_owned() ) );
+    const auto surface = kernels::common::masked_sum(
+        dst.grid_data(), ownership_mask_data, boundary_mask_data, grid::NodeOwnershipFlag::OWNED, boundary_flag );
 
     const auto error = std::abs( surface - analytical_surface );
 
@@ -74,7 +71,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    for ( auto boundary_flag : { shell::BoundaryFlag::Inner, shell::BoundaryFlag::Outer } )
+    for ( auto boundary_flag : { grid::shell::ShellBoundaryFlag::CMB, grid::shell::ShellBoundaryFlag::SURFACE } )
     {
         double prev_error = 1.0;
         for ( int level = 0; level < 8; ++level )

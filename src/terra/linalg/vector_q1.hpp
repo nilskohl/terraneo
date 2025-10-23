@@ -10,116 +10,6 @@
 
 namespace terra::linalg {
 
-/// @brief Set up mask data for a distributed shell domain.
-/// The mask encodes ownership and boundary information for each grid node.
-/// @param domain Distributed shell domain.
-/// @return Mask data grid.
-inline grid::Grid4DDataScalar< util::MaskType > setup_mask_data( const grid::shell::DistributedDomain& domain )
-{
-    grid::Grid4DDataScalar< util::MaskType > mask_data =
-        grid::shell::allocate_scalar_grid< util::MaskType >( "mask_data", domain );
-
-    auto tmp_data_for_global_subdomain_indices =
-        grid::shell::allocate_scalar_grid< int64_t >( "tmp_data_for_global_subdomain_indices", domain );
-
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< int64_t > send_buffers( domain );
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< int64_t > recv_buffers( domain );
-
-    // Interpolate the unique subdomain ID.
-    for ( const auto& [subdomain_info, value] : domain.subdomains() )
-    {
-        const auto& [local_subdomain_id, neighborhood] = value;
-
-        const auto global_subdomain_id = subdomain_info.global_id();
-
-        Kokkos::parallel_for(
-            "set_global_subdomain_id",
-            Kokkos::MDRangePolicy(
-                { 0, 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ), mask_data.extent( 3 ) } ),
-            KOKKOS_LAMBDA( const int x, const int y, const int r ) {
-                tmp_data_for_global_subdomain_indices( local_subdomain_id, x, y, r ) = global_subdomain_id;
-            } );
-    }
-
-    // Communicate and reduce with minimum.
-    terra::communication::shell::pack_send_and_recv_local_subdomain_boundaries(
-        domain, tmp_data_for_global_subdomain_indices, send_buffers, recv_buffers );
-
-    terra::communication::shell::unpack_and_reduce_local_subdomain_boundaries(
-        domain, tmp_data_for_global_subdomain_indices, recv_buffers, communication::CommunicationReduction::MIN );
-
-    // Set all nodes to 1 if the global_subdomain_id matches - 0 otherwise.
-    for ( const auto& [subdomain_info, value] : domain.subdomains() )
-    {
-        const auto& [local_subdomain_id, neighborhood] = value;
-
-        const auto global_subdomain_id = subdomain_info.global_id();
-
-        Kokkos::parallel_for(
-            "set_node_owner_flags",
-            Kokkos::MDRangePolicy(
-                { 0, 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ), mask_data.extent( 3 ) } ),
-            KOKKOS_LAMBDA( const int x, const int y, const int r ) {
-                if ( tmp_data_for_global_subdomain_indices( local_subdomain_id, x, y, r ) == global_subdomain_id )
-                {
-                    util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::mask_owned() );
-                }
-                else
-                {
-                    util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::mask_non_owned() );
-                }
-            } );
-
-        Kokkos::fence();
-    }
-
-    // Setting boundary flags.
-    // First set all nodes to inner.
-    // Then overwrite for outer and inner subdomains if the nodes are at the actual boundary.
-
-    Kokkos::parallel_for(
-        "set_boundary_flags",
-        Kokkos::MDRangePolicy(
-            { 0, 0, 0, 0 },
-            { mask_data.extent( 0 ), mask_data.extent( 1 ), mask_data.extent( 2 ), mask_data.extent( 3 ) } ),
-        KOKKOS_LAMBDA( const int local_subdomain_id, const int x, const int y, const int r ) {
-            util::set_bits( mask_data( local_subdomain_id, x, y, r ), grid::shell::mask_domain_inner() );
-        } );
-
-    const int num_radial_subdomains = domain.domain_info().num_subdomains_in_radial_direction();
-
-    for ( const auto& [subdomain_info, data] : domain.subdomains() )
-    {
-        const auto& [local_subdomain_id, neighborhood] = data;
-
-        if ( subdomain_info.subdomain_r() == 0 )
-        {
-            Kokkos::parallel_for(
-                "set_boundary_flags",
-                Kokkos::MDRangePolicy( { 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ) } ),
-                KOKKOS_LAMBDA( const int x, const int y ) {
-                    util::set_bits( mask_data( local_subdomain_id, x, y, 0 ), grid::shell::mask_domain_boundary_cmb() );
-                } );
-        }
-
-        if ( subdomain_info.subdomain_r() == num_radial_subdomains - 1 )
-        {
-            Kokkos::parallel_for(
-                "set_boundary_flags",
-                Kokkos::MDRangePolicy( { 0, 0 }, { mask_data.extent( 1 ), mask_data.extent( 2 ) } ),
-                KOKKOS_LAMBDA( const int x, const int y ) {
-                    util::set_bits(
-                        mask_data( local_subdomain_id, x, y, mask_data.extent( 3 ) - 1 ),
-                        grid::shell::mask_domain_boundary_surface() );
-                } );
-        }
-    }
-
-    Kokkos::fence();
-
-    return mask_data;
-}
-
 /// @brief Q1 scalar finite element vector on a distributed shell grid.
 ///
 /// Same layout as required for tensor-product wedge elements.
@@ -141,9 +31,9 @@ class VectorQ1Scalar
     /// @param distributed_domain Distributed shell domain.
     /// @param mask_data Mask data grid.
     VectorQ1Scalar(
-        const std::string&                              label,
-        const grid::shell::DistributedDomain&           distributed_domain,
-        const grid::Grid4DDataScalar< util::MaskType >& mask_data )
+        const std::string&                                       label,
+        const grid::shell::DistributedDomain&                    distributed_domain,
+        const grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data )
     : mask_data_( mask_data )
     {
         grid::Grid4DDataScalar< ScalarType > grid_data(
@@ -204,7 +94,8 @@ class VectorQ1Scalar
     /// @return Dot product value.
     ScalarType dot_impl( const VectorQ1Scalar& x ) const
     {
-        return kernels::common::masked_dot_product( grid_data_, x.grid_data(), mask_data(), grid::mask_owned() );
+        return kernels::common::masked_dot_product(
+            grid_data_, x.grid_data(), mask_data(), grid::NodeOwnershipFlag::OWNED );
     }
 
     /// @brief Invert entries implementation for VectorLike concept.
@@ -248,13 +139,13 @@ class VectorQ1Scalar
     grid::Grid4DDataScalar< ScalarType >& grid_data() { return grid_data_; }
 
     /// @brief Get const reference to mask data.
-    const grid::Grid4DDataScalar< util::MaskType >& mask_data() const { return mask_data_; }
+    const grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data() const { return mask_data_; }
     /// @brief Get mutable reference to mask data.
-    grid::Grid4DDataScalar< util::MaskType >& mask_data() { return mask_data_; }
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data() { return mask_data_; }
 
   private:
-    grid::Grid4DDataScalar< ScalarType >     grid_data_;
-    grid::Grid4DDataScalar< util::MaskType > mask_data_;
+    grid::Grid4DDataScalar< ScalarType >              grid_data_;
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag > mask_data_;
 };
 
 /// @brief Static assertion: VectorQ1Scalar satisfies VectorLike concept.
@@ -278,9 +169,9 @@ class VectorQ1Vec
     /// @param distributed_domain Distributed shell domain.
     /// @param mask_data Mask data grid.
     VectorQ1Vec(
-        const std::string&                              label,
-        const grid::shell::DistributedDomain&           distributed_domain,
-        const grid::Grid4DDataScalar< util::MaskType >& mask_data )
+        const std::string&                                       label,
+        const grid::shell::DistributedDomain&                    distributed_domain,
+        const grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data )
     : mask_data_( mask_data )
     {
         grid::Grid4DDataVec< ScalarType, VecDim > grid_data(
@@ -346,7 +237,8 @@ class VectorQ1Vec
     /// @return Dot product value.
     ScalarType dot_impl( const VectorQ1Vec& x ) const
     {
-        return kernels::common::masked_dot_product( grid_data_, x.grid_data(), mask_data_, grid::mask_owned() );
+        return kernels::common::masked_dot_product(
+            grid_data_, x.grid_data(), mask_data_, grid::NodeOwnershipFlag::OWNED );
     }
 
     /// @brief Invert entries implementation for VectorLike concept.
@@ -390,13 +282,13 @@ class VectorQ1Vec
     grid::Grid4DDataVec< ScalarType, VecDim >& grid_data() { return grid_data_; }
 
     /// @brief Get const reference to mask data.
-    const grid::Grid4DDataScalar< util::MaskType >& mask_data() const { return mask_data_; }
+    const grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data() const { return mask_data_; }
     /// @brief Get mutable reference to mask data.
-    grid::Grid4DDataScalar< util::MaskType >& mask_data() { return mask_data_; }
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag >& mask_data() { return mask_data_; }
 
   private:
-    grid::Grid4DDataVec< ScalarType, VecDim > grid_data_;
-    grid::Grid4DDataScalar< util::MaskType >  mask_data_;
+    grid::Grid4DDataVec< ScalarType, VecDim >         grid_data_;
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag > mask_data_;
 };
 
 /// @brief Static assertion: VectorQ1Vec satisfies VectorLike concept.

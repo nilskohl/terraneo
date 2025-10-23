@@ -35,7 +35,7 @@ class RestrictionLinear
     grid::Grid4DDataScalar< ScalarType > src_;
     grid::Grid4DDataScalar< ScalarType > dst_;
 
-    grid::Grid4DDataScalar< util::MaskType > mask_src_;
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag > mask_src_;
 
   public:
     RestrictionLinear(
@@ -112,7 +112,7 @@ class RestrictionLinear
         operator()( const int local_subdomain_id, const int x_fine, const int y_fine, const int r_fine ) const
     {
         // Only pushing from owned nodes.
-        if ( util::check_bits( mask_src_( local_subdomain_id, x_fine, y_fine, r_fine ), grid::mask_non_owned() ) )
+        if ( util::has_flag( mask_src_( local_subdomain_id, x_fine, y_fine, r_fine ), grid::NodeOwnershipFlag::OWNED ) )
         {
             return;
         }
