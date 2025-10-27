@@ -3,6 +3,7 @@
 
 #include "../kokkos/kokkos_wrapper.hpp"
 #include "../types.hpp"
+#include "dense/mat.hpp"
 
 namespace terra::grid {
 
@@ -37,6 +38,10 @@ using Grid3DDataVec = Kokkos::View< ScalarType*** [VecDim], Layout >;
 
 template < typename ScalarType, int VecDim >
 using Grid4DDataVec = Kokkos::View< ScalarType**** [VecDim], Layout >;
+
+template < typename ScalarType >
+using Grid4DDataLMatrices = Kokkos::View< dense::Mat< ScalarType, 6, 6 >****[2], Layout >;
+
 
 template < typename GridDataType >
 constexpr int grid_data_vec_dim()
