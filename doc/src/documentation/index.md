@@ -123,7 +123,7 @@ terraneox/
   the solver, but it is very likely))
 - [ ] Galerkin coarsening
 - [ ] iterative refinement
-- [ ] spherical harmonics helper
+- [x] spherical harmonics helper
 - [ ] radial profiles loader
 - [ ] checkpoints (re-use XDMF bin files!)
 - [ ] return unmanaged views from SubdomainNeighborhoodSendRecvBuffer that point to contiguous memory per rank, add
