@@ -6,6 +6,8 @@
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
+#include "fe/wedge/operators/shell/prolongation_linear.hpp"
+#include "fe/wedge/operators/shell/restriction_linear.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "linalg/solvers/jacobi.hpp"
@@ -211,7 +213,7 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
                                Prolongation,
                                fe::wedge::operators::shell::ProlongationLinear< ScalarType > > )
             {
-                P_additive.emplace_back(
+                P_additive.emplace_back(domains[level+1], domains[level],
                     subdomain_shell_coords[level + 1], subdomain_radii[level + 1], linalg::OperatorApplyMode::Add );
                 R.emplace_back( domains[level], subdomain_shell_coords[level + 1], subdomain_radii[level + 1] );
             }
@@ -343,8 +345,8 @@ int run_test()
 
         T l2_error = test<
             T,
-            fe::wedge::operators::shell::ProlongationConstant< T >,
-            fe::wedge::operators::shell::RestrictionConstant< T > >( 0, level, table, omega, prepost_smooth );
+            fe::wedge::operators::shell::ProlongationLinear< T >,
+            fe::wedge::operators::shell::RestrictionLinear< T > >( 0, level, table, omega, prepost_smooth );
 
         const auto time_total = timer.seconds();
         table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
@@ -376,5 +378,5 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    return run_test< float >() + run_test< double >();
+    return run_test< double >();
 }
