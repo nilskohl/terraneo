@@ -112,7 +112,7 @@ class RestrictionLinear
         operator()( const int local_subdomain_id, const int x_fine, const int y_fine, const int r_fine ) const
     {
         // Only pushing from owned nodes.
-        if ( util::has_flag( mask_src_( local_subdomain_id, x_fine, y_fine, r_fine ), grid::NodeOwnershipFlag::OWNED ) )
+        if ( !util::has_flag( mask_src_( local_subdomain_id, x_fine, y_fine, r_fine ), grid::NodeOwnershipFlag::OWNED ) )
         {
             return;
         }
