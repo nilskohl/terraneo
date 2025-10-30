@@ -124,8 +124,8 @@ class ProlongationLinear
 
     /// @brief Computes indices of vertices associated to a wedge in a hex cell.
     /// @param coarse_hex_idx  [in] global index of the hex cell
-    /// @param wedge  [in] coarse wedge index (local index 0 or 1)
-    /// @param wedge_local_vertex_indices  [out] global indices of the vertices located on the fine wedge
+    /// @param wedge  [in] wedge index (local index 0 or 1)
+    /// @param wedge_local_vertex_indices  [out] global indices of the vertices located on the wedge
     KOKKOS_INLINE_FUNCTION void wedge_vertex_indices(
         dense::Vec< int, 4 > hex_idx,
         int                  wedge,
