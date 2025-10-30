@@ -113,10 +113,16 @@ class ProlongationLinear
             "matvec",
             Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
                 { 0, 0, 0, 0 },
-                { static_cast< long long >( domain_coarse_.subdomains().size() ),
-                  domain_coarse_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
-                  domain_coarse_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
-                  domain_coarse_.domain_info().subdomain_num_nodes_radially() - 1 } ),
+                //  { static_cast< long long >( domain_coarse_.subdomains().size() ),
+                //    domain_coarse_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+                //    domain_coarse_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+                //    domain_coarse_.domain_info().subdomain_num_nodes_radially() - 1 } ),
+                {
+                    dst_.extent( 0 ),
+                    dst_.extent( 1 ),
+                    dst_.extent( 2 ),
+                    dst_.extent( 3 ),
+                } ),
             *this );
 
         Kokkos::fence();
@@ -165,10 +171,9 @@ class ProlongationLinear
             { 0, 1, 1, 1 },
         };
 
-        if ( false )
+        if ( true )
         {
             dense::Vec< int, 4 > fine_hex_idx = { local_subdomain_id, x_idx, y_idx, r_idx };
-            std::cout << "fine_hex_idx = " << fine_hex_idx << std::endl;
 
             if ( x_idx % 2 == 0 && y_idx % 2 == 0 && r_idx % 2 == 0 )
             {
@@ -498,7 +503,7 @@ class ProlongationLinear
                                 dst( 5 );
                         }
 
-                        if ( false )
+                        /*if ( false )
                         {
                             std::cout << "coarse_hex_idx:" << coarse_hex_idx << std::endl;
                             std::cout << "fine_hex_idx:" << fine_hex_idx << std::endl;
@@ -506,7 +511,7 @@ class ProlongationLinear
                             std::cout << "src: " << src << std::endl;
                             std::cout << "P: " << P << std::endl;
                             std::cout << "dst: " << dst << std::endl;
-                        }
+                        }*/
                     }
                 }
             }
