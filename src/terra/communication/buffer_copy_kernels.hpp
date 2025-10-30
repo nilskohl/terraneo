@@ -1,7 +1,6 @@
 #pragma once
 
 #include "grid/grid_types.hpp"
-#include "terra/mpi/mpi.hpp"
 
 namespace terra::communication {
 
