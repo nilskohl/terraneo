@@ -30,7 +30,6 @@ struct Parameters
     int radial_subdomain_level  = 0;
 
     std::string output_directory = "visualize_thick_spherical_shell_mesh_output";
-    bool        overwrite        = false;
 };
 
 int main( int argc, char** argv )
@@ -45,8 +44,6 @@ int main( int argc, char** argv )
     Parameters parameters{};
 
     add_option_with_default( app, "--output-dir", parameters.output_directory, "XDMF output directory." );
-
-    add_flag_with_default( app, "--overwrite", parameters.overwrite, "Overwrites output." );
 
     add_option_with_default(
         app,
@@ -115,7 +112,7 @@ int main( int argc, char** argv )
         terra::grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );
     const auto subdomain_radii = terra::grid::shell::subdomain_shell_radii< double >( domain );
 
-    auto mask_data = terra::linalg::setup_mask_data( domain );
+    auto mask_data = terra::grid::setup_node_ownership_mask_data( domain );
 
     auto grid_rank               = terra::grid::shell::allocate_scalar_grid< double >( "rank", domain );
     auto grid_diamond_id         = terra::grid::shell::allocate_scalar_grid< double >( "diamond_id", domain );
@@ -151,12 +148,6 @@ int main( int argc, char** argv )
         KOKKOS_LAMBDA( int local_subdomain_idx, int x, int y, int r ) {
             grid_local_subdomain_id( local_subdomain_idx, x, y, r ) = local_subdomain_idx;
         } );
-
-    const auto success = terra::util::prepare_empty_directory( parameters.output_directory );
-    if ( !parameters.overwrite and !success )
-    {
-        Kokkos::abort( "Failed to prepare empty directory." );
-    }
 
     terra::visualization::XDMFOutput xdmf( parameters.output_directory, subdomain_shell_coords, subdomain_radii );
 

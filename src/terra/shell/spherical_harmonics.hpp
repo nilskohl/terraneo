@@ -314,6 +314,7 @@ grid::Grid3DDataScalar< ScalarTypeCoeff > spherical_harmonics_coefficients_grid(
         coords_shell.extent( 2 ) );
 
     auto sph_coeffs_host = Kokkos::create_mirror_view( Kokkos::HostSpace{}, sph_coeffs );
+    auto coords_shell_host = Kokkos::create_mirror_view( Kokkos::HostSpace{}, coords_shell );
 
     SphericalHarmonicsTool sph_tool( degree_l );
 
@@ -324,9 +325,9 @@ grid::Grid3DDataScalar< ScalarTypeCoeff > spherical_harmonics_coefficients_grid(
         {
             for ( int j = 0; j < sph_coeffs.extent( 2 ); ++j )
             {
-                const auto x                                = coords_shell( local_subdomain_id, i, j, 0 );
-                const auto y                                = coords_shell( local_subdomain_id, i, j, 1 );
-                const auto z                                = coords_shell( local_subdomain_id, i, j, 2 );
+                const auto x                                = coords_shell_host( local_subdomain_id, i, j, 0 );
+                const auto y                                = coords_shell_host( local_subdomain_id, i, j, 1 );
+                const auto z                                = coords_shell_host( local_subdomain_id, i, j, 2 );
                 const auto coeff                            = sph_tool.shconvert_eval( degree_l, order_m, x, y, z );
                 sph_coeffs_host( local_subdomain_id, i, j ) = coeff;
             }

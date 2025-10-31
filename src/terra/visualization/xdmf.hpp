@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "mpi/mpi.hpp"
+#include "util/filesystem.hpp"
 #include "util/xml.hpp"
 
 namespace terra::visualization {
@@ -147,6 +148,8 @@ class XDMFOutput
     void write()
     {
         using util::XML;
+
+        util::prepare_empty_directory( directory_path_ );
 
         const auto geometry_file_base = "geometry.bin";
         const auto topology_file_base = "topology.bin";
