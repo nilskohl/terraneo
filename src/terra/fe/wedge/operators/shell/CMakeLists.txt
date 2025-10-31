@@ -17,5 +17,7 @@ target_sources(terra
         epsilon.hpp
         epsilon_divdiv.hpp
         epsilon_divdiv_stokes.hpp
-        zero.hpp)
+        zero.hpp
+        galerkin_coarsening_linear.hpp
+        )
 

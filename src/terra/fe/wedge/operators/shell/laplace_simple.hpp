@@ -18,17 +18,17 @@ template < typename ScalarT >
 class LaplaceSimple
 {
   public:
-    using SrcVectorType = linalg::VectorQ1Scalar< ScalarT >;
-    using DstVectorType = linalg::VectorQ1Scalar< ScalarT >;
-    using ScalarType    = ScalarT;
-    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices<ScalarType, 6, 6, 2>;
+    using SrcVectorType           = linalg::VectorQ1Scalar< ScalarT >;
+    using DstVectorType           = linalg::VectorQ1Scalar< ScalarT >;
+    using ScalarType              = ScalarT;
+    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, 6, 6, 2 >;
 
   private:
     bool storeLMatrices_ =
         false; // set to let apply_impl() know, that it should store the local matrices after assembling them
     bool applyStoredLMatrices_ =
         false; // set to make apply_impl() load and use the stored LMatrices for the operator application
-    Grid4DDataLocalMatrices LMatrices_;
+    Grid4DDataLocalMatrices lmatrices_;
 
     grid::shell::DistributedDomain domain_;
 
@@ -69,25 +69,49 @@ class LaplaceSimple
     , recv_buffers_( domain )
     {}
 
-     /// @brief Setter/Getter for app applyStoredLMatrices_: usage of stored local matrices during apply
+    /// @brief Getter for domain member
+    grid::shell::DistributedDomain& get_domain() { return domain_; }
+
+    /// @brief Getter for radii member
+    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+
+    /// @brief Getter for grid member
+    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    KOKKOS_INLINE_FUNCTION
+
+
+    /// @brief Retrives the local matrix stored in the operator
+    dense::Mat< ScalarT, 6, 6 >& get_lmatrix(
+        const int local_subdomain_id,
+        const int x_cell,
+        const int y_cell,
+        const int r_cell,
+        const int wedge )
+    {
+        assert( lmatrices_.data() != nullptr );
+         
+        return lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge );
+    }
+
+    /// @brief Setter/Getter for app applyStoredLMatrices_: usage of stored local matrices during apply
     void setApplyStoredLMatrices( bool v ) { applyStoredLMatrices_ = v; }
 
     /// @brief
     /// allocates memory for the local matrices
     /// calls kernel with storeLMatrices_ = true to assemble and store the local matrices
     /// sets applyStoredLMatrices_, such that future applies use the stored local matrices
-    void storeLMatrices()
+    void store_lmatrices()
     {
         storeLMatrices_ = true;
-        if ( LMatrices_.data() == nullptr )
+        if ( lmatrices_.data() == nullptr )
         {
-            LMatrices_ = Grid4DDataLocalMatrices(
-                "LaplaceSimple::LMatrices",
+            lmatrices_ = Grid4DDataLocalMatrices(
+                "LaplaceSimple::lmatrices_",
                 domain_.subdomains().size(),
-                domain_.domain_info().subdomain_num_nodes_per_side_laterally(),
-                domain_.domain_info().subdomain_num_nodes_per_side_laterally(),
-                domain_.domain_info().subdomain_num_nodes_radially() );
-            Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );    
+                domain_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+                domain_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+                domain_.domain_info().subdomain_num_nodes_radially() - 1 );
+            Kokkos::parallel_for( "assemble_store_lmatrices", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
             Kokkos::fence();
         }
         storeLMatrices_       = false;
@@ -97,7 +121,7 @@ class LaplaceSimple
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
         if ( storeLMatrices_ or applyStoredLMatrices_ )
-            assert( LMatrices_.data() != nullptr );
+            assert( lmatrices_.data() != nullptr );
 
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
@@ -227,15 +251,15 @@ class LaplaceSimple
         else
         {
             // load LMatrix for both local wedges
-            A[0] = LMatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
-            A[1] = LMatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+            A[0] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+            A[1] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
         }
 
         if ( storeLMatrices_ )
         {
             // write local matrices to mem
-            LMatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) = A[0];
-            LMatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) = A[1];
+            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) = A[0];
+            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) = A[1];
         }
         else
         {

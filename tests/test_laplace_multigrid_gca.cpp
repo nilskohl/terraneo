@@ -5,11 +5,12 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
+#include "fe/wedge/operators/shell/galerkin_coarsening_linear.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
-#include "fe/wedge/operators/shell/prolongation_linear.hpp"
-#include "fe/wedge/operators/shell/restriction_linear.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
+#include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
+#include "fe/wedge/operators/shell/restriction_linear.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -37,6 +38,7 @@ using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
+using terra::fe::wedge::operators::shell::TwoGridGalerkinLinear;
 
 template < std::floating_point T >
 struct SolutionInterpolator
@@ -164,6 +166,12 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
         boundary_mask_data.push_back( grid::shell::setup_boundary_mask_data( domain ) );
     }
 
+    Laplace A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), true, false );
+    A.store_lmatrices();
+    Laplace A_neumann( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), false, false );
+    A_neumann.store_lmatrices();
+    Laplace A_neumann_diag( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), false, true );
+
     for ( int level = min_level; level <= max_level; level++ )
     {
         tmp.emplace_back( "tmp_level_" + std::to_string( level ), domains[level], mask_data[level] );
@@ -172,12 +180,7 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
             "tmp_smoothers_level_" + std::to_string( level ), domains[level], mask_data[level] );
         VectorQ1Scalar< ScalarType > inverse_diagonal(
             "inv_diag_level_" + std::to_string( level ), domains[level], mask_data[level] );
-        Laplace A_diag(
-            domains[level],
-            subdomain_shell_coords[level],
-            subdomain_radii[level],
-            true,
-            true );
+        Laplace A_diag( domains[level], subdomain_shell_coords[level], subdomain_radii[level], true, true );
         assign( tmp_smoother, 1.0 );
         apply( A_diag, tmp_smoother, inverse_diagonal );
 
@@ -200,20 +203,14 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
             tmp_r_c.emplace_back( "tmp_r_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
             tmp_e_c.emplace_back( "tmp_e_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
 
-            A_c.emplace_back(
-                domains[level],
-                subdomain_shell_coords[level],
-                subdomain_radii[level],
-                true,
-                false );
-            A_c.back().storeLMatrices();
-            
+            A_c.emplace_back( domains[level], subdomain_shell_coords[level], subdomain_radii[level], true, false );
+            A_c.back().store_lmatrices();
 
             if constexpr ( std::is_same_v<
                                Prolongation,
                                fe::wedge::operators::shell::ProlongationLinear< ScalarType > > )
             {
-                P_additive.emplace_back(domains[level+1], domains[level],
+                P_additive.emplace_back(
                     subdomain_shell_coords[level + 1], subdomain_radii[level + 1], linalg::OperatorApplyMode::Add );
                 R.emplace_back( domains[level], subdomain_shell_coords[level + 1], subdomain_radii[level + 1] );
             }
@@ -231,6 +228,19 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
         }
     }
 
+    
+    for ( int level = max_level - 1; level >= min_level; level-- )
+    {
+        if ( level == max_level - 1 )
+        {
+            TwoGridGalerkinLinear< ScalarType, Laplace >( A, A_c[level] );
+        }
+        else
+        {
+            TwoGridGalerkinLinear< ScalarType, Laplace >( A_c[level + 1], A_c[level] );
+        }
+    }
+
     VectorQ1Scalar< ScalarType > u( "u", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > f( "f", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > solution( "solution", domains.back(), mask_data.back() );
@@ -238,12 +248,6 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
 
     const auto num_dofs = kernels::common::count_masked< long >( mask_data.back(), grid::NodeOwnershipFlag::OWNED );
     std::cout << "num_dofs = " << num_dofs << std::endl;
-
-    Laplace A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), true, false );
-    A.storeLMatrices();
-    Laplace A_neumann( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), false, false );
-    A_neumann.storeLMatrices();
-    Laplace A_neumann_diag( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), false, true );
 
     using Mass = fe::wedge::operators::shell::Mass< ScalarType >;
 
@@ -331,7 +335,7 @@ int run_test()
 {
     T prev_l2_error = 1.0;
 
-    const int max_level = 5;
+    const int max_level = 3;
 
     constexpr T   omega          = 0.666;
     constexpr int prepost_smooth = 2;

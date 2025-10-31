@@ -8,6 +8,7 @@
 #include "fe/wedge/operators/shell/laplace.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
+#include "fe/wedge/operators/shell/galerkin_coarsening_linear.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -124,7 +125,7 @@ template < std::floating_point T, typename Prolongation, typename Restriction >
 T test( int min_level, int max_level, const std::shared_ptr< util::Table >& table, T omega, int prepost_smooth )
 {
     using ScalarType       = T;
-    using Laplace          = fe::wedge::operators::shell::Laplace< ScalarType >;
+    using Laplace          = fe::wedge::operators::shell::LaplaceSimple< ScalarType >;
     using Smoother         = linalg::solvers::Jacobi< Laplace >;
     using CoarseGridSolver = linalg::solvers::PCG< Laplace >;
 
