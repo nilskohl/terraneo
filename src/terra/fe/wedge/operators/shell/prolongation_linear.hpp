@@ -85,7 +85,7 @@ class ProlongationLinear
             }
         }
 
-        // Looping over the coarse grid.
+        // Looping over the fine grid.
         Kokkos::parallel_for(
             "matvec",
             Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(

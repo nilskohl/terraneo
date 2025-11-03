@@ -12,6 +12,14 @@
 
 namespace terra::fe::wedge::operators::shell {
 
+/// @brief: Galerkin coarse approximation (GCA). 
+/// TwoGridGCA takes a coarser and a finer operator. Each thread assembles a 
+/// coarse-grid gca matrix in the coarser operator on a single hex. To do this, it loops 
+/// the finer hexes of the coarse hex and its respective wedges. It computes the interpolation 
+/// matrix P mapping from coarse wedge to the current fine wedge, computes the 
+/// triple-product P^TAP with the fine-operator local matrix A and adds the resulting gca matrix 
+/// up for all fine wedges comprising the coarse wedge. Finally, it stores the result in the 
+/// wedge-wise matrix storage of the coarse operator.
 template < typename ScalarT, typename Operator >
 class TwoGridGCA
 {
@@ -154,10 +162,9 @@ class TwoGridGCA
                     }
 
                     // else: need radial direction bot (>=) and top (<=) of current fine DoF
-                    const auto r_idx_coarse_bot =
-                        fine_dof_idx( 3 ) < radii_fine_.extent(1) - 1 ?
-                            fine_dof_idx( 3 ) / 2 :
-                            fine_dof_idx( 3 ) / 2 - 1;
+                    const auto r_idx_coarse_bot = fine_dof_idx( 3 ) < radii_fine_.extent( 1 ) - 1 ?
+                                                      fine_dof_idx( 3 ) / 2 :
+                                                      fine_dof_idx( 3 ) / 2 - 1;
                     const auto r_idx_coarse_top = r_idx_coarse_bot + 1;
 
                     // fine dof is radially aligned: x and y index match with coarse DoFs
@@ -168,7 +175,7 @@ class TwoGridGCA
                         const auto fine_dof_x_idx_coarse = fine_dof_idx( 1 ) / 2;
                         const auto fine_dof_y_idx_coarse = fine_dof_idx( 2 ) / 2;
 
-                        // actualy weight computation
+                        // actual weight computation
                         const auto weights = wedge::shell::prolongation_linear_weights(
                             dense::Vec< int, 4 >{
                                 local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
@@ -267,11 +274,11 @@ class TwoGridGCA
 
                 dense::Mat< ScalarT, 6, 6 > A_fine = fine_op_.get_lmatrix(
                     local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
-                
-                // core part: assemble local gca matrix by mapping from coarse wedge to current fine wedge, 
+
+                // core part: assemble local gca matrix by mapping from coarse wedge to current fine wedge,
                 // applying the corresponding local operator and mapping back.
                 auto PAP = P.transposed() * A_fine * P;
-               
+
                 // correctly add to gca coarsened matrix
                 // depending on the fine hex and wedge, we are located on the coarse 0 or 1 wedge
                 // and need to add to the corresponding coarse matrix
@@ -290,7 +297,7 @@ class TwoGridGCA
                 }
                 else
                 {
-                    Kokkos::abort("Unexpected path.");
+                    Kokkos::abort( "Unexpected path." );
                 }
             }
         }

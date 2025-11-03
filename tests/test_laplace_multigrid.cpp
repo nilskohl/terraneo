@@ -368,7 +368,7 @@ int run_test()
             std::cout << "order = " << order << std::endl;
             if ( order < 3.4 )
             {
-                //     return EXIT_FAILURE;
+                return EXIT_FAILURE;
             }
 
             table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
