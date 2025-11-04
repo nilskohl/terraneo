@@ -171,25 +171,26 @@ class LaplaceSimple
             const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
             // Quadrature points.
-            /*int num_quad_points = quadrature::quad_felippa_1x2_num_quad_points;
+            int num_quad_points = quadrature::quad_felippa_1x2_num_quad_points;
 
             dense::Vec< ScalarT, 3 > quad_points_1x2[quadrature::quad_felippa_1x2_num_quad_points];
             ScalarT                  quad_weights_1x2[quadrature::quad_felippa_1x2_num_quad_points];
             quadrature::quad_felippa_1x2_quad_points( quad_points_1x2 );
-            quadrature::quad_felippa_1x2_quad_weights( quad_weights_1x2 );*/
-            int num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
+            quadrature::quad_felippa_1x2_quad_weights( quad_weights_1x2 );
+           
+           /* int num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
 
             dense::Vec< ScalarT, 3 > quad_points_3x2[quadrature::quad_felippa_3x2_num_quad_points];
             ScalarT                  quad_weights_3x2[quadrature::quad_felippa_3x2_num_quad_points];
             quadrature::quad_felippa_3x2_quad_points( quad_points_3x2 );
-            quadrature::quad_felippa_3x2_quad_weights( quad_weights_3x2 );
+            quadrature::quad_felippa_3x2_quad_weights( quad_weights_3x2 );*/
 
             // Compute the local element matrix.
 
             for ( int q = 0; q < num_quad_points; q++ )
             {
-                const auto w  = quad_weights_3x2[q];
-                const auto qp = quad_points_3x2[q];
+                const auto w  = quad_weights_1x2[q];
+                const auto qp = quad_points_1x2[q];
 
                 for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
                 {
