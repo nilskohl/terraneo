@@ -118,10 +118,10 @@ terraneox/
 - [x] full stokes
 - [ ] plates
 - [ ] free-slip
-- [ ] compressible Stokes
+- [ ] compressible Stokes (Fabi)
 - [x] FGMRES (BiCGStab works well mostly - but seems to randomly produce NaNs occasionally (not 100% sure if related to
   the solver, but it is very likely))
-- [ ] Galerkin coarsening
+- [x] Galerkin coarsening
 - [ ] iterative refinement
 - [x] spherical harmonics helper
 - [ ] radial profiles loader
@@ -132,6 +132,7 @@ terraneox/
 - [x] timing(tree?)
 - [x] ~~compress VTK(?)~~ XDMF output (binary, actual float data, and ~~/or~~ ~~HDF5/ADIOS2~~ with a single mesh file)
 - [x] CLI interface / parameter files
+- [ ] viscosity-weighted pressure-mass / lumped mass (Fabi)
 
 ## Small features / improvements (not necessarily / maybe required)
 
@@ -142,6 +143,9 @@ terraneox/
 - [x] matrix export / assembly (implemented for debugging - not for actual use)
 - [ ] CPU SIMD kernels
 - [ ] adapt solver ctor like in FGMRES (I think that is the best design)
+- [ ] power iteration (Fabi)
+- [ ] BFBT-preconditioner (Fabi)
+- [ ] Chebychev-smoother (Fabi)
 
 ## Documentation / cleanup / refactoring
 
