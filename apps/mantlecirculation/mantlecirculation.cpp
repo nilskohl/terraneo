@@ -7,6 +7,7 @@
 #include "communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
+#include "fe/wedge/operators/shell/epsilon_divdiv_stokes.hpp"
 #include "fe/wedge/operators/shell/identity.hpp"
 #include "fe/wedge/operators/shell/mass.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
@@ -24,21 +25,19 @@
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/vector_q1isoq2_q1.hpp"
-#include "shell/radial_profiles.hpp"
+#include "src/io.hpp"
 #include "src/parameters.hpp"
 #include "util/bit_masking.hpp"
-#include "util/cli11_helper.hpp"
-#include "util/cli11_wrapper.hpp"
 #include "util/filesystem.hpp"
-#include "util/info.hpp"
-#include "util/init.hpp"
 #include "util/logging.hpp"
 #include "util/result.hpp"
 #include "util/table.hpp"
 #include "util/timer.hpp"
 #include "visualization/xdmf.hpp"
 
-using namespace terra;
+using ScalarType = double;
+
+namespace terra::mantlecirculation {
 
 using grid::Grid2DDataScalar;
 using grid::Grid3DDataScalar;
@@ -54,10 +53,6 @@ using linalg::VectorQ1Vec;
 using util::logroot;
 using util::Ok;
 using util::Result;
-
-using ScalarType = double;
-
-using mantlecirculation::Parameters;
 
 struct InitialConditionInterpolator
 {
@@ -176,60 +171,6 @@ struct NoiseAdder
     }
 };
 
-Result<> create_directories( const mantlecirculation::IOParameters& io_parameters )
-{
-    const auto xdmf_dir            = io_parameters.outdir + "/" + io_parameters.xdmf_dir;
-    const auto radial_profiles_dir = io_parameters.outdir + "/" + io_parameters.radial_profiles_dir;
-    const auto timer_trees_dir     = io_parameters.outdir + "/" + io_parameters.timer_trees_dir;
-
-    if ( !io_parameters.overwrite && std::filesystem::exists( io_parameters.outdir ) )
-    {
-        return { "Will not overwrite existing directory (to not accidentally delete old simulation data). "
-                 "Use -h for help and look for overwrite option or choose a different output dir name." };
-    }
-
-    util::prepare_empty_directory( io_parameters.outdir );
-    util::prepare_empty_directory( xdmf_dir );
-    util::prepare_empty_directory( radial_profiles_dir );
-    util::prepare_empty_directory( timer_trees_dir );
-
-    return { Ok{} };
-}
-
-Result<> compute_and_write_radial_profiles(
-    const VectorQ1Scalar< ScalarType >&    T,
-    const Grid2DDataScalar< int >&         subdomain_shell_idx,
-    const DistributedDomain&               domain,
-    const mantlecirculation::IOParameters& io_parameters,
-    const int                              timestep )
-{
-    const auto profiles = shell::radial_profiles_to_table< ScalarType >(
-        shell::radial_profiles( T, subdomain_shell_idx, static_cast< int >( domain.domain_info().radii().size() ) ),
-        domain.domain_info().radii() );
-    std::ofstream out(
-        io_parameters.outdir + "/" + io_parameters.radial_profiles_dir + "/radial_profiles_" +
-        std::to_string( timestep ) + ".csv" );
-    profiles.print_csv( out );
-
-    return { Ok{} };
-}
-
-Result<> write_timer_tree( const mantlecirculation::IOParameters& io_parameters, const int timestep )
-{
-    util::TimerTree::instance().aggregate_mpi();
-    if ( mpi::rank() == 0 )
-    {
-        const auto timer_tree_file = io_parameters.outdir + "/" + io_parameters.timer_trees_dir + "/timer_tree_" +
-                                     std::to_string( timestep ) + ".json";
-        logroot << "Writing timer tree to " << timer_tree_file << std::endl;
-        std::ofstream out( timer_tree_file );
-        out << util::TimerTree::instance().json_aggregate();
-        out.close();
-    }
-
-    return { Ok{} };
-}
-
 Result<> run( const Parameters& prm )
 {
     auto table = std::make_shared< util::Table >();
@@ -292,6 +233,7 @@ Result<> run( const Parameters& prm )
 
     const auto num_stokes_fgmres_tmps = 2 * prm.stokes_solver_parameters.krylov_restart + 4;
 
+    stokes_tmp_fgmres.reserve( num_stokes_fgmres_tmps );
     for ( int i = 0; i < num_stokes_fgmres_tmps; i++ )
     {
         stokes_tmp_fgmres.emplace_back(
@@ -403,26 +345,27 @@ Result<> run( const Parameters& prm )
     using Smoother = linalg::solvers::Jacobi< Viscous >;
 
     std::vector< Smoother > smoothers;
+    smoothers.reserve( num_levels );
     for ( int level = 0; level < num_levels; level++ )
     {
-        constexpr auto omega = 0.666;
         smoothers.emplace_back(
             inverse_diagonals[level],
             prm.stokes_solver_parameters.viscous_pc_num_smoothing_steps_prepost,
             tmp_mg[level],
-            omega );
+            prm.stokes_solver_parameters.viscous_pc_omega );
     }
 
     using CoarseGridSolver = linalg::solvers::PCG< Viscous >;
 
     std::vector< VectorQ1Vec< ScalarType > > coarse_grid_tmps;
+    coarse_grid_tmps.reserve( 4 );
     for ( int i = 0; i < 4; i++ )
     {
         coarse_grid_tmps.emplace_back( "tmp_coarse_grid", domains[0], ownership_mask_data[0] );
     }
 
     CoarseGridSolver coarse_grid_solver(
-        linalg::solvers::IterativeSolverParameters{ 10, 1e-6, 1e-16 }, table, coarse_grid_tmps );
+        linalg::solvers::IterativeSolverParameters{ 50, 1e-6, 1e-16 }, table, coarse_grid_tmps );
 
     using PrecVisc = linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
     PrecVisc prec_11(
@@ -528,6 +471,7 @@ Result<> run( const Parameters& prm )
     const auto num_energy_fgmres_tmps = 2 * prm.energy_solver_parameters.krylov_restart + 4;
 
     std::vector< VectorQ1Scalar< ScalarType > > energy_tmp_fgmres;
+    energy_tmp_fgmres.reserve( num_energy_fgmres_tmps );
     for ( int i = 0; i < num_energy_fgmres_tmps; i++ )
     {
         energy_tmp_fgmres.emplace_back(
@@ -704,66 +648,13 @@ Result<> run( const Parameters& prm )
 
     return { Ok{} };
 }
-
-Result< Parameters > parse_parameters( int argc, char** argv )
-{
-    CLI::App app{ "Mantle circulation simulation." };
-
-    Parameters parameters{};
-
-    using util::add_flag_with_default;
-    using util::add_option_with_default;
-
-    add_option_with_default( app, "--refinement-level-mesh-min", parameters.mesh_parameters.refinement_level_mesh_min );
-    add_option_with_default( app, "--refinement-level-mesh-max", parameters.mesh_parameters.refinement_level_mesh_max );
-    add_option_with_default( app, "--radius-min", parameters.mesh_parameters.radius_min );
-    add_option_with_default( app, "--radius-max", parameters.mesh_parameters.radius_max );
-
-    add_option_with_default( app, "--diffusivity", parameters.physics_parameters.diffusivity );
-    add_option_with_default( app, "--rayleigh-number", parameters.physics_parameters.rayleigh_number );
-
-    add_option_with_default( app, "--pseudo-cfl", parameters.time_stepping_parameters.pseudo_cfl );
-    add_option_with_default( app, "--t-end", parameters.time_stepping_parameters.t_end );
-    add_option_with_default( app, "--max-timesteps", parameters.time_stepping_parameters.max_timesteps );
-    add_option_with_default( app, "--energy-substeps", parameters.time_stepping_parameters.energy_substeps );
-
-    add_option_with_default( app, "--stokes-krylov-restart", parameters.stokes_solver_parameters.krylov_restart );
-    add_option_with_default(
-        app, "--stokes-krylov-max-iterations", parameters.stokes_solver_parameters.krylov_max_iterations );
-    add_option_with_default(
-        app, "--stokes-krylov-relative-tolerance", parameters.stokes_solver_parameters.krylov_relative_tolerance );
-    add_option_with_default(
-        app, "--stokes-krylov-absolute-tolerance", parameters.stokes_solver_parameters.krylov_absolute_tolerance );
-    add_option_with_default(
-        app, "--stokes-viscous-pc-num-vcycles", parameters.stokes_solver_parameters.viscous_pc_num_vcycles );
-    add_option_with_default(
-        app,
-        "--stokes-viscous-pc-num-smoothing-steps-prepost",
-        parameters.stokes_solver_parameters.viscous_pc_num_smoothing_steps_prepost );
-
-    add_option_with_default( app, "--outdir", parameters.io_parameters.outdir );
-    add_flag_with_default( app, "--outdir-overwrite", parameters.io_parameters.overwrite );
-
-    try
-    {
-        app.parse( argc, argv );
-    }
-    catch ( const CLI::ParseError& e )
-    {
-        app.exit( e );
-        return { "CLI parse error" };
-    }
-
-    util::print_general_info_on_root( argc, argv, logroot );
-    util::print_cli_summary( app, logroot );
-    return parameters;
-}
+} // namespace terra::mantlecirculation
 
 int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const auto parameters = parse_parameters( argc, argv );
+    const auto parameters = mantlecirculation::parse_parameters( argc, argv );
 
     if ( parameters.is_err() )
     {
@@ -771,9 +662,7 @@ int main( int argc, char** argv )
         return EXIT_FAILURE;
     }
 
-    auto run_result = run( parameters.unwrap() );
-
-    if ( run_result.is_err() )
+    if ( auto run_result = run( parameters.unwrap() ); run_result.is_err() )
     {
         logroot << run_result.error() << std::endl;
         return EXIT_FAILURE;
