@@ -1,0 +1,781 @@
+
+
+#include <fstream>
+#include <util/arg_parser.hpp>
+#include <vector>
+
+#include "communication/shell/communication.hpp"
+#include "fe/strong_algebraic_dirichlet_enforcement.hpp"
+#include "fe/wedge/integrands.hpp"
+#include "fe/wedge/operators/shell/identity.hpp"
+#include "fe/wedge/operators/shell/mass.hpp"
+#include "fe/wedge/operators/shell/prolongation_constant.hpp"
+#include "fe/wedge/operators/shell/restriction_constant.hpp"
+#include "fe/wedge/operators/shell/stokes.hpp"
+#include "fe/wedge/operators/shell/unsteady_advection_diffusion_supg.hpp"
+#include "fe/wedge/operators/shell/vector_mass.hpp"
+#include "grid/grid_types.hpp"
+#include "grid/shell/spherical_shell.hpp"
+#include "kernels/common/grid_operations.hpp"
+#include "kokkos/kokkos_wrapper.hpp"
+#include "linalg/solvers/block_preconditioner_2x2.hpp"
+#include "linalg/solvers/fgmres.hpp"
+#include "linalg/solvers/jacobi.hpp"
+#include "linalg/solvers/multigrid.hpp"
+#include "linalg/solvers/pcg.hpp"
+#include "linalg/vector_q1isoq2_q1.hpp"
+#include "shell/radial_profiles.hpp"
+#include "src/parameters.hpp"
+#include "util/bit_masking.hpp"
+#include "util/cli11_helper.hpp"
+#include "util/cli11_wrapper.hpp"
+#include "util/filesystem.hpp"
+#include "util/info.hpp"
+#include "util/init.hpp"
+#include "util/logging.hpp"
+#include "util/result.hpp"
+#include "util/table.hpp"
+#include "util/timer.hpp"
+#include "visualization/xdmf.hpp"
+
+using namespace terra;
+
+using grid::Grid2DDataScalar;
+using grid::Grid3DDataScalar;
+using grid::Grid3DDataVec;
+using grid::Grid4DDataScalar;
+using grid::Grid4DDataVec;
+using grid::shell::DistributedDomain;
+using grid::shell::DomainInfo;
+using grid::shell::SubdomainInfo;
+using linalg::VectorQ1IsoQ2Q1;
+using linalg::VectorQ1Scalar;
+using linalg::VectorQ1Vec;
+using util::logroot;
+using util::Ok;
+using util::Result;
+
+using ScalarType = double;
+
+using mantlecirculation::Parameters;
+
+struct InitialConditionInterpolator
+{
+    Grid3DDataVec< ScalarType, 3 >                     grid_;
+    Grid2DDataScalar< ScalarType >                     radii_;
+    Grid4DDataScalar< ScalarType >                     data_;
+    Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_data_;
+    bool                                               only_boundary_;
+
+    InitialConditionInterpolator(
+        const Grid3DDataVec< ScalarType, 3 >&                     grid,
+        const Grid2DDataScalar< ScalarType >&                     radii,
+        const Grid4DDataScalar< ScalarType >&                     data,
+        const Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask_data,
+        bool                                                      only_boundary )
+    : grid_( grid )
+    , radii_( radii )
+    , data_( data )
+    , mask_data_( mask_data )
+    , only_boundary_( only_boundary )
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
+    {
+        const auto mask_value  = mask_data_( local_subdomain_id, x, y, r );
+        const auto is_boundary = util::has_flag( mask_value, grid::shell::ShellBoundaryFlag::BOUNDARY );
+
+        if ( !only_boundary_ || is_boundary )
+        {
+            const dense::Vec< ScalarType, 3 > coords =
+                grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+            data_( local_subdomain_id, x, y, r ) = Kokkos::pow( 2.0 * ( 1.0 - coords.norm() ), 5 );
+        }
+    }
+};
+
+struct RHSVelocityInterpolator
+{
+    Grid3DDataVec< ScalarType, 3 > grid_;
+    Grid2DDataScalar< ScalarType > radii_;
+    Grid4DDataVec< ScalarType, 3 > data_u_;
+    Grid4DDataScalar< ScalarType > data_T_;
+    ScalarType                     rayleigh_number_;
+
+    RHSVelocityInterpolator(
+        const Grid3DDataVec< ScalarType, 3 >& grid,
+        const Grid2DDataScalar< ScalarType >& radii,
+        const Grid4DDataVec< ScalarType, 3 >& data_u,
+        const Grid4DDataScalar< ScalarType >& data_T,
+        ScalarType                            rayleigh_number )
+    : grid_( grid )
+    , radii_( radii )
+    , data_u_( data_u )
+    , data_T_( data_T )
+    , rayleigh_number_( rayleigh_number )
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
+    {
+        const dense::Vec< ScalarType, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+
+        const auto n = coords.normalized();
+
+        for ( int d = 0; d < 3; d++ )
+        {
+            data_u_( local_subdomain_id, x, y, r, d ) =
+                rayleigh_number_ * n( d ) * data_T_( local_subdomain_id, x, y, r );
+        }
+    }
+};
+
+struct NoiseAdder
+{
+    Grid3DDataVec< ScalarType, 3 >              grid_;
+    Grid2DDataScalar< ScalarType >              radii_;
+    Grid4DDataScalar< ScalarType >              data_T_;
+    Grid4DDataScalar< grid::NodeOwnershipFlag > mask_;
+    Kokkos::Random_XorShift64_Pool<>            rand_pool_;
+
+    NoiseAdder(
+        const Grid3DDataVec< ScalarType, 3 >&              grid,
+        const Grid2DDataScalar< ScalarType >&              radii,
+        const Grid4DDataScalar< ScalarType >&              data_T,
+        const Grid4DDataScalar< grid::NodeOwnershipFlag >& mask )
+    : grid_( grid )
+    , radii_( radii )
+    , data_T_( data_T )
+    , mask_( mask )
+    , rand_pool_( 12345 )
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
+    {
+        auto generator = rand_pool_.get_state();
+
+        const ScalarType eps          = 1e-1;
+        const auto       perturbation = eps * ( 2.0 * generator.drand() - 1.0 );
+
+        const auto process_ownes_point =
+            util::has_flag( mask_( local_subdomain_id, x, y, r ), grid::NodeOwnershipFlag::OWNED );
+
+        if ( process_ownes_point )
+        {
+            data_T_( local_subdomain_id, x, y, r ) =
+                Kokkos::clamp( data_T_( local_subdomain_id, x, y, r ) + perturbation, 0.0, 1.0 );
+        }
+        else
+        {
+            data_T_( local_subdomain_id, x, y, r ) = 0.0;
+        }
+
+        rand_pool_.free_state( generator );
+    }
+};
+
+Result<> create_directories( const mantlecirculation::IOParameters& io_parameters )
+{
+    const auto xdmf_dir            = io_parameters.outdir + "/" + io_parameters.xdmf_dir;
+    const auto radial_profiles_dir = io_parameters.outdir + "/" + io_parameters.radial_profiles_dir;
+    const auto timer_trees_dir     = io_parameters.outdir + "/" + io_parameters.timer_trees_dir;
+
+    if ( !io_parameters.overwrite && std::filesystem::exists( io_parameters.outdir ) )
+    {
+        return { "Will not overwrite existing directory (to not accidentally delete old simulation data). "
+                 "Use -h for help and look for overwrite option or choose a different output dir name." };
+    }
+
+    util::prepare_empty_directory( io_parameters.outdir );
+    util::prepare_empty_directory( xdmf_dir );
+    util::prepare_empty_directory( radial_profiles_dir );
+    util::prepare_empty_directory( timer_trees_dir );
+
+    return { Ok{} };
+}
+
+Result<> compute_and_write_radial_profiles(
+    const VectorQ1Scalar< ScalarType >&    T,
+    const Grid2DDataScalar< int >&         subdomain_shell_idx,
+    const DistributedDomain&               domain,
+    const mantlecirculation::IOParameters& io_parameters,
+    const int                              timestep )
+{
+    const auto profiles = shell::radial_profiles_to_table< ScalarType >(
+        shell::radial_profiles( T, subdomain_shell_idx, static_cast< int >( domain.domain_info().radii().size() ) ),
+        domain.domain_info().radii() );
+    std::ofstream out(
+        io_parameters.outdir + "/" + io_parameters.radial_profiles_dir + "/radial_profiles_" +
+        std::to_string( timestep ) + ".csv" );
+    profiles.print_csv( out );
+
+    return { Ok{} };
+}
+
+Result<> write_timer_tree( const mantlecirculation::IOParameters& io_parameters, const int timestep )
+{
+    util::TimerTree::instance().aggregate_mpi();
+    if ( mpi::rank() == 0 )
+    {
+        const auto timer_tree_file = io_parameters.outdir + "/" + io_parameters.timer_trees_dir + "/timer_tree_" +
+                                     std::to_string( timestep ) + ".json";
+        logroot << "Writing timer tree to " << timer_tree_file << std::endl;
+        std::ofstream out( timer_tree_file );
+        out << util::TimerTree::instance().json_aggregate();
+        out.close();
+    }
+
+    return { Ok{} };
+}
+
+Result<> run( const Parameters& prm )
+{
+    auto table = std::make_shared< util::Table >();
+
+    if ( const auto create_directories_result = create_directories( prm.io_parameters );
+         create_directories_result.is_err() )
+    {
+        return create_directories_result.error();
+    }
+
+    // Set up domains for all levels.
+    std::vector< DistributedDomain >                                  domains;
+    std::vector< Grid3DDataVec< ScalarType, 3 > >                     coords_shell;
+    std::vector< Grid2DDataScalar< ScalarType > >                     coords_radii;
+    std::vector< Grid4DDataScalar< grid::NodeOwnershipFlag > >        ownership_mask_data;
+    std::vector< Grid4DDataScalar< grid::shell::ShellBoundaryFlag > > boundary_mask_data;
+
+    for ( int level = prm.mesh_parameters.refinement_level_mesh_min;
+          level <= prm.mesh_parameters.refinement_level_mesh_max;
+          level++ )
+    {
+        const int idx = level - prm.mesh_parameters.refinement_level_mesh_min;
+
+        domains.push_back(
+            DistributedDomain::create_uniform_single_subdomain_per_diamond(
+                level, level, prm.mesh_parameters.radius_min, prm.mesh_parameters.radius_max ) );
+        coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
+        coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
+        ownership_mask_data.push_back( grid::setup_node_ownership_mask_data( domains[idx] ) );
+        boundary_mask_data.push_back( grid::shell::setup_boundary_mask_data( domains[idx] ) );
+    }
+
+    const auto num_levels     = domains.size();
+    const auto velocity_level = num_levels - 1;
+    const auto pressure_level = num_levels - 2;
+
+    Grid2DDataScalar< int > subdomain_shell_idx = grid::shell::subdomain_shell_idx( domains[velocity_level] );
+
+    // Set up Stokes vectors for the finest grid.
+
+    std::map< std::string, VectorQ1IsoQ2Q1< ScalarType > > stok_vecs;
+    std::vector< std::string >                             stok_vec_names = { "u", "f", "tmp" };
+
+    for ( const auto& name : stok_vec_names )
+    {
+        stok_vecs[name] = VectorQ1IsoQ2Q1< ScalarType >(
+            name,
+            domains[velocity_level],
+            domains[pressure_level],
+            ownership_mask_data[velocity_level],
+            ownership_mask_data[pressure_level] );
+    }
+
+    auto& u = stok_vecs["u"];
+    auto& f = stok_vecs["f"];
+
+    // Set up tmp vecs for FGMRES
+
+    std::vector< VectorQ1IsoQ2Q1< ScalarType > > stokes_tmp_fgmres;
+
+    const auto num_stokes_fgmres_tmps = 2 * prm.stokes_solver_parameters.krylov_restart + 4;
+
+    for ( int i = 0; i < num_stokes_fgmres_tmps; i++ )
+    {
+        stokes_tmp_fgmres.emplace_back(
+            "stokes_tmp_fgmres",
+            domains[velocity_level],
+            domains[pressure_level],
+            ownership_mask_data[velocity_level],
+            ownership_mask_data[pressure_level] );
+    }
+
+    // Set up tmp vecs for multigrid preconditioner.
+
+    std::vector< VectorQ1Vec< ScalarType > > tmp_mg;
+    std::vector< VectorQ1Vec< ScalarType > > tmp_mg_r;
+    std::vector< VectorQ1Vec< ScalarType > > tmp_mg_e;
+
+    for ( int level = 0; level < num_levels; level++ )
+    {
+        tmp_mg.emplace_back( "tmp_mg_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
+        if ( level < num_levels - 1 )
+        {
+            tmp_mg_r.emplace_back( "tmp_mg_r_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
+            tmp_mg_e.emplace_back( "tmp_mg_e_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
+        }
+    }
+
+    // Set up temperature vectors.
+
+    std::map< std::string, VectorQ1Scalar< ScalarType > > temp_vecs;
+    std::vector< std::string >                            temp_vec_names = { "T", "q" };
+    constexpr int                                         num_temp_tmps  = 8;
+
+    for ( int i = 0; i < num_temp_tmps; i++ )
+    {
+        temp_vec_names.push_back( "tmp_" + std::to_string( i ) );
+    }
+
+    for ( const auto& name : temp_vec_names )
+    {
+        temp_vecs[name] =
+            VectorQ1Scalar< ScalarType >( name, domains[velocity_level], ownership_mask_data[velocity_level] );
+    }
+
+    auto& T = temp_vecs["T"];
+    auto& q = temp_vecs["q"];
+
+    // Counting DoFs.
+
+    const auto num_dofs_temperature =
+        kernels::common::count_masked< long >( ownership_mask_data[num_levels - 1], grid::NodeOwnershipFlag::OWNED );
+    const auto num_dofs_velocity = 3 * num_dofs_temperature;
+    const auto num_dofs_pressure =
+        kernels::common::count_masked< long >( ownership_mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
+
+    // Set up operators.
+
+    using Stokes      = fe::wedge::operators::shell::Stokes< ScalarType >;
+    using Viscous     = Stokes::Block11Type;
+    using ViscousMass = fe::wedge::operators::shell::VectorMass< ScalarType >;
+
+    using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
+    using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
+
+    Stokes K(
+        domains[velocity_level],
+        domains[pressure_level],
+        coords_shell[velocity_level],
+        coords_radii[velocity_level],
+        true,
+        false );
+
+    ViscousMass M( domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], false );
+
+    // Multigrid operators
+
+    std::vector< Viscous >      A_diag;
+    std::vector< Viscous >      A_c;
+    std::vector< Prolongation > P;
+    std::vector< Restriction >  R;
+
+    std::vector< VectorQ1Vec< ScalarType > > inverse_diagonals;
+
+    for ( int level = 0; level < num_levels; level++ )
+    {
+        A_diag.emplace_back( domains[level], coords_shell[level], coords_radii[level], true, true );
+
+        inverse_diagonals.emplace_back(
+            "inverse_diagonal_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
+
+        VectorQ1Vec< ScalarType > tmp(
+            "inverse_diagonal_tmp" + std::to_string( level ), domains[level], ownership_mask_data[level] );
+
+        linalg::assign( tmp, 1.0 );
+        linalg::apply( A_diag[level], tmp, inverse_diagonals.back() );
+        linalg::invert_entries( inverse_diagonals.back() );
+
+        if ( level < num_levels - 1 )
+        {
+            A_c.emplace_back( domains[level], coords_shell[level], coords_radii[level], true, false );
+            P.emplace_back( linalg::OperatorApplyMode::Add );
+            R.emplace_back( domains[level] );
+        }
+    }
+
+    // Set up solvers.
+
+    // Multigrid preconditioner.
+
+    using Smoother = linalg::solvers::Jacobi< Viscous >;
+
+    std::vector< Smoother > smoothers;
+    for ( int level = 0; level < num_levels; level++ )
+    {
+        constexpr auto omega = 0.666;
+        smoothers.emplace_back(
+            inverse_diagonals[level],
+            prm.stokes_solver_parameters.viscous_pc_num_smoothing_steps_prepost,
+            tmp_mg[level],
+            omega );
+    }
+
+    using CoarseGridSolver = linalg::solvers::PCG< Viscous >;
+
+    std::vector< VectorQ1Vec< ScalarType > > coarse_grid_tmps;
+    for ( int i = 0; i < 4; i++ )
+    {
+        coarse_grid_tmps.emplace_back( "tmp_coarse_grid", domains[0], ownership_mask_data[0] );
+    }
+
+    CoarseGridSolver coarse_grid_solver(
+        linalg::solvers::IterativeSolverParameters{ 10, 1e-6, 1e-16 }, table, coarse_grid_tmps );
+
+    using PrecVisc = linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
+    PrecVisc prec_11(
+        P,
+        R,
+        A_c,
+        tmp_mg_r,
+        tmp_mg_e,
+        tmp_mg,
+        smoothers,
+        smoothers,
+        coarse_grid_solver,
+        prm.stokes_solver_parameters.viscous_pc_num_vcycles,
+        1e-6 );
+
+    using PrecSchur = linalg::solvers::IdentitySolver< Stokes::Block22Type >;
+    PrecSchur prec_22;
+
+    using PrecStokes =
+        linalg::solvers::BlockDiagonalPreconditioner2x2< Stokes, Viscous, Stokes::Block22Type, PrecVisc, PrecSchur >;
+    PrecStokes prec_stokes( K.block_11(), K.block_22(), prec_11, prec_22 );
+
+    linalg::solvers::FGMRES< Stokes, PrecStokes > stokes_fgmres(
+        stokes_tmp_fgmres,
+        { .restart                     = prm.stokes_solver_parameters.krylov_restart,
+          .relative_residual_tolerance = prm.stokes_solver_parameters.krylov_relative_tolerance,
+          .absolute_residual_tolerance = prm.stokes_solver_parameters.krylov_absolute_tolerance,
+          .max_iterations              = prm.stokes_solver_parameters.krylov_max_iterations },
+        table,
+        prec_stokes );
+
+    /////////////////////
+    /// ENERGY SOLVER ///
+    /////////////////////
+
+    using AD = fe::wedge::operators::shell::UnsteadyAdvectionDiffusionSUPG< ScalarType >;
+
+    constexpr auto mass_scaling = 1.0;
+
+    AD A(
+        domains[velocity_level],
+        coords_shell[velocity_level],
+        coords_radii[velocity_level],
+        u.block_1(),
+        prm.physics_parameters.diffusivity,
+        0.0,
+        true,
+        false,
+        mass_scaling );
+
+    AD A_neumann(
+        domains[velocity_level],
+        coords_shell[velocity_level],
+        coords_radii[velocity_level],
+        u.block_1(),
+        prm.physics_parameters.diffusivity,
+        0.0,
+        false,
+        false,
+        mass_scaling );
+
+    AD A_neumann_diag(
+        domains[velocity_level],
+        coords_shell[velocity_level],
+        coords_radii[velocity_level],
+        u.block_1(),
+        prm.physics_parameters.diffusivity,
+        0.0,
+        false,
+        true,
+        mass_scaling );
+
+    using TempMass = fe::wedge::operators::shell::Mass< ScalarType >;
+
+    TempMass M_T( domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], false );
+
+    // Set up the initial temperature.
+
+    Kokkos::parallel_for(
+        "initial temp interpolation",
+        local_domain_md_range_policy_nodes( domains[velocity_level] ),
+        InitialConditionInterpolator(
+            coords_shell[velocity_level],
+            coords_radii[velocity_level],
+            T.grid_data(),
+            boundary_mask_data[velocity_level],
+            false ) );
+
+    Kokkos::fence();
+
+    Kokkos::parallel_for(
+        "adding noise to temp",
+        local_domain_md_range_policy_nodes( domains[velocity_level] ),
+        NoiseAdder(
+            coords_shell[velocity_level],
+            coords_radii[velocity_level],
+            T.grid_data(),
+            ownership_mask_data[velocity_level] ) );
+
+    communication::shell::send_recv(
+        domains[velocity_level], T.grid_data(), communication::CommunicationReduction::SUM );
+
+    const auto num_energy_fgmres_tmps = 2 * prm.energy_solver_parameters.krylov_restart + 4;
+
+    std::vector< VectorQ1Scalar< ScalarType > > energy_tmp_fgmres;
+    for ( int i = 0; i < num_energy_fgmres_tmps; i++ )
+    {
+        energy_tmp_fgmres.emplace_back(
+            "energy_tmp_fgmres", domains[velocity_level], ownership_mask_data[velocity_level] );
+    }
+
+    linalg::solvers::FGMRES< AD > energy_solver(
+        energy_tmp_fgmres,
+        { .restart                     = prm.energy_solver_parameters.krylov_restart,
+          .relative_residual_tolerance = prm.energy_solver_parameters.krylov_relative_tolerance,
+          .absolute_residual_tolerance = prm.energy_solver_parameters.krylov_absolute_tolerance,
+          .max_iterations              = prm.energy_solver_parameters.krylov_max_iterations },
+        table );
+
+    table->add_row( {
+        { "tag", "setup" },
+        { "dofs_velocity", num_dofs_velocity },
+        { "dofs_temperature", num_dofs_temperature },
+        { "dofs_pressure", num_dofs_pressure },
+        { "level_velocity", velocity_level },
+        { "level_pressure", pressure_level },
+    } );
+
+    table->print_pretty();
+    table->clear();
+
+    visualization::XDMFOutput xdmf_output(
+        prm.io_parameters.outdir + "/" + prm.io_parameters.xdmf_dir,
+        coords_shell[velocity_level],
+        coords_radii[velocity_level] );
+
+    xdmf_output.add( T.grid_data() );
+    xdmf_output.add( u.block_1().grid_data() );
+
+    xdmf_output.write();
+
+    compute_and_write_radial_profiles( T, subdomain_shell_idx, domains[velocity_level], prm.io_parameters, 0 );
+
+    ScalarType simulated_time = 0.0;
+
+    // We need some global h. Let's, for simplicity (does not need to be too accurate) just choose the smallest h in
+    // radial direction.
+    const auto h = grid::shell::min_radial_h( domains[velocity_level].domain_info().radii() );
+
+    // Time stepping
+
+    for ( int timestep = 1; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
+    {
+        logroot << "Timestep " << timestep << std::endl;
+
+        // Set up rhs data for Stokes.
+
+        util::Timer timer_stokes( "stokes" );
+
+        logroot << "Setting up Stokes rhs ..." << std::endl;
+
+        Kokkos::parallel_for(
+            "Stokes rhs interpolation",
+            local_domain_md_range_policy_nodes( domains[velocity_level] ),
+            RHSVelocityInterpolator(
+                coords_shell[velocity_level],
+                coords_radii[velocity_level],
+                stok_vecs["tmp"].block_1().grid_data(),
+                T.grid_data(),
+                prm.physics_parameters.rayleigh_number ) );
+
+        linalg::apply( M, stok_vecs["tmp"].block_1(), stok_vecs["f"].block_1() );
+
+        fe::strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
+            stok_vecs["f"], boundary_mask_data[velocity_level], grid::shell::ShellBoundaryFlag::BOUNDARY );
+
+        logroot << "Solving Stokes ..." << std::endl;
+
+        // Solve Stokes.
+        solve( stokes_fgmres, K, u, f );
+
+        table->query_rows_equals( "tag", "fgmres_solver" ).print_pretty();
+        table->clear();
+
+        // "Normalize" pressure.
+        const ScalarType avg_pressure_approximation =
+            kernels::common::masked_sum(
+                u.block_2().grid_data(), u.block_2().mask_data(), grid::NodeOwnershipFlag::OWNED ) /
+            static_cast< ScalarType >( num_dofs_pressure );
+        linalg::lincomb( u.block_2(), { 1.0 }, { u.block_2() }, -avg_pressure_approximation );
+
+        timer_stokes.stop();
+
+        util::Timer timer_energy( "energy" );
+
+        logroot << "Setting up energy solve ..." << std::endl;
+
+        // Max velocity magnitude.
+        const auto max_vel = kernels::common::max_vector_magnitude( u.block_1().grid_data() );
+
+        // Choose "suitable" small dt for accuracy - we have and implicit time-stepping scheme so we do not really need
+        // a CFL in the classical sense. Still useful for time-step size restriction.
+        const auto dt_advection = h / max_vel;
+        // const auto dt_diffusion = ( h * h ) / prm.diffusivity;
+        // const auto dt           = prm.pseudo_cfl * std::min( dt_advection, dt_diffusion );
+        const auto dt = prm.time_stepping_parameters.pseudo_cfl * dt_advection;
+
+        logroot << "Computing dt ..." << std::endl;
+        logroot << "    max_vel: " << max_vel << std::endl;
+        logroot << "    h:       " << h << std::endl;
+        logroot << "=>  dt:      " << dt << std::endl;
+
+        A.dt()              = dt;
+        A_neumann.dt()      = dt;
+        A_neumann_diag.dt() = dt;
+
+        for ( int i = 0; i < prm.time_stepping_parameters.energy_substeps; i++ )
+        {
+            // Prepping for implicit Euler step.
+            linalg::apply( M_T, T, q );
+
+            // Set up the temperature boundary.
+            assign( temp_vecs["tmp_0"], 0.0 );
+            Kokkos::parallel_for(
+                "boundary temp interpolation",
+                local_domain_md_range_policy_nodes( domains[velocity_level] ),
+                InitialConditionInterpolator(
+                    coords_shell[velocity_level],
+                    coords_radii[velocity_level],
+                    temp_vecs["tmp_0"].grid_data(),
+                    boundary_mask_data[velocity_level],
+                    true ) );
+
+            Kokkos::fence();
+
+            fe::strong_algebraic_dirichlet_enforcement_poisson_like(
+                A_neumann,
+                A_neumann_diag,
+                temp_vecs["tmp_0"],
+                temp_vecs["tmp_1"],
+                q,
+                boundary_mask_data[velocity_level],
+                grid::shell::ShellBoundaryFlag::BOUNDARY );
+
+            logroot << "Solving energy ..." << std::endl;
+
+            // Solve energy.
+            solve( energy_solver, A, T, q );
+
+            table->query_rows_equals( "tag", "fgmres_solver" ).print_pretty();
+            table->clear();
+        }
+
+        timer_energy.stop();
+
+        // Output stuff, logging etc.
+
+        table->add_row( {} );
+
+        logroot << "Writing XDMF output and radial profiles ..." << std::endl;
+
+        xdmf_output.write();
+
+        compute_and_write_radial_profiles(
+            T, subdomain_shell_idx, domains[velocity_level], prm.io_parameters, timestep );
+
+        simulated_time += prm.time_stepping_parameters.energy_substeps * dt;
+
+        logroot << "Simulated time: " << simulated_time << " (stopping at " << prm.time_stepping_parameters.t_end
+                << ", we're at " << simulated_time / prm.time_stepping_parameters.t_end * 100.0 << "%)" << std::endl;
+
+        write_timer_tree( prm.io_parameters, timestep );
+
+        if ( simulated_time >= prm.time_stepping_parameters.t_end )
+        {
+            break;
+        }
+    }
+
+    return { Ok{} };
+}
+
+Result< Parameters > parse_parameters( int argc, char** argv )
+{
+    CLI::App app{ "Mantle circulation simulation." };
+
+    Parameters parameters{};
+
+    using util::add_flag_with_default;
+    using util::add_option_with_default;
+
+    add_option_with_default( app, "--refinement-level-mesh-min", parameters.mesh_parameters.refinement_level_mesh_min );
+    add_option_with_default( app, "--refinement-level-mesh-max", parameters.mesh_parameters.refinement_level_mesh_max );
+    add_option_with_default( app, "--radius-min", parameters.mesh_parameters.radius_min );
+    add_option_with_default( app, "--radius-max", parameters.mesh_parameters.radius_max );
+
+    add_option_with_default( app, "--diffusivity", parameters.physics_parameters.diffusivity );
+    add_option_with_default( app, "--rayleigh-number", parameters.physics_parameters.rayleigh_number );
+
+    add_option_with_default( app, "--pseudo-cfl", parameters.time_stepping_parameters.pseudo_cfl );
+    add_option_with_default( app, "--t-end", parameters.time_stepping_parameters.t_end );
+    add_option_with_default( app, "--max-timesteps", parameters.time_stepping_parameters.max_timesteps );
+    add_option_with_default( app, "--energy-substeps", parameters.time_stepping_parameters.energy_substeps );
+
+    add_option_with_default( app, "--stokes-krylov-restart", parameters.stokes_solver_parameters.krylov_restart );
+    add_option_with_default(
+        app, "--stokes-krylov-max-iterations", parameters.stokes_solver_parameters.krylov_max_iterations );
+    add_option_with_default(
+        app, "--stokes-krylov-relative-tolerance", parameters.stokes_solver_parameters.krylov_relative_tolerance );
+    add_option_with_default(
+        app, "--stokes-krylov-absolute-tolerance", parameters.stokes_solver_parameters.krylov_absolute_tolerance );
+    add_option_with_default(
+        app, "--stokes-viscous-pc-num-vcycles", parameters.stokes_solver_parameters.viscous_pc_num_vcycles );
+    add_option_with_default(
+        app,
+        "--stokes-viscous-pc-num-smoothing-steps-prepost",
+        parameters.stokes_solver_parameters.viscous_pc_num_smoothing_steps_prepost );
+
+    add_option_with_default( app, "--outdir", parameters.io_parameters.outdir );
+    add_flag_with_default( app, "--outdir-overwrite", parameters.io_parameters.overwrite );
+
+    try
+    {
+        app.parse( argc, argv );
+    }
+    catch ( const CLI::ParseError& e )
+    {
+        app.exit( e );
+        return { "CLI parse error" };
+    }
+
+    util::print_general_info_on_root( argc, argv, logroot );
+    util::print_cli_summary( app, logroot );
+    return parameters;
+}
+
+int main( int argc, char** argv )
+{
+    util::terra_initialize( &argc, &argv );
+
+    const auto parameters = parse_parameters( argc, argv );
+
+    if ( parameters.is_err() )
+    {
+        logroot << parameters.error() << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    auto run_result = run( parameters.unwrap() );
+
+    if ( run_result.is_err() )
+    {
+        logroot << run_result.error() << std::endl;
+        return EXIT_FAILURE;
+    }
+}

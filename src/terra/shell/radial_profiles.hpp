@@ -57,19 +57,30 @@ struct RadialProfiles
 ///
 /// @tparam ScalarType Scalar type of the field.
 /// @param data Q1 scalar field data.
+/// @param subdomain_shell_idx global shell indices array with layout
+///                            @code subdomain_shell_idx( local_subdomain_id, node_r_idx ) = global_shell_idx @endcode
+///                            compute with \ref terra::grid::shell::subdomain_shell_idx.
+/// @param num_global_shells number of global shells
 /// @return RadialProfiles struct containing [min, max, sum, count, average] for each radial shell (still on the device).
 template < typename ScalarType >
-RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< ScalarType >& data )
+RadialProfiles< ScalarType > radial_profiles(
+    const linalg::VectorQ1Scalar< ScalarType >& data,
+    const grid::Grid2DDataScalar< int >&        subdomain_shell_idx,
+    const int                                   num_global_shells )
 {
-    const int radial_shells = data.grid_data().extent( 3 );
-
-    RadialProfiles< ScalarType > radial_profiles( radial_shells );
+    RadialProfiles< ScalarType > radial_profiles( num_global_shells );
 
     const auto data_grid = data.grid_data();
     const auto data_mask = data.mask_data();
 
+    if ( data_grid.extent( 0 ) != subdomain_shell_idx.extent( 0 ) ||
+         data_grid.extent( 3 ) != subdomain_shell_idx.extent( 1 ) )
+    {
+        Kokkos::abort( "radial_profiles: Data and subdomain_shell_idx do not have matching dimensions." );
+    }
+
     Kokkos::parallel_for(
-        "radial profiles init", radial_shells, KOKKOS_LAMBDA( int r ) {
+        "radial profiles init", num_global_shells, KOKKOS_LAMBDA( int r ) {
             radial_profiles.radial_min_( r ) = Kokkos::Experimental::finite_max_v< ScalarType >;
             radial_profiles.radial_max_( r ) = Kokkos::Experimental::finite_min_v< ScalarType >;
             radial_profiles.radial_sum_( r ) = 0;
@@ -88,10 +99,16 @@ RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< Scal
             {
                 return;
             }
-            Kokkos::atomic_min( &radial_profiles.radial_min_( r ), data_grid( local_subdomain_id, x, y, r ) );
-            Kokkos::atomic_max( &radial_profiles.radial_max_( r ), data_grid( local_subdomain_id, x, y, r ) );
-            Kokkos::atomic_add( &radial_profiles.radial_sum_( r ), data_grid( local_subdomain_id, x, y, r ) );
-            Kokkos::atomic_add( &radial_profiles.radial_cnt_( r ), static_cast< ScalarType >( 1 ) );
+
+            const int global_shell_idx = subdomain_shell_idx( local_subdomain_id, r );
+
+            Kokkos::atomic_min(
+                &radial_profiles.radial_min_( global_shell_idx ), data_grid( local_subdomain_id, x, y, r ) );
+            Kokkos::atomic_max(
+                &radial_profiles.radial_max_( global_shell_idx ), data_grid( local_subdomain_id, x, y, r ) );
+            Kokkos::atomic_add(
+                &radial_profiles.radial_sum_( global_shell_idx ), data_grid( local_subdomain_id, x, y, r ) );
+            Kokkos::atomic_add( &radial_profiles.radial_cnt_( global_shell_idx ), static_cast< ScalarType >( 1 ) );
         } );
 
     Kokkos::fence();
@@ -129,7 +146,7 @@ RadialProfiles< ScalarType > radial_profiles( const linalg::VectorQ1Scalar< Scal
         MPI_COMM_WORLD );
 
     Kokkos::parallel_for(
-        "radial profiles avg", radial_shells, KOKKOS_LAMBDA( int r ) {
+        "radial profiles avg", num_global_shells, KOKKOS_LAMBDA( int r ) {
             radial_profiles.radial_avg_( r ) = radial_profiles.radial_sum_( r ) / radial_profiles.radial_cnt_( r );
         } );
 

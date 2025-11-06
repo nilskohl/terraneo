@@ -11,8 +11,9 @@
 #include <variant>
 #include <vector>
 
-#include "timestamp.hpp"
+#include "logging.hpp"
 #include "terra/mpi/mpi.hpp"
+#include "timestamp.hpp"
 
 namespace terra::util {
 
@@ -233,9 +234,9 @@ class Table
     }
 
     /// @brief Print the table in a pretty formatted style.
-    /// @param os Output stream (default std::cout).
+    /// @param os Output stream (default util::logroot).
     /// @return Reference to this table.
-    const Table& print_pretty( std::ostream& os = std::cout ) const
+    const Table& print_pretty( std::ostream& os = logroot ) const
     {
         if ( mpi::rank() == 0 )
         {
@@ -298,9 +299,9 @@ class Table
     /// import pandas as pd
     /// df = pd.read_json("yourfile.jsonl", lines=True)
     ///
-    /// @param os Output stream (default std::cout).
+    /// @param os Output stream (default util::logroot).
     /// @return Reference to this table.
-    const Table& print_jsonl( std::ostream& os = std::cout ) const
+    const Table& print_jsonl( std::ostream& os = logroot ) const
     {
         if ( mpi::rank() == 0 )
         {
@@ -342,9 +343,9 @@ class Table
     }
 
     /// @brief Print the table as CSV.
-    /// @param os Output stream (default std::cout).
+    /// @param os Output stream (default util::logroot).
     /// @return Reference to this table.
-    const Table& print_csv( std::ostream& os = std::cout ) const
+    const Table& print_csv( std::ostream& os = logroot ) const
     {
         if ( mpi::rank() == 0 )
         {

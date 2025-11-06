@@ -2531,11 +2531,11 @@ Grid3DDataVec< T, 3 > subdomain_unit_sphere_single_shell_coords( const Distribut
     return subdomain_coords;
 }
 
-/// @brief Returns an initialized grid with the radii of all subdomains' nodes.
+/// @brief Returns an initialized grid with the radii of all subdomain nodes.
 ///
 /// The layout is
 ///
-///     grid( local_subdomain_id, r_idx )
+///     grid( local_subdomain_id, r_idx ) = radius
 ///
 template < std::floating_point T >
 Grid2DDataScalar< T > subdomain_shell_radii( const DistributedDomain& domain )
@@ -2563,6 +2563,33 @@ Grid2DDataScalar< T > subdomain_shell_radii( const DistributedDomain& domain )
 
     Kokkos::deep_copy( radii_device, radii_host );
     return radii_device;
+}
+
+/// @brief Returns an initialized grid with the shell index of all subdomain nodes.
+///
+/// The layout is
+///
+///     grid( local_subdomain_id, r_idx ) = global_shell_idx
+///
+inline Grid2DDataScalar< int > subdomain_shell_idx( const DistributedDomain& domain )
+{
+    const int shells_per_subdomain = domain.domain_info().subdomain_num_nodes_radially();
+    const int layers_per_subdomain = shells_per_subdomain - 1;
+
+    Grid2DDataScalar< int > shell_idx_device( "subdomain_shell_idx", domain.subdomains().size(), shells_per_subdomain );
+    Grid2DDataScalar< int >::HostMirror shell_idx_host = Kokkos::create_mirror_view( shell_idx_device );
+
+    for ( const auto& [subdomain_info, data] : domain.subdomains() )
+    {
+        const auto& [subdomain_idx, neighborhood] = data;
+        const int subdomain_innermost_node_idx    = subdomain_info.subdomain_r() * layers_per_subdomain;
+        for ( int j = 0; j < shells_per_subdomain; j++ )
+        {
+            shell_idx_host( subdomain_idx, j ) = subdomain_innermost_node_idx + j;
+        }
+    }
+    Kokkos::deep_copy( shell_idx_device, shell_idx_host );
+    return shell_idx_device;
 }
 
 template < typename CoordsShellType, typename CoordsRadiiType >
