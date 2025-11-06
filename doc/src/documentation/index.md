@@ -143,7 +143,7 @@ terraneox/
 - [x] matrix export / assembly (implemented for debugging - not for actual use)
 - [ ] CPU SIMD kernels
 - [ ] adapt solver ctor like in FGMRES (I think that is the best design)
-- [ ] power iteration (Fabi)
+- [x] power iteration
 - [ ] BFBT-preconditioner (Fabi)
 - [ ] Chebychev-smoother (Fabi)
 
