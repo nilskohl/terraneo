@@ -231,7 +231,7 @@ class FGMRES
                 {
                     statistics_->add_row(
                         { { "tag", tag_ },
-                          { "iteration", total_iters },
+                          { "iteration", total_iters + 1 },
                           { "relative_residual", rel_res },
                           { "absolute_residual", abs_res } } );
                 }
