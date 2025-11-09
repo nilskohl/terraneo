@@ -4,6 +4,7 @@
 
 #include "communication/shell/communication.hpp"
 #include "dense/vec.hpp"
+#include "fe/wedge/operators/shell/epsilon_divdiv_simple.hpp"
 #include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "grid/grid_types.hpp"
 #include "linalg/operator.hpp"
@@ -12,13 +13,13 @@
 
 namespace terra::fe::wedge::operators::shell {
 
-/// @brief: Galerkin coarse approximation (GCA). 
-/// TwoGridGCA takes a coarser and a finer operator. Each thread assembles a 
-/// coarse-grid gca matrix in the coarser operator on a single hex. To do this, it loops 
-/// the finer hexes of the coarse hex and its respective wedges. It computes the interpolation 
-/// matrix P mapping from coarse wedge to the current fine wedge, computes the 
-/// triple-product P^TAP with the fine-operator local matrix A and adds the resulting gca matrix 
-/// up for all fine wedges comprising the coarse wedge. Finally, it stores the result in the 
+/// @brief: Galerkin coarse approximation (GCA).
+/// TwoGridGCA takes a coarser and a finer operator. Each thread assembles a
+/// coarse-grid gca matrix in the coarser operator on a single hex. To do this, it loops
+/// the finer hexes of the coarse hex and its respective wedges. It computes the interpolation
+/// matrix P mapping from coarse wedge to the current fine wedge, computes the
+/// triple-product P^TAP with the fine-operator local matrix A and adds the resulting gca matrix
+/// up for all fine wedges comprising the coarse wedge. Finally, it stores the result in the
 /// wedge-wise matrix storage of the coarse operator.
 template < typename ScalarT, typename Operator >
 class TwoGridGCA
@@ -36,15 +37,19 @@ class TwoGridGCA
     Operator&                          fine_op_;
     Operator&                          coarse_op_;
     bool                               treat_boundary_;
+    int                                dimi_ = 0;
+    int                                dimj_ = 0;
 
   public:
-    explicit TwoGridGCA( Operator fine_op, Operator coarse_op, bool treat_boundary = true )
+    explicit TwoGridGCA( Operator fine_op, Operator coarse_op, int dimi = 0, int dimj = 0, bool treat_boundary = true )
     : domain_fine_( fine_op.get_domain() )
     , fine_op_( fine_op )
     , coarse_op_( coarse_op )
     , grid_fine_( fine_op.get_grid() )
     , radii_fine_( fine_op.get_radii() )
     , radii_coarse_( coarse_op.get_radii() )
+    , dimi_( dimi )
+    , dimj_( dimj )
     , treat_boundary_( treat_boundary )
 
     {
@@ -272,8 +277,23 @@ class TwoGridGCA
                     P( fine_dof_lidx, coarse_dof_lindices[3] ) = weights( 1 );
                 }
 
-                dense::Mat< ScalarT, 6, 6 > A_fine = fine_op_.get_lmatrix(
-                    local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
+                dense::Mat< ScalarT, 6, 6 > A_fine;
+                if constexpr ( std::is_same< Operator, EpsilonDivDivSimple< double > >::value )
+                {
+                    A_fine = fine_op_.get_lmatrix(
+                        local_subdomain_id,
+                        fine_hex_idx( 1 ),
+                        fine_hex_idx( 2 ),
+                        fine_hex_idx( 3 ),
+                        wedge,
+                        dimi_,
+                        dimj_ );
+                }
+                else
+                {
+                    A_fine = fine_op_.get_lmatrix(
+                        local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
+                }
 
                 // core part: assemble local gca matrix by mapping from coarse wedge to current fine wedge,
                 // applying the corresponding local operator and mapping back.
@@ -315,7 +335,8 @@ class TwoGridGCA
                     {
                         for ( int j = 0; j < 6; j++ )
                         {
-                            if ( i != j && ( i < 3 || j < 3 ) )
+                            if ( ( dimi_ == dimj_ && i != j && ( i < 3 || j < 3 ) ) or
+                                 ( dimi_ != dimj_ && ( i < 3 || j < 3 ) ) )
                             {
                                 boundary_mask( i, j ) = 0.0;
                             }
@@ -330,7 +351,8 @@ class TwoGridGCA
                     {
                         for ( int j = 0; j < 6; j++ )
                         {
-                            if ( i != j && ( i >= 3 || j >= 3 ) )
+                            if ( ( dimi_ == dimj_ && i != j && ( i >= 3 || j >= 3 ) ) or
+                                 ( dimi_ != dimj_ && ( i >= 3 || j >= 3 ) ) )
                             {
                                 boundary_mask( i, j ) = 0.0;
                             }
@@ -342,9 +364,19 @@ class TwoGridGCA
             }
         }
 
-        // store coarse matrices
-        coarse_op_.get_lmatrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 ) = A_coarse[0];
-        coarse_op_.get_lmatrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1 ) = A_coarse[1];
+        if constexpr ( std::is_same< Operator, EpsilonDivDivSimple< double > >::value )
+        {
+            // store coarse matrices
+            coarse_op_.set_lmatrix(
+                local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0, dimi_, dimj_, A_coarse[0] );
+            coarse_op_.set_lmatrix(
+                local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1, dimi_, dimj_, A_coarse[1] );
+        }
+        else
+        {
+            coarse_op_.set_lmatrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0, A_coarse[0]);
+            coarse_op_.set_lmatrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1, A_coarse[1]);
+        }
     }
 };
 } // namespace terra::fe::wedge::operators::shell
