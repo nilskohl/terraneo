@@ -103,7 +103,7 @@ struct RHSInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        /*
+        /* Analytical rhs
         const double x0 = Kokkos::sinh( coords( 1 ) );
         const double x1 = 2 * coords( 0 );
         const double x2 = Kokkos::sin( x1 );
@@ -117,18 +117,9 @@ struct RHSInterpolator
         const double x9                      = x6 * ( 1 - Kokkos::pow( x7, 2 ) ) / x5;
         data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
                                                coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
-                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
-                                               */
-        const double x0 = Kokkos::sinh( coords(1) );
-        const double x1 = 2 * coords(0);
-        const double x2 = Kokkos::sin( x1 );
-        const double x3 =  coords.norm();
-        const double x4 = alpha_ / ( 0.5 * r_max_ - 0.5 * r_min_ );
-        const double x5 = Kokkos::tanh( x4 * ( -0.40999999999999998 * r_max_ - 0.40999999999999998 * r_min_ + x3 ) );
-        const double x6 = 0.5 * k_max_;
-        const double x7 = x4 * ( 1 - Kokkos::pow( x5, 2 ) ) / x3;
-        data_( local_subdomain_id, x, y, r ) =  -0.25 * k_max_ * x2 * x7 * coords(1) * Kokkos::cosh( coords(1) ) - coords(0) * x0 * x6 * x7 * Kokkos::cos( x1 ) +
-               1.5 * x0 * x2 * ( k_max_ + x6 * ( x5 + 1 ) );
+                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );*/
+        data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
+                                               Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
     }
 };
 
@@ -185,19 +176,21 @@ struct KInterpolator
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
-        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        /*     const double                  rad    = coords.norm();
+           const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+      
+        /*
+       const double                  rad    = coords.norm();
         const double                  x0     = 0.5 * r_max_;
         const double                  x1     = 0.5 * r_min_;
         data_( local_subdomain_id, x, y, r ) =
             0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;*/
-        data_( local_subdomain_id, x, y, r ) =
-            0.5 * k_max_ *
-                ( Kokkos::tanh(
-                      alpha_ * ( -0.40999999999999998 * r_max_ - 0.40999999999999998 * r_min_ + coords.norm() ) /
-                      ( 0.5 * r_max_ - 0.5 * r_min_ ) ) +
-                  1 ) +
-            k_max_;
+            if (coords.norm() > 0.6123) {
+                 
+             data_( local_subdomain_id, x, y, r ) = k_max_;
+            } else {
+
+             data_( local_subdomain_id, x, y, r ) = 1;
+            }
     }
 };
 
@@ -438,7 +431,7 @@ T test(
 
     multigrid_solver.collect_statistics( table );
 
-    assign( u, 1.0 );
+    //assign( u, 1.0 );
 
     Kokkos::fence();
     Kokkos::Timer timer;
@@ -479,9 +472,9 @@ int run_test()
 
     constexpr T           omega          = 0.666;
     constexpr int         prepost_smooth = 2;
-    std::vector< double > alphas         = { 1, 10, 100, 1000, 10000, 100000, 1000000 };
+    std::vector< double > alphas         = { 1000000 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
     std::vector< int >    k_maxs         = { 1, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< bool >   gcas           = { 0, 1 };
+    std::vector< bool >   gcas           = { 0, 1 }; //, 1 };
 
     auto table_dca = std::make_shared< util::Table >();
     auto table_gca = std::make_shared< util::Table >();

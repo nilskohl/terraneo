@@ -14,7 +14,7 @@
 namespace terra::fe::wedge::operators::shell {
 
 template < typename ScalarT >
-class Mass
+class KMass
 {
   public:
     using SrcVectorType = linalg::VectorQ1Scalar< ScalarT >;
@@ -24,8 +24,9 @@ class Mass
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 > grid_;
-    grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 >    grid_;
+    grid::Grid2DDataScalar< ScalarT >    radii_;
+    grid::Grid4DDataScalar< ScalarType > k_;
 
     bool diagonal_;
     bool lumped_diagonal_;
@@ -40,18 +41,20 @@ class Mass
     grid::Grid4DDataScalar< ScalarType > dst_;
 
   public:
-    Mass(
-        const grid::shell::DistributedDomain&    domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarT >& radii,
-        const bool                               diagonal,
-        const bool                               lumped_diagonal     = false,
-        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode        operator_communication_mode =
+    KMass(
+        const grid::shell::DistributedDomain&       domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&    grid,
+        const grid::Grid2DDataScalar< ScalarT >&    radii,
+        const grid::Grid4DDataScalar< ScalarType >& k,
+        const bool                                  diagonal,
+        const bool                                  lumped_diagonal     = false,
+        linalg::OperatorApplyMode                   operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode           operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
+    , k_( k )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
@@ -123,11 +126,20 @@ class Mass
 
         const ScalarT grad_r = grad_forward_map_rad( r_1, r_2 );
 
+        dense::Vec< ScalarT, 6 > k[num_wedges_per_hex_cell];
+        extract_local_wedge_scalar_coefficients( k, local_subdomain_id, x_cell, y_cell, r_cell, k_ );
+
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
             for ( int q = 0; q < num_quad_points; q++ )
             {
                 const ScalarT r = forward_map_rad( r_1, r_2, quad_points[q]( 2 ) );
+
+                ScalarType k_eval = 0.0;
+                for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                {
+                    k_eval += shape( j, quad_points[q] ) * k[wedge]( j );
+                }
 
                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
                 {
@@ -137,7 +149,7 @@ class Mass
                         const ScalarT shape_j = shape_lat( j, quad_points[q] ) * shape_rad( j, quad_points[q] );
 
                         A[wedge]( i, j ) +=
-                            quad_weights[q] * ( shape_i * shape_j * r * r * grad_r * det_jac_lat[wedge][q] );
+                            quad_weights[q] * k_eval * ( shape_i * shape_j * r * r * grad_r * det_jac_lat[wedge][q] );
                     }
                 }
             }
@@ -152,8 +164,8 @@ class Mass
         {
             dense::Vec< ScalarT, 6 > ones;
             ones.fill( 1.0 );
-            A[0] = dense::Mat< ScalarT, 6, 6 >::diagonal_from_vec(A[0] * ones);
-            A[1] = dense::Mat< ScalarT, 6, 6 >::diagonal_from_vec(A[1] * ones);
+            A[0] = dense::Mat< ScalarT, 6, 6 >::diagonal_from_vec( A[0] * ones );
+            A[1] = dense::Mat< ScalarT, 6, 6 >::diagonal_from_vec( A[1] * ones );
         }
 
         dense::Vec< ScalarT, 6 > src[num_wedges_per_hex_cell];
@@ -168,7 +180,7 @@ class Mass
     }
 };
 
-static_assert( linalg::OperatorLike< Mass< float > > );
-static_assert( linalg::OperatorLike< Mass< double > > );
+static_assert( linalg::OperatorLike< KMass< float > > );
+static_assert( linalg::OperatorLike< KMass< double > > );
 
 } // namespace terra::fe::wedge::operators::shell
