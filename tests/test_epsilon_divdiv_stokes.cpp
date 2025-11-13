@@ -626,7 +626,7 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
           { "inf_res_vel", inf_residual_vel },
           { "inf_res_pre", inf_residual_pre } } );
 
-    visualization::XDMFOutput xdmf(
+    io::XDMFOutput xdmf(
         "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
 
     xdmf.add( k.grid_data() );

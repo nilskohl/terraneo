@@ -445,7 +445,7 @@ T test(
 
     if ( false )
     {
-        visualization::XDMFOutput xdmf( ".", subdomain_shell_coords.back(), subdomain_radii.back() );
+        io::XDMFOutput xdmf( ".", subdomain_shell_coords.back(), subdomain_radii.back() );
         xdmf.add( u.grid_data() );
         xdmf.add( solution.grid_data() );
         xdmf.add( error.grid_data() );

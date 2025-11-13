@@ -112,7 +112,7 @@ void test( int level, bool treat_boundary, bool diagonal )
 
     if ( true )
     {
-        visualization::XDMFOutput xdmf( "out", coords_shell, coords_radii );
+        io::XDMFOutput xdmf( "out", coords_shell, coords_radii );
         xdmf.add( src.grid_data() );
         xdmf.add( dst_a.grid_data() );
         xdmf.add( dst_b.grid_data() );

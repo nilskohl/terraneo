@@ -498,8 +498,9 @@ Result<> run( const Parameters& prm )
     table->print_pretty();
     table->clear();
 
-    visualization::XDMFOutput xdmf_output(
+    io::XDMFOutput xdmf_output(
         prm.io_parameters.outdir + "/" + prm.io_parameters.xdmf_dir,
+        domains[velocity_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level] );
 

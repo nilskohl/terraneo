@@ -187,7 +187,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( false )
     {
-        visualization::XDMFOutput xdmf( ".", subdomain_shell_coords_fine, subdomain_radii_fine );
+        io::XDMFOutput xdmf( ".", subdomain_shell_coords_fine, subdomain_radii_fine );
         xdmf.add( u_fine.grid_data() );
         xdmf.write();
     }

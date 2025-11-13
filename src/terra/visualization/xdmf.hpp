@@ -9,7 +9,7 @@
 #include "util/result.hpp"
 #include "util/xml.hpp"
 
-namespace terra::visualization {
+namespace terra::io {
 
 /// @brief XDMF output for visualization with software like Paraview.
 ///

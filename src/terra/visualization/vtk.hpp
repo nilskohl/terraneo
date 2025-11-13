@@ -10,7 +10,7 @@
 
 #include "terra/grid/grid_types.hpp"
 
-namespace terra::visualization {
+namespace terra::io {
 
 // Define VTK cell type IDs for clarity
 constexpr int VTK_QUAD           = 9;
