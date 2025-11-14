@@ -90,11 +90,11 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
         Kokkos::abort( "level must be >= 1" );
     }
 
-    const auto domain = grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level, level, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain =
+        grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    const auto domain_coarse = grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond(
-        level - 1, level - 1, 0.5, 1.0, grid::shell::subdomain_to_rank_distribute_full_diamonds );
+    const auto domain_coarse =
+        grid::shell::DistributedDomain::create_uniform_single_subdomain_per_diamond( level - 1, level - 1, 0.5, 1.0 );
 
     const auto coords_shell_double = grid::shell::subdomain_unit_sphere_single_shell_coords< double >( domain );
     const auto coords_radii_double = grid::shell::subdomain_shell_radii< double >( domain );
@@ -110,13 +110,16 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
         grid::shell::subdomain_unit_sphere_single_shell_coords< float >( domain_coarse );
     const auto coords_radii_coarse_float = grid::shell::subdomain_shell_radii< float >( domain_coarse );
 
-    auto mask_data        = linalg::setup_mask_data( domain );
-    auto mask_data_coarse = linalg::setup_mask_data( domain_coarse );
+    auto mask_data        = grid::setup_node_ownership_mask_data( domain );
+    auto mask_data_coarse = grid::setup_node_ownership_mask_data( domain_coarse );
 
-    const auto dofs_scalar        = kernels::common::count_masked< long >( mask_data, grid::mask_owned() );
-    const auto dofs_vec           = 3 * dofs_scalar;
-    const auto dofs_scalar_coarse = kernels::common::count_masked< long >( mask_data_coarse, grid::mask_owned() );
-    const auto dofs_stokes        = dofs_vec + dofs_scalar_coarse;
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
+
+    const auto dofs_scalar = kernels::common::count_masked< long >( mask_data, grid::NodeOwnershipFlag::OWNED );
+    const auto dofs_vec    = 3 * dofs_scalar;
+    const auto dofs_scalar_coarse =
+        kernels::common::count_masked< long >( mask_data_coarse, grid::NodeOwnershipFlag::OWNED );
+    const auto dofs_stokes = dofs_vec + dofs_scalar_coarse;
 
     VectorQ1Scalar< double > src_scalar_double( "src_scalar_double", domain, mask_data );
     VectorQ1Scalar< double > dst_scalar_double( "dst_scalar_double", domain, mask_data );
@@ -152,13 +155,13 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
 
     if ( benchmark == BenchmarkType::LaplaceFloat )
     {
-        Laplace< float > A( domain, coords_shell_float, coords_radii_float, true, false );
+        Laplace< float > A( domain, coords_shell_float, coords_radii_float, boundary_mask_data, true, false );
         duration = measure_run_time( executions, A, src_scalar_float, dst_scalar_float );
         dofs     = dofs_scalar;
     }
     else if ( benchmark == BenchmarkType::LaplaceDouble )
     {
-        Laplace< double > A( domain, coords_shell_double, coords_radii_double, true, false );
+        Laplace< double > A( domain, coords_shell_double, coords_radii_double, boundary_mask_data, true, false );
         duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
         dofs     = dofs_scalar;
     }
@@ -234,7 +237,7 @@ int main( int argc, char** argv )
     MPI_Init( &argc, &argv );
     Kokkos::ScopeGuard scope_guard( argc, argv );
 
-    terra::util::info_table().print_pretty();
+    util::print_general_info( argc, argv );
 
     run_all();
 

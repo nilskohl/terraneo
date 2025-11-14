@@ -145,7 +145,7 @@ inline util::Result< Parameters > parse_parameters( int argc, char** argv )
         return { "CLI parse error" };
     }
 
-    util::print_general_info_on_root( argc, argv, util::logroot );
+    util::print_general_info( argc, argv, util::logroot );
     util::print_cli_summary( app, util::logroot );
     return parameters;
 }

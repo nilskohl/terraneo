@@ -7,14 +7,9 @@
 
 namespace terra::util {
 
-/// @brief Prints some general information for this run to out (set, e.g., to std::cout) on the root process.
-inline void print_general_info_on_root( int argc, char** argv, std::ostream& out )
+/// @brief Prints some general information for this run to out.
+inline void print_general_info( int argc, char** argv, std::ostream& out = logroot )
 {
-    if ( mpi::rank() != 0 )
-    {
-        return;
-    }
-
     using clock      = std::chrono::system_clock;
     const auto now   = clock::now();
     const auto now_c = clock::to_time_t( now );

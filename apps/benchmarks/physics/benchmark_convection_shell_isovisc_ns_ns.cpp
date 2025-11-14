@@ -726,7 +726,7 @@ int main( int argc, char** argv )
 
     CLI11_PARSE( app, argc, argv );
 
-    util::print_general_info_on_root( argc, argv, std::cout );
+    util::print_general_info( argc, argv, std::cout );
 
     terra::util::print_cli_summary( app, std::cout );
 
