@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include "logging.hpp"
+#include "result.hpp"
 #include "terra/mpi/mpi.hpp"
 #include "timestamp.hpp"
 
@@ -108,7 +110,7 @@ class Table
     {
         // Using a variant directly is annoying because we need to handle string literals via const char *.
         // (That conversion btw seems to be compiler-dependent :) which makes it even more annoying.)
-        // It is possible, but requires another special case throughout the accessors.
+        // It is possible but requires another special case throughout the accessors.
         // So we simply always convert to std::string.
 
         using ValueBase::ValueBase; // inherit constructors
@@ -230,6 +232,54 @@ class Table
                 result.rows_.push_back( row );
             }
         }
+        return result;
+    }
+
+    /// @brief Returns the values of a column in a vector.
+    ///
+    /// Casts arithmetic values (std::is_arithmetic_v) if the output type is also arithmetic. Skips the row otherwise.
+    /// Skips rows where there is no entry for that column.
+    ///
+    /// @param column Column name.
+    /// @return Vector filled with non-empty values of the column with the specified name.
+    template < typename RawType >
+    [[nodiscard]] std::vector< RawType > column_as_vector( const std::string& column ) const
+    {
+        std::vector< RawType > result;
+
+        for ( const auto& row : rows_ )
+        {
+            auto it = row.find( column );
+            if ( it == row.end() )
+            {
+                continue;
+            }
+
+            const auto& val = it->second;
+
+            std::visit(
+                [&]( auto&& v ) {
+                    using V = std::decay_t< decltype( v ) >;
+
+                    // Case 1 — Exact match
+                    if constexpr ( std::is_same_v< V, RawType > )
+                    {
+                        result.push_back( v );
+                    }
+                    // Case 2 — allow numeric → numeric
+                    else if constexpr ( std::is_arithmetic_v< RawType > && std::is_arithmetic_v< V > )
+                    {
+                        result.push_back( static_cast< RawType >( v ) );
+                    }
+                    // Case 3 — string (or anything else) → skip
+                    else
+                    {
+                        // skip
+                    }
+                },
+                val );
+        }
+
         return result;
     }
 
@@ -454,9 +504,142 @@ class Table
         }
 
         std::size_t len = strnlen( val, MAX_STRING_LENGTH ); // find '\0' but stop at MAX_LEN
-        return std::string( val, len );
+        return { val, len };
     }
 };
 
-;
+/// @brief Attempts to read a csv file and converts that into a \ref Table instance.
+///
+/// Recognizes commas as a separator.
+///
+/// @param filename CSV file path
+/// @return Result object either containing a \ref Table on success or an error string.
+[[nodiscard]] inline Result< Table > read_table_from_csv( const std::string& filename )
+{
+    auto trim = []( const std::string& s ) {
+        size_t start = 0;
+        while ( start < s.size() && std::isspace( static_cast< unsigned char >( s[start] ) ) )
+        {
+            start++;
+        }
+        size_t end = s.size();
+        while ( end > start && std::isspace( static_cast< unsigned char >( s[end - 1] ) ) )
+        {
+            end--;
+        }
+        return s.substr( start, end - start );
+    };
+
+    auto parse_line = [trim]( const std::string& line ) {
+        std::vector< std::string > result;
+        std::string                field;
+        bool                       inQuotes = false;
+
+        for ( size_t i = 0; i < line.size(); ++i )
+        {
+            if ( const char c = line[i]; c == '"' )
+            {
+                if ( inQuotes && i + 1 < line.size() && line[i + 1] == '"' )
+                {
+                    field.push_back( '"' ); // escaped quote
+                    ++i;
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if ( c == ',' && !inQuotes )
+            {
+                result.push_back( trim( field ) );
+                field.clear();
+            }
+            else
+            {
+                field.push_back( c );
+            }
+        }
+
+        result.push_back( trim( field ) );
+        return result;
+    };
+
+    auto infer_value = []( const std::string& s ) -> Table::Value {
+        if ( s == "true" || s == "TRUE" )
+            return true;
+        if ( s == "false" || s == "FALSE" )
+            return false;
+
+        char* end = nullptr;
+
+        // try int64
+        long long iv = std::strtoll( s.c_str(), &end, 10 );
+        if ( end && *end == '\0' )
+        {
+            return static_cast< int64_t >( iv );
+        }
+
+        // try double
+        double dv = std::strtod( s.c_str(), &end );
+        if ( end && *end == '\0' )
+        {
+            return dv;
+        }
+
+        // fallback to string
+        return s;
+    };
+
+    auto build_row = [infer_value](
+                         const std::vector< std::string >& headers,
+                         const std::vector< std::string >& fields ) -> Table::Row {
+        Table::Row row;
+        for ( size_t i = 0; i < headers.size() && i < fields.size(); ++i )
+        {
+            row[headers[i]] = infer_value( fields[i] );
+        }
+        return row;
+    };
+
+    std::ifstream file( filename );
+    if ( !file.is_open() )
+    {
+        return { "Could not open file: " + filename };
+    }
+
+    std::string line;
+    if ( !std::getline( file, line ) )
+    {
+        return { "Could not find a single line of content in file: " + filename };
+    }
+
+    std::vector< std::string > headers = parse_line( line );
+
+    Table table;
+
+    long line_number = 2;
+    while ( std::getline( file, line ) )
+    {
+        auto fields = parse_line( line );
+
+        if ( fields.size() != headers.size() )
+        {
+            return {
+                "Error parsing CSV file (line " + std::to_string( line_number ) +
+                "):\n"
+                "Number of columns in row does not match number of headers.\n"
+                "Note that also empty lines could be the cause of this (an empty line has one column with empty value).\n"
+                "Line:" +
+                line };
+        }
+
+        auto row = build_row( headers, fields );
+        table.add_row( row );
+
+        line_number++;
+    }
+
+    return table;
+}
+
 } // namespace terra::util

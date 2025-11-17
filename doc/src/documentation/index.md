@@ -124,7 +124,7 @@ terraneox/
 - [x] Galerkin coarsening
 - [ ] iterative refinement
 - [x] spherical harmonics helper
-- [ ] radial profiles loader
+- [x] radial profiles loader
 - [x] checkpoints (re-use XDMF bin files!)
 - [ ] return unmanaged views from SubdomainNeighborhoodSendRecvBuffer that point to contiguous memory per rank, add
   another getter to the pointer of that array and then pass that to MPI_Send/Recv instead

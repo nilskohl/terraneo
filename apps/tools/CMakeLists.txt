@@ -10,5 +10,6 @@ function(add_terra_tool name)
 endfunction()
 
 add_terra_tool(read_checkpoint)
+add_terra_tool(visualize_radial_profile)
 add_terra_tool(visualize_spherical_harmonics)
 add_terra_tool(visualize_thick_spherical_shell_mesh)
