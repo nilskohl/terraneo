@@ -281,7 +281,7 @@ class TwoGridGCA
                 }
 
                 dense::Mat< ScalarT, 6, 6 > A_fine;
-                if constexpr ( std::is_same< Operator, EpsilonDivDivSimple< double > >::value )
+                if constexpr ( std::is_same< Operator, EpsilonDivDiv< double > >::value )
                 {
                     A_fine = fine_op_.get_lmatrix(
                         local_subdomain_id,
@@ -367,7 +367,7 @@ class TwoGridGCA
             }
         }
 
-        if constexpr ( std::is_same< Operator, EpsilonDivDivSimple< double > >::value )
+        if constexpr ( std::is_same< Operator, EpsilonDivDiv< double > >::value )
         {
             // store coarse matrices
             coarse_op_.set_lmatrix(

@@ -17,11 +17,17 @@ template < typename ScalarT, int VecDim = 3 >
 class EpsilonDivDiv
 {
   public:
-    using SrcVectorType = linalg::VectorQ1Vec< ScalarT, VecDim >;
-    using DstVectorType = linalg::VectorQ1Vec< ScalarT, VecDim >;
-    using ScalarType    = ScalarT;
+    using SrcVectorType           = linalg::VectorQ1Vec< ScalarT, VecDim >;
+    using DstVectorType           = linalg::VectorQ1Vec< ScalarT, VecDim >;
+    using ScalarType              = ScalarT;
+    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, 18, 18, 2 >;
 
   private:
+    bool apply_stored_lmatrices_ =
+        false; // set to make apply_impl() load and use the stored local matrices for the operator application
+
+    Grid4DDataLocalMatrices lmatrices_;
+
     grid::shell::DistributedDomain domain_;
 
     grid::Grid3DDataVec< ScalarT, 3 >    grid_;
@@ -73,14 +79,96 @@ class EpsilonDivDiv
         quadrature::quad_felippa_3x2_quad_weights( quad_weights );
     }
 
-    const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
-
     void set_operator_apply_and_communication_modes(
         const linalg::OperatorApplyMode         operator_apply_mode,
         const linalg::OperatorCommunicationMode operator_communication_mode )
     {
         operator_apply_mode_         = operator_apply_mode;
         operator_communication_mode_ = operator_communication_mode;
+    }
+
+    /// @brief S/Getter for diagonal member
+    void set_diagonal( bool v ) { diagonal_ = v; }
+
+    /// @brief Getter for coefficient
+    const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
+
+    /// @brief Getter for domain member
+    grid::shell::DistributedDomain& get_domain() { return domain_; }
+
+    /// @brief Getter for radii member
+    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+
+    /// @brief Getter for grid member
+    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+
+    /// @brief allocates memory for the local matrices
+    void allocate_lmatrix_memory()
+    {
+        if ( lmatrices_.data() == nullptr )
+        {
+            lmatrices_ = Grid4DDataLocalMatrices(
+                "EpsilonDivDiv::lmatrices_",
+                domain_.subdomains().size(),
+                domain_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+                domain_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+                domain_.domain_info().subdomain_num_nodes_radially() - 1 );
+        }
+    }
+
+    /// @brief Set the local matrix stored in the operator
+    KOKKOS_INLINE_FUNCTION
+    void set_lmatrix(
+        const int                          local_subdomain_id,
+        const int                          x_cell,
+        const int                          y_cell,
+        const int                          r_cell,
+        const int                          wedge,
+        const int                          dimi,
+        const int                          dimj,
+        const dense::Mat< ScalarT, 6, 6 >& mat ) const
+    {
+        assert( lmatrices_.data() != nullptr );
+        for ( int i = 0; i < 6; ++i )
+        {
+            for ( int j = 0; j < 6; ++j )
+            {
+                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )(
+                    i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = mat( i, j );
+            }
+        }
+    }
+
+    /// @brief Retrives the local matrix
+    /// if there is stored local matrices, the desired local matrix is loaded and returned
+    /// if not, the local matrix is assembled on-the-fly
+    KOKKOS_INLINE_FUNCTION
+    dense::Mat< ScalarT, 6, 6 > get_lmatrix(
+        const int local_subdomain_id,
+        const int x_cell,
+        const int y_cell,
+        const int r_cell,
+        const int wedge,
+        const int dimi,
+        const int dimj ) const
+    {
+        if ( lmatrices_.data() != nullptr )
+        {
+            dense::Mat< ScalarT, 6, 6 > ijslice;
+            for ( int i = 0; i < 6; ++i )
+            {
+                for ( int j = 0; j < 6; ++j )
+                {
+                    ijslice( i, j ) = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )(
+                        i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge );
+                }
+            }
+            return ijslice;
+        }
+        else
+        {
+            return assemble_lmatrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, dimi, dimj );
+        }
     }
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
@@ -98,22 +186,22 @@ class EpsilonDivDiv
         if ( src_.extent( 0 ) != dst_.extent( 0 ) || src_.extent( 1 ) != dst_.extent( 1 ) ||
              src_.extent( 2 ) != dst_.extent( 2 ) || src_.extent( 3 ) != dst_.extent( 3 ) )
         {
-            throw std::runtime_error( "VectorLaplace: src/dst mismatch" );
+            throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
         }
 
         if ( src_.extent( 1 ) != grid_.extent( 1 ) || src_.extent( 2 ) != grid_.extent( 2 ) )
         {
-            throw std::runtime_error( "VectorLaplace: src/dst mismatch" );
+            throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
         }
 
-        util::Timer timer_kernel( "vector_laplace_kernel" );
+        util::Timer timer_kernel( "epsilon_divdiv_kernel" );
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
         Kokkos::fence();
         timer_kernel.stop();
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
-            util::Timer timer_comm( "vector_laplace_comm" );
+            util::Timer timer_comm( "epsilon_divdiv_comm" );
 
             communication::shell::pack_send_and_recv_local_subdomain_boundaries(
                 domain_, dst_, send_buffers_, recv_buffers_ );
@@ -121,19 +209,21 @@ class EpsilonDivDiv
         }
     }
 
-    // for both trial and test space this function sets up a vector:
-    // each vector element holds the symmetric gradient (a 3x3 matrix) of the shape function of the corresponding dof
-    // (if dimi == dimj, these are the same and we are on the diagonal of the vectorial diffusion operator)
-    // additionally, we compute the scalar factor for the numerical integral comp: determinant of the jacobian,
-    // evaluation of the coefficient k on the element and the quadrature weight of the current quad-point.
+    /// @brief: For both trial and test space this function sets up a vector:
+    /// each vector element holds the symmetric gradient (a 3x3 matrix) of the shape function of the corresponding dof
+    /// (if dimi == dimj, these are the same and we are on the diagonal of the vectorial diffusion operator)
+    /// Additionally, we compute the scalar factor for the numerical integral comp: determinant of the jacobian,
+    /// evaluation of the coefficient k on the element and the quadrature weight of the current quad-point.
 
-    // The idea of this function is that the two vectors can be:
-    // - accumulated to the result of the local matvec with 2 * num_nodes_per_wedge complexity
-    //   by scaling the dot product of the trial vec and local src dofs with each element of the test vec
-    //   (and adding to the dst dofs, this is the fused local matvec).
-    // - propagated to the local matrix by an outer product of the two vectors
-    //   (without applying it to dofs). This is e.g. required to assemble the finest grid local
-    //   matrix on-the-fly during GCA/Galerkin coarsening.
+    /// The idea of this function is that the two vectors can be:
+    /// - accumulated to the result of the local matvec with 2 * num_nodes_per_wedge complexity
+    ///   by scaling the dot product of the trial vec and local src dofs with each element of the test vec
+    ///   (and adding to the dst dofs, this is the fused local matvec).
+    /// - propagated to the local matrix by an outer product of the two vectors
+    ///   (without applying it to dofs). This is e.g. required to assemble the finest grid local
+    ///   matrix on-the-fly during GCA/Galerkin coarsening.
+
+    ///
     KOKKOS_INLINE_FUNCTION void assemble_trial_test_vecs(
         const int                               wedge,
         const dense::Vec< ScalarType, VecDim >& quad_point,
@@ -171,22 +261,12 @@ class EpsilonDivDiv
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
-        const bool test_assemble_lmatrix = 1;
-        if constexpr ( test_assemble_lmatrix )
+        // if we have stored lmatrices, use them
+        // user's responsibility to write meaningful matrices
+        if ( lmatrices_.data() != nullptr )
         {
             // Compute the local element matrix.
             dense::Mat< ScalarT, 18, 18 > A[num_wedges_per_hex_cell] = {};
-
-            // Gather surface points for each wedge.
-            dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
-            wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
-
-            // Gather wedge radii.
-            const ScalarT r_1 = radii_( local_subdomain_id, r_cell );
-            const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
-
-            dense::Vec< ScalarT, 6 > k[num_wedges_per_hex_cell];
-            extract_local_wedge_scalar_coefficients( k, local_subdomain_id, x_cell, y_cell, r_cell, k_ );
 
             // FE dimensions: velocity coupling components of epsilon operator
             for ( int dimi = 0; dimi < 3; ++dimi )
@@ -198,21 +278,22 @@ class EpsilonDivDiv
 
                     for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
                     {
-                        auto local_matrix =
-                            assemble_lmatrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, dimi, dimj );
-
+                       
                         // FE dimensions: local DoFs/associated shape functions
                         for ( int i = 0; i < num_nodes_per_wedge; i++ )
                         {
                             for ( int j = 0; j < num_nodes_per_wedge; j++ )
                             {
                                 A[wedge]( i + num_nodes_per_wedge * dimi, j + num_nodes_per_wedge * dimj ) =
-                                    local_matrix( i, j );
+                                    lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )(
+                                        i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge );
                             }
                         }
                     }
                 }
             }
+
+            // BCs are applied by GCA ... to be discussed for free-slip
 
             if ( diagonal_ )
             {
@@ -235,14 +316,12 @@ class EpsilonDivDiv
                     }
                 }
             }
-            //extract_local_wedge_vector_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, dimj, src_ );
-
+            
             dense::Vec< ScalarT, 18 > dst[num_wedges_per_hex_cell];
 
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];
 
-            //atomically_add_local_wedge_vector_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, dimi, dst );
             for ( int dimi = 0; dimi < 3; dimi++ )
             {
                 dense::Vec< ScalarT, 6 > dst_d[num_wedges_per_hex_cell];
@@ -398,6 +477,7 @@ class EpsilonDivDiv
                     A( i, j ) += jdet_keval_quadweight *
                                  ( 2 * sym_grad_j[j].double_contract( sym_grad_i[i] ) -
                                    2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * sym_grad_i[i]( dimi, dimi ) );
+                    // for the div, we just extract the component from the gradient vector
                 }
             }
         }
@@ -509,6 +589,7 @@ class EpsilonDivDiv
                 dst_local_hex[4 * offset_r[wedge][j] + 2 * offset_y[wedge][j] + offset_x[wedge][j]] +=
                     jdet_keval_quadweight * ( 2 * ( sym_grad_j[j] ).double_contract( grad_u ) -
                                               2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * divu );
+                // for the div, we just extract the component from the gradient vector
             }
         }
 
