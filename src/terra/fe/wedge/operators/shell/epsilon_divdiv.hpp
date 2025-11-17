@@ -214,57 +214,6 @@ class EpsilonDivDiv
                 }
             }
 
-            if ( treat_boundary_ )
-            {
-                for ( int dimi = 0; dimi < 3; ++dimi )
-                {
-                    for ( int dimj = 0; dimj < 3; ++dimj )
-                    {
-                        for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
-                        {
-                            dense::Mat< ScalarT, 18, 18 > boundary_mask;
-                            boundary_mask.fill( 1.0 );
-
-                            if ( r_cell == 0 )
-                            {
-                                // Inner boundary (CMB).
-                                for ( int i = 0; i < 6; i++ )
-                                {
-                                    for ( int j = 0; j < 6; j++ )
-                                    {
-                                        if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
-                                             ( dimi != dimj && ( i < 3 || j < 3 ) ) )
-                                        {
-                                            boundary_mask(
-                                                i + num_nodes_per_wedge * dimi, j + num_nodes_per_wedge * dimj ) = 0.0;
-                                        }
-                                    }
-                                }
-                            }
-
-                            if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
-                            {
-                                // Outer boundary (surface).
-                                for ( int i = 0; i < 6; i++ )
-                                {
-                                    for ( int j = 0; j < 6; j++ )
-                                    {
-                                        if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
-                                             ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
-                                        {
-                                            boundary_mask(
-                                                i + num_nodes_per_wedge * dimi, j + num_nodes_per_wedge * dimj ) = 0.0;
-                                        }
-                                    }
-                                }
-                            }
-
-                            A[wedge].hadamard_product( boundary_mask );
-                        }
-                    }
-                }
-            }
-
             if ( diagonal_ )
             {
                 A[0] = A[0].diagonal();
@@ -365,31 +314,16 @@ class EpsilonDivDiv
                                 sym_grad_j,
                                 jdet_keval_quadweight );
 
-                            if ( diagonal_ )
-                            {
-                                diagonal(
-                                    src_local_hex,
-                                    dst_local_hex,
-                                    wedge,
-                                    jdet_keval_quadweight,
-                                    sym_grad_i,
-                                    sym_grad_j,
-                                    dimi,
-                                    dimj );
-                            }
-                            else
-                            {
-                                fused_local_mv(
-                                    src_local_hex,
-                                    dst_local_hex,
-                                    wedge,
-                                    jdet_keval_quadweight,
-                                    sym_grad_i,
-                                    sym_grad_j,
-                                    dimi,
-                                    dimj,
-                                    r_cell );
-                            }
+                            fused_local_mv(
+                                src_local_hex,
+                                dst_local_hex,
+                                wedge,
+                                jdet_keval_quadweight,
+                                sym_grad_i,
+                                sym_grad_j,
+                                dimi,
+                                dimj,
+                                r_cell );
                         }
                     }
 
@@ -456,6 +390,7 @@ class EpsilonDivDiv
                 sym_grad_j,
                 jdet_keval_quadweight );
 
+            // propagate on local matrix by outer product of test and trial vecs
             for ( int i = 0; i < num_nodes_per_wedge; i++ )
             {
                 for ( int j = 0; j < num_nodes_per_wedge; j++ )
@@ -464,6 +399,51 @@ class EpsilonDivDiv
                                  ( 2 * sym_grad_j[j].double_contract( sym_grad_i[i] ) -
                                    2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * sym_grad_i[i]( dimi, dimi ) );
                 }
+            }
+        }
+
+        if ( treat_boundary_ )
+        {
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+            {
+                dense::Mat< ScalarT, 6, 6 > boundary_mask;
+                boundary_mask.fill( 1.0 );
+
+                if ( r_cell == 0 )
+                {
+                    // Inner boundary (CMB).
+                    for ( int i = 0; i < 6; i++ )
+                    {
+                        for ( int j = 0; j < 6; j++ )
+                        {
+                            // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
+                            if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
+                                 ( dimi != dimj && ( i < 3 || j < 3 ) ) )
+                            {
+                                boundary_mask( i, j ) = 0.0;
+                            }
+                        }
+                    }
+                }
+
+                if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                {
+                    // Outer boundary (surface).
+                    for ( int i = 0; i < 6; i++ )
+                    {
+                        for ( int j = 0; j < 6; j++ )
+                        {
+                            // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
+                            if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
+                                 ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
+                            {
+                                boundary_mask( i, j ) = 0.0;
+                            }
+                        }
+                    }
+                }
+
+                A.hadamard_product( boundary_mask );
             }
         }
 
@@ -490,10 +470,10 @@ class EpsilonDivDiv
         ScalarType                     divu = 0.0;
         grad_u.fill( 0.0 );
 
-        int        start      = 0;
-        int        end        = num_nodes_per_wedge;
-        const bool at_cmb     = r_cell == 0;
-        const bool at_surface = r_cell + 1 == radii_.extent( 1 ) - 1;
+        const bool at_cmb        = r_cell == 0;
+        const bool at_surface    = r_cell + 1 == radii_.extent( 1 ) - 1;
+        int        cmb_shift     = 0;
+        int        surface_shift = 0;
 
         // Compute ∇u at this quadrature point.
         if ( !diagonal_ )
@@ -501,16 +481,17 @@ class EpsilonDivDiv
             if ( treat_boundary_ && at_cmb )
             {
                 // at the core-mantle boundary, we exclude dofs that are lower-indexed than the dof on the boundary
-                start = 3;
+                cmb_shift = 3;
             }
             else if ( treat_boundary_ && at_surface )
             {
                 // at the surface boundary, we exclude dofs that are higher-indexed than the dof on the boundary
-                end = 3;
+                surface_shift = 3;
             }
 
             // accumulate the element-local gradient/divergence of the trial function (loop over columns of local matrix/local dofs)
-            for ( int i = start; i < end; i++ )
+            // by dot of trial vec and src dofs
+            for ( int i = 0 + cmb_shift; i < num_nodes_per_wedge - surface_shift; i++ )
             {
                 grad_u =
                     grad_u +
@@ -521,9 +502,9 @@ class EpsilonDivDiv
 
             // Add the test function contributions.
             // for each row of the local matrix (test-functions):
-            // dot trial part (fully assembled for the current element from loop above) with test part corresponding to the current row/dof
+            // multiply trial part (fully assembled for the current element from loop above) with test part corresponding to the current row/dof
             // += due to contributions from other elements
-            for ( int j = start; j < end; j++ )
+            for ( int j = 0 + cmb_shift; j < num_nodes_per_wedge - surface_shift; j++ )
             {
                 dst_local_hex[4 * offset_r[wedge][j] + 2 * offset_y[wedge][j] + offset_x[wedge][j]] +=
                     jdet_keval_quadweight * ( 2 * ( sym_grad_j[j] ).double_contract( grad_u ) -
@@ -532,9 +513,10 @@ class EpsilonDivDiv
         }
 
         // Dirichlet DoFs are only to be eliminated on diagonal blocks of epsilon
-        if ( dimi == dimj && ( treat_boundary_ && ( at_cmb || at_surface ) ) )
+        if ( diagonal_ || ( dimi == dimj && ( treat_boundary_ && ( at_cmb || at_surface ) ) ) )
         {
-            for ( int i = ( at_cmb ? 0 : 3 ); i < ( at_cmb ? 3 : num_nodes_per_wedge ); i++ )
+            // for the diagonal elements at the boundary, we switch the shifts
+            for ( int i = 0 + surface_shift; i < num_nodes_per_wedge - cmb_shift; i++ )
             {
                 const auto grad_u_diag =
                     sym_grad_i[i] * src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]];
@@ -546,34 +528,6 @@ class EpsilonDivDiv
                     jdet_keval_quadweight * ( 2 * ( sym_grad_j[i] ).double_contract( grad_u_diag ) -
                                               2.0 / 3.0 * sym_grad_j[i]( dimj, dimj ) * div_u_diag );
             }
-        }
-    }
-
-    KOKKOS_INLINE_FUNCTION void diagonal(
-        ScalarType                      src_local_hex[8],
-        ScalarType                      dst_local_hex[8],
-        const int                       wedge,
-        const ScalarType                jdet_keval_quadweight,
-        dense::Mat< ScalarType, 3, 3 >* sym_grad_i,
-        dense::Mat< ScalarType, 3, 3 >* sym_grad_j,
-        const int                       dimi,
-        const int                       dimj ) const
-    {
-        constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
-        constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
-        constexpr int offset_r[2][6] = { { 0, 0, 0, 1, 1, 1 }, { 0, 0, 0, 1, 1, 1 } };
-
-        // 3. Compute ∇u at this quadrature point.
-        for ( int i = 0; i < num_nodes_per_wedge; i++ )
-        {
-            const auto grad_u_diag =
-                sym_grad_i[i] * src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]];
-            const auto div_u_diag = sym_grad_i[i]( dimi, dimi ) *
-                                    src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]];
-
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                jdet_keval_quadweight * ( 2 * ( sym_grad_j[i] ).double_contract( grad_u_diag ) -
-                                          2.0 / 3.0 * sym_grad_j[i]( dimj, dimj ) * div_u_diag );
         }
     }
 };
