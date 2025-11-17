@@ -22,9 +22,9 @@
 #include "terra/fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -445,7 +445,7 @@ T test(
 
     if ( false )
     {
-        visualization::XDMFOutput xdmf( ".", subdomain_shell_coords.back(), subdomain_radii.back() );
+        io::XDMFOutput xdmf( ".", domains.back(), subdomain_shell_coords.back(), subdomain_radii.back() );
         xdmf.add( u.grid_data() );
         xdmf.add( solution.grid_data() );
         xdmf.add( error.grid_data() );

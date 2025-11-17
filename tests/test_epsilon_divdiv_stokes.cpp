@@ -14,6 +14,7 @@
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
+#include "io/xdmf.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/fgmres.hpp"
 #include "linalg/solvers/jacobi.hpp"
@@ -26,12 +27,12 @@
 #include "terra/fe/wedge/operators/shell/mass.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/vtk.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/linalg/inv_diag_operator.hpp"
+#include "terra/linalg/diagonally_scaled_operator.hpp"
 #include "terra/linalg/solvers/diagonal_solver.hpp"
 #include "terra/linalg/solvers/power_iteration.hpp"
-#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -48,10 +49,10 @@ using grid::shell::SubdomainInfo;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
-using terra::fe::wedge::operators::shell::TwoGridGCA;
-using terra::linalg::InvDiagOperator;
-using terra::linalg::solvers::DiagonalSolver;
-using terra::linalg::solvers::power_iteration;
+using fe::wedge::operators::shell::TwoGridGCA;
+using linalg::DiagonallyScaledOperator;
+using linalg::solvers::DiagonalSolver;
+using linalg::solvers::power_iteration;
 
 struct SolutionVelocityInterpolator
 {
@@ -353,8 +354,8 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         VectorQ1Scalar< ScalarType > k_c( "k_c", domains[level - min_level], mask_data[level - min_level] );
         Kokkos::parallel_for(
             "coefficient interpolation",
-            local_domain_md_range_policy_nodes( domains[velocity_level] ),
-            KInterpolator( coords_shell[velocity_level], coords_radii[velocity_level], k_c.grid_data() ) );
+            local_domain_md_range_policy_nodes( domains[level - min_level] ),
+            KInterpolator( coords_shell[level - min_level], coords_radii[level - min_level], k_c.grid_data() ) );
         A_diag.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, true );
 
         if ( level < num_levels - 1 )
@@ -470,13 +471,13 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         double                    max_ev = 0.0;
         if ( level == num_levels - 1 )
         {
-            InvDiagOperator< Viscous > inv_diag_A( K.block_11(), inverse_diagonals[level] );
-            max_ev = power_iteration< InvDiagOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
+            DiagonallyScaledOperator< Viscous > inv_diag_A( K.block_11(), inverse_diagonals[level] );
+            max_ev = power_iteration< DiagonallyScaledOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
         }
         else
         {
-            InvDiagOperator< Viscous > inv_diag_A( A_c[level], inverse_diagonals[level] );
-            max_ev = power_iteration< InvDiagOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
+            DiagonallyScaledOperator< Viscous > inv_diag_A( A_c[level], inverse_diagonals[level] );
+            max_ev = power_iteration< DiagonallyScaledOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
         }
         const auto omega_opt = 2.0 / ( 1.1 * max_ev );
         smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt );
@@ -625,6 +626,15 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
           { "inf_res_vel", inf_residual_vel },
           { "inf_res_pre", inf_residual_pre } } );
 
+    io::XDMFOutput xdmf(
+        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
+
+    xdmf.add( k.grid_data() );
+    xdmf.add( u.block_1().grid_data() );
+    xdmf.add( solution.block_1().grid_data() );
+
+    xdmf.write();
+
     return {
         l2_error_velocity, l2_error_pressure, solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() };
 }
@@ -633,7 +643,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 5;
+    const int max_level = 4;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;

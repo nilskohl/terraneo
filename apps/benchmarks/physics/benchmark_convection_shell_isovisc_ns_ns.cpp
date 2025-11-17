@@ -16,6 +16,7 @@
 #include "fe/wedge/operators/shell/vector_mass.hpp"
 #include "grid/grid_types.hpp"
 #include "grid/shell/spherical_shell.hpp"
+#include "io/xdmf.hpp"
 #include "kernels/common/grid_operations.hpp"
 #include "kokkos/kokkos_wrapper.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
@@ -33,7 +34,6 @@
 #include "util/init.hpp"
 #include "util/table.hpp"
 #include "util/timer.hpp"
-#include "visualization/xdmf.hpp"
 
 using namespace terra;
 
@@ -494,7 +494,7 @@ void run( const Parameters& prm, const std::shared_ptr< util::Table >& table )
     table->print_pretty();
     table->clear();
 
-    visualization::XDMFOutput xdmf_output( xdmf_dir, coords_shell[velocity_level], coords_radii[velocity_level] );
+    io::XDMFOutput xdmf_output( xdmf_dir, coords_shell[velocity_level], coords_radii[velocity_level] );
 
     xdmf_output.add( T.grid_data() );
     xdmf_output.add( u.block_1().grid_data() );
@@ -726,7 +726,7 @@ int main( int argc, char** argv )
 
     CLI11_PARSE( app, argc, argv );
 
-    util::print_general_info_on_root( argc, argv, std::cout );
+    util::print_general_info( argc, argv, std::cout );
 
     terra::util::print_cli_summary( app, std::cout );
 

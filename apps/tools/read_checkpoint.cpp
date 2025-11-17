@@ -6,8 +6,8 @@
 #include <optional>
 
 #include "terra/grid/shell/spherical_shell.hpp"
-#include "terra/visualization/vtk.hpp"
-#include "terra/visualization/xdmf.hpp"
+#include "terra/io/vtk.hpp"
+#include "terra/io/xdmf.hpp"
 #include "util/cli11_helper.hpp"
 #include "util/cli11_wrapper.hpp"
 #include "util/filesystem.hpp"
@@ -45,7 +45,7 @@ int main( int argc, char** argv )
 
     logroot << description << "\n\n";
 
-    const auto checkpoint_metadata_result = terra::visualization::read_checkpoint_metadata( checkpoint_directory );
+    const auto checkpoint_metadata_result = terra::io::read_xdmf_checkpoint_metadata( checkpoint_directory );
     if ( checkpoint_metadata_result.is_err() )
     {
         logroot << checkpoint_metadata_result.error() << std::endl;
@@ -142,7 +142,7 @@ int main( int argc, char** argv )
 
         auto mask_data = terra::grid::setup_node_ownership_mask_data( domain );
 
-        terra::visualization::XDMFOutput xdmf( output_directory, domain, coords_shell, coords_radii );
+        terra::io::XDMFOutput xdmf( output_directory, domain, coords_shell, coords_radii );
 
         for ( const auto& grid_data_file : checkpoint_metadata.grid_data_files )
         {
@@ -154,7 +154,7 @@ int main( int argc, char** argv )
                     {
                         terra::linalg::VectorQ1Scalar< float > vec(
                             grid_data_file.grid_name_string, domain, mask_data );
-                        const auto result = terra::visualization::read_checkpoint(
+                        const auto result = terra::io::read_xdmf_checkpoint_grid(
                             checkpoint_directory, grid_data_file.grid_name_string, 0, domain, vec.grid_data() );
                         if ( result.is_err() )
                         {
@@ -168,7 +168,7 @@ int main( int argc, char** argv )
                     {
                         terra::linalg::VectorQ1Scalar< double > vec(
                             grid_data_file.grid_name_string, domain, mask_data );
-                        const auto result = terra::visualization::read_checkpoint(
+                        const auto result = terra::io::read_xdmf_checkpoint_grid(
                             checkpoint_directory, grid_data_file.grid_name_string, 0, domain, vec.grid_data() );
                         if ( result.is_err() )
                         {

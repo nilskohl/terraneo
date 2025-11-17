@@ -5,8 +5,8 @@
 #include <optional>
 
 #include "terra/grid/shell/spherical_shell.hpp"
-#include "terra/visualization/vtk.hpp"
-#include "terra/visualization/xdmf.hpp"
+#include "terra/io/vtk.hpp"
+#include "terra/io/xdmf.hpp"
 #include "util/cli11_helper.hpp"
 #include "util/cli11_wrapper.hpp"
 #include "util/filesystem.hpp"
@@ -149,7 +149,7 @@ int main( int argc, char** argv )
             grid_local_subdomain_id( local_subdomain_idx, x, y, r ) = local_subdomain_idx;
         } );
 
-    terra::visualization::XDMFOutput xdmf( parameters.output_directory, subdomain_shell_coords, subdomain_radii );
+    terra::io::XDMFOutput xdmf( parameters.output_directory, subdomain_shell_coords, subdomain_radii );
 
     xdmf.add( grid_rank );
     xdmf.add( grid_diamond_id );

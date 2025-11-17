@@ -231,7 +231,7 @@ int main( int argc, char** argv )
         Kokkos::abort( "Benchmark not set up for more than 1 MPI process yet." );
     }
 
-    terra::util::info_table().print_pretty();
+    terra::util::print_general_info( argc, argv );
 
     run_all();
 

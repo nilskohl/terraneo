@@ -12,9 +12,9 @@
 #include "terra/fe/wedge/operators/shell/unsteady_advection_diffusion_supg.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -132,7 +132,7 @@ void test( int level, int timesteps, double dt, const std::shared_ptr< util::Tab
     linalg::solvers::PBiCGStab< AD > bicgstab( 2, solver_params, table, tmps );
     bicgstab.set_tag( "bicgstab_solver_level_" + std::to_string( level ) );
 
-    visualization::XDMFOutput< ScalarType > xdmf_output( ".", subdomain_shell_coords, subdomain_radii );
+    io::XDMFOutput< ScalarType > xdmf_output( ".", domain, subdomain_shell_coords, subdomain_radii );
     xdmf_output.add( T.grid_data() );
     xdmf_output.add( solution.grid_data() );
     xdmf_output.add( error.grid_data() );

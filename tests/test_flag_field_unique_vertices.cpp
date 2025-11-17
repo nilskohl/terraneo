@@ -1,10 +1,10 @@
+#include "io/xdmf.hpp"
 #include "kernels/common/grid_operations.hpp"
 #include "linalg/vector_q1.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
-#include "terra/visualization/vtk.hpp"
+#include "terra/io/vtk.hpp"
 #include "util/filesystem.hpp"
 #include "util/init.hpp"
-#include "visualization/xdmf.hpp"
 
 /// For dot products to work correctly, we need to properly define vertex ownership.
 /// Neighboring subdomains share vertices, and to uniquely mark them, we create a mask View, that is either 1 or 0
@@ -117,7 +117,7 @@ void test( const int level, const int subdomain_level )
     const auto xdmf_dir = "test_flag_field_unique_vertices_out";
     terra::util::prepare_empty_directory( xdmf_dir );
 
-    terra::visualization::XDMFOutput xdmf( xdmf_dir, coords_lat, coords_rad );
+    terra::io::XDMFOutput xdmf( xdmf_dir, domain, coords_lat, coords_rad );
     xdmf.add( mask_data_double );
     xdmf.add( ones_comm );
     xdmf.add( grid_diamond_id );

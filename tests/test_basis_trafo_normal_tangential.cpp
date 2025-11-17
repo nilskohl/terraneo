@@ -11,9 +11,9 @@
 #include "terra/fe/wedge/operators/shell/mass.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/logging.hpp"
 #include "util/table.hpp"
@@ -237,7 +237,7 @@ void test( int level )
 
     ///////////////////
 
-    visualization::XDMFOutput xdmf( "test_basis_trafo_normal_tangential_out", coords_shell, coords_radii );
+    io::XDMFOutput xdmf( "test_basis_trafo_normal_tangential_out", domain, coords_shell, coords_radii );
     xdmf.add( a.grid_data() );
     xdmf.add( b.grid_data() );
     xdmf.add( no_normal.grid_data() );

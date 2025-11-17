@@ -11,10 +11,10 @@
 #include "terra/fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/vtk.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/vtk.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -158,7 +158,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using Prolongation = fe::wedge::operators::shell::ProlongationLinear< ScalarType >;
 
-    Prolongation P( domain_fine, domain_coarse, subdomain_shell_coords_fine, subdomain_radii_fine );
+    Prolongation P( subdomain_shell_coords_fine, subdomain_radii_fine );
 
     // Set up solution data.
     Kokkos::parallel_for(
@@ -187,7 +187,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( false )
     {
-        visualization::XDMFOutput xdmf( ".", subdomain_shell_coords_fine, subdomain_radii_fine );
+        io::XDMFOutput xdmf( ".", domain_fine, subdomain_shell_coords_fine, subdomain_radii_fine );
         xdmf.add( u_fine.grid_data() );
         xdmf.write();
     }
@@ -211,13 +211,13 @@ int main( int argc, char** argv )
 
             if ( error > 1e-12 )
             {
-                  throw std::runtime_error( "constants must be prolongated exactly" );
+                throw std::runtime_error( "constants must be prolongated exactly" );
             }
         }
     }
 
     std::cout << std::endl;
-    
+
     std::cout << "Testing prolongation: linear function" << std::endl;
     {
         for ( int level = 1; level <= 5; ++level )

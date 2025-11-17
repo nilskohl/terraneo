@@ -10,9 +10,9 @@
 #include "terra/fe/wedge/operators/shell/mass.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/logging.hpp"
 #include "util/table.hpp"
@@ -178,7 +178,7 @@ double test( int level, int level_subdomains, const std::shared_ptr< util::Table
 
     if ( false )
     {
-        visualization::XDMFOutput< double > xdmf( ".", coords_shell, coords_radii );
+        io::XDMFOutput< double > xdmf( ".", domain, coords_shell, coords_radii );
         xdmf.add( g.grid_data() );
         xdmf.add( u.grid_data() );
         xdmf.add( solution.grid_data() );

@@ -12,9 +12,9 @@
 #include "terra/fe/wedge/operators/shell/unsteady_advection_diffusion_supg.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -151,7 +151,7 @@ void test( int level, const std::shared_ptr< util::Table >& table )
 
     const int timesteps = 10;
 
-    visualization::XDMFOutput xdmf_output( ".", subdomain_shell_coords, subdomain_radii );
+    io::XDMFOutput xdmf_output( ".", domain, subdomain_shell_coords, subdomain_radii );
     xdmf_output.add( T.grid_data() );
 
     constexpr auto vtk = false;

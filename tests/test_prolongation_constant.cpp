@@ -7,9 +7,9 @@
 #include "terra/fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/xdmf.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/xdmf.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -180,14 +180,14 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     if ( true )
     {
-        visualization::XDMFOutput xdmf_output_fine( ".", subdomain_shell_coords_fine, subdomain_radii_fine );
+        io::XDMFOutput xdmf_output_fine( ".", domain_fine, subdomain_shell_coords_fine, subdomain_radii_fine );
         xdmf_output_fine.add( u_fine.grid_data() );
         xdmf_output_fine.add( solution_fine.grid_data() );
         xdmf_output_fine.add( error_fine.grid_data() );
 
         xdmf_output_fine.write();
 
-        visualization::XDMFOutput xdmf_output_coarse( ".", subdomain_shell_coords_coarse, subdomain_radii_coarse );
+        io::XDMFOutput xdmf_output_coarse( ".", domain_coarse, subdomain_shell_coords_coarse, subdomain_radii_coarse );
         xdmf_output_coarse.add( u_coarse.grid_data() );
 
         xdmf_output_coarse.write();

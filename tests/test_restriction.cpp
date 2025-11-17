@@ -15,9 +15,9 @@
 #include "terra/fe/wedge/operators/shell/restriction_linear.hpp"
 #include "terra/grid/grid_types.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
+#include "terra/io/vtk.hpp"
 #include "terra/kernels/common/grid_operations.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
-#include "terra/visualization/vtk.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -119,7 +119,7 @@ void test_linear( int level )
     using Prolongation = fe::wedge::operators::shell::ProlongationLinear< ScalarType >;
     using Restriction  = fe::wedge::operators::shell::RestrictionLinear< ScalarType >;
 
-    Prolongation P(domain_fine, domain_coarse, subdomain_shell_coords_fine, subdomain_radii_fine );
+    Prolongation P( subdomain_shell_coords_fine, subdomain_radii_fine );
     Restriction  R( domain_coarse, subdomain_shell_coords_fine, subdomain_radii_fine );
 
     Eigen::SparseMatrix< double > P_assembled =

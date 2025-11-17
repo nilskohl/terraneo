@@ -4,8 +4,8 @@
 #include <optional>
 
 #include "terra/grid/shell/spherical_shell.hpp"
-#include "terra/visualization/vtk.hpp"
-#include "terra/visualization/xdmf.hpp"
+#include "terra/io/vtk.hpp"
+#include "terra/io/xdmf.hpp"
 #include "util/filesystem.hpp"
 #include "util/init.hpp"
 
@@ -125,7 +125,7 @@ int main( int argc, char** argv )
 
     terra::util::prepare_empty_directory( "test_xdmf_writer_output" );
 
-    terra::visualization::XDMFOutput xdmf( "test_xdmf_writer_output", subdomain_shell_coords, subdomain_radii );
+    terra::io::XDMFOutput xdmf( "test_xdmf_writer_output", domain, subdomain_shell_coords, subdomain_radii );
     xdmf.add( data_scalar.grid_data() );
     xdmf.add( data_vec.grid_data() );
     xdmf.add( rank );
