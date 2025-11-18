@@ -11,6 +11,7 @@
 #include "terra/dense/vec.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
+#include "util/cli11_helper.hpp"
 #include "util/info.hpp"
 #include "util/table.hpp"
 
@@ -26,6 +27,7 @@ using linalg::SrcOf;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
+using util::logroot;
 
 enum class BenchmarkType : int
 {
@@ -58,6 +60,13 @@ struct BenchmarkData
     int    level;
     long   dofs;
     double duration;
+};
+
+struct Parameters
+{
+    int min_level  = 1;
+    int max_level  = 6;
+    int executions = 5;
 };
 
 template < OperatorLike OperatorT >
@@ -156,12 +165,14 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     if ( benchmark == BenchmarkType::LaplaceFloat )
     {
         Laplace< float > A( domain, coords_shell_float, coords_radii_float, boundary_mask_data, true, false );
+        util::Timer      t( "Laplace - float" );
         duration = measure_run_time( executions, A, src_scalar_float, dst_scalar_float );
         dofs     = dofs_scalar;
     }
     else if ( benchmark == BenchmarkType::LaplaceDouble )
     {
         Laplace< double > A( domain, coords_shell_double, coords_radii_double, boundary_mask_data, true, false );
+        util::Timer       t( "Laplace - double" );
         duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
         dofs     = dofs_scalar;
     }
@@ -197,21 +208,17 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     return BenchmarkData{ level, dofs, duration };
 }
 
-void run_all()
+void run_all( const int min_level, const int max_level, const int executions )
 {
-    constexpr int min_level  = 1;
-    constexpr int max_level  = 6;
-    constexpr int executions = 5;
-
-    std::cout << "Running operator (matvec) benchmarks." << std::endl;
-    std::cout << "min_level:            " << min_level << std::endl;
-    std::cout << "max_level:            " << max_level << std::endl;
-    std::cout << "executions per level: " << executions << std::endl;
-    std::cout << std::endl;
+    logroot << "Running operator (matvec) benchmarks." << std::endl;
+    logroot << "min_level:            " << min_level << std::endl;
+    logroot << "max_level:            " << max_level << std::endl;
+    logroot << "executions per level: " << executions << std::endl;
+    logroot << std::endl;
 
     for ( auto benchmark : all_benchmark_types )
     {
-        std::cout << benchmark_description.at( benchmark ) << std::endl;
+        logroot << benchmark_description.at( benchmark ) << std::endl;
 
         util::Table table;
 
@@ -227,8 +234,17 @@ void run_all()
 
         table.print_pretty();
 
-        std::cout << std::endl;
-        std::cout << std::endl;
+        logroot << std::endl;
+        logroot << std::endl;
+    }
+
+    util::TimerTree::instance().aggregate_mpi();
+    if ( mpi::rank() == 0 )
+    {
+        auto          timer_tree_file = "benchmark_operators_timer_tree.json";
+        std::ofstream out( timer_tree_file );
+        out << util::TimerTree::instance().json_aggregate();
+        out.close();
     }
 }
 
@@ -239,7 +255,31 @@ int main( int argc, char** argv )
 
     util::print_general_info( argc, argv );
 
-    run_all();
+    const auto description =
+        "Operator benchmark. Runs a couple of matrix-vector multiplications for various operators to get an idea of the throughput.";
+    CLI::App app{ description };
+
+    Parameters parameters{};
+
+    util::add_option_with_default( app, "--min-level", parameters.min_level, "Min refinement level." );
+    util::add_option_with_default( app, "--max-level", parameters.max_level, "Max refinement level." );
+    util::add_option_with_default(
+        app, "--executions", parameters.executions, "Number of matrix-vector multiplications to be executed." );
+
+    CLI11_PARSE( app, argc, argv );
+
+    if ( parameters.min_level < 1 )
+    {
+        logroot << "Error: min-level must be >= 1." << std::endl;
+        return 1;
+    }
+
+    logroot << "\n" << description << "\n\n";
+
+    util::print_cli_summary( app, logroot );
+    logroot << "\n\n";
+
+    run_all( parameters.min_level, parameters.max_level, parameters.executions );
 
     MPI_Finalize();
 }

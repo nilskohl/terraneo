@@ -12,6 +12,8 @@
 namespace terra::util {
 
 /// @brief Node representing a timed region in the hierarchy.
+///
+/// @note See class `Timer` for actually running a timer.
 class TimerNode
 {
     std::string                                           name;              ///< Name of the timer region
@@ -193,12 +195,22 @@ class TimerTree
     }
 
     /// @brief Per-rank json tree.
+    ///
+    /// Returns a definitely non-reduced timer tree in json format.
+    /// This means that this returns the process-local timings depending on the process that calls this method.
     std::string json() { return root.to_json(); }
 
     /// @brief MPI-reduced / aggregate json.
+    ///
+    /// Returns the timings after reduction over all processes.
+    /// You need to call aggregate_mpi() before this for reasonable results.
+    ///
+    /// This method does not need to be called collectively.
     std::string json_aggregate() { return root.to_agg_json(); }
 
     /// @brief Aggregate timings across all MPI ranks
+    ///
+    /// Must be called collectively.
     void aggregate_mpi() { aggregate_node( &root, MPI_COMM_WORLD ); }
 
   private:
