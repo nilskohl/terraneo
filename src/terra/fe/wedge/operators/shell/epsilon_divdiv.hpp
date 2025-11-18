@@ -20,7 +20,8 @@ class EpsilonDivDiv
     using SrcVectorType           = linalg::VectorQ1Vec< ScalarT, VecDim >;
     using DstVectorType           = linalg::VectorQ1Vec< ScalarT, VecDim >;
     using ScalarType              = ScalarT;
-    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, 18, 18, 2 >;
+    static constexpr int LocalDim = 18;
+    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, LocalDim, LocalDim, 2 >;
 
   private:
     bool apply_stored_lmatrices_ =
@@ -119,22 +120,19 @@ class EpsilonDivDiv
     /// @brief Set the local matrix stored in the operator
     KOKKOS_INLINE_FUNCTION
     void set_local_matrix(
-        const int                          local_subdomain_id,
-        const int                          x_cell,
-        const int                          y_cell,
-        const int                          r_cell,
-        const int                          wedge,
-        const int                          dimi,
-        const int                          dimj,
-        const dense::Mat< ScalarT, 6, 6 >& mat ) const
+        const int                                        local_subdomain_id,
+        const int                                        x_cell,
+        const int                                        y_cell,
+        const int                                        r_cell,
+        const int                                        wedge,
+        const dense::Mat< ScalarT, LocalDim, LocalDim >& mat ) const
     {
         assert( lmatrices_.data() != nullptr );
-        for ( int i = 0; i < 6; ++i )
+        for ( int i = 0; i < LocalDim; ++i )
         {
-            for ( int j = 0; j < 6; ++j )
+            for ( int j = 0; j < LocalDim; ++j )
             {
-                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )(
-                    i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = mat( i, j );
+                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )( i, j ) = mat( i, j );
             }
         }
     }
@@ -143,31 +141,28 @@ class EpsilonDivDiv
     /// if there is stored local matrices, the desired local matrix is loaded and returned
     /// if not, the local matrix is assembled on-the-fly
     KOKKOS_INLINE_FUNCTION
-    dense::Mat< ScalarT, 6, 6 > get_local_matrix(
+    dense::Mat< ScalarT, LocalDim, LocalDim > get_local_matrix(
         const int local_subdomain_id,
         const int x_cell,
         const int y_cell,
         const int r_cell,
-        const int wedge,
-        const int dimi,
-        const int dimj ) const
+        const int wedge ) const
     {
         if ( lmatrices_.data() != nullptr )
         {
-            dense::Mat< ScalarT, 6, 6 > ijslice;
-            for ( int i = 0; i < 6; ++i )
+            dense::Mat< ScalarT, LocalDim, LocalDim > ijslice;
+            for ( int i = 0; i < LocalDim; ++i )
             {
-                for ( int j = 0; j < 6; ++j )
+                for ( int j = 0; j < LocalDim; ++j )
                 {
-                    ijslice( i, j ) = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )(
-                        i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge );
+                    ijslice( i, j ) = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )( i, j );
                 }
             }
             return ijslice;
         }
         else
         {
-            return assemble_lmatrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, dimi, dimj );
+            return assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge );
         }
     }
 
@@ -263,36 +258,16 @@ class EpsilonDivDiv
     {
         // If we have stored lmatrices, use them.
         // It's the user's responsibility to write meaningful matrices via set_lmatrix()
-        // We probably never want to assemble lmatrices with DCA and store, 
+        // We probably never want to assemble lmatrices with DCA and store,
         // so GCA should be the actor storing matrices.
         if ( lmatrices_.data() != nullptr )
         {
             // Compute the local element matrix.
-            dense::Mat< ScalarT, 18, 18 > A[num_wedges_per_hex_cell] = {};
-
-            // FE dimensions: velocity coupling components of epsilon operator
-            for ( int dimi = 0; dimi < 3; ++dimi )
-            {
-                for ( int dimj = 0; dimj < 3; ++dimj )
-                {
-                    if ( diagonal_ and dimi != dimj )
-                        continue;
-
-                    for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
-                    {
-                        // FE dimensions: local DoFs/associated shape functions
-                        for ( int i = 0; i < num_nodes_per_wedge; i++ )
-                        {
-                            for ( int j = 0; j < num_nodes_per_wedge; j++ )
-                            {
-                                A[wedge]( i + num_nodes_per_wedge * dimi, j + num_nodes_per_wedge * dimj ) =
-                                    lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )(
-                                        i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge );
-                            }
-                        }
-                    }
-                }
-            }
+            dense::Mat< ScalarT, LocalDim, LocalDim > A[num_wedges_per_hex_cell] = { 0 };
+            A[0] =// assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+            A[1] = //assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
 
             // BCs are applied by GCA ... to be discussed for free-slip
 
@@ -317,7 +292,7 @@ class EpsilonDivDiv
                     }
                 }
             }
-            
+
             dense::Vec< ScalarT, 18 > dst[num_wedges_per_hex_cell];
 
             dst[0] = A[0] * src[0];
@@ -427,14 +402,12 @@ class EpsilonDivDiv
     /// @brief assemble the local matrix and return it for a given element, wedge, and vectorial component
     /// (determined by dimi, dimj)
     KOKKOS_INLINE_FUNCTION
-    dense::Mat< ScalarT, 6, 6 > assemble_lmatrix(
+    dense::Mat< ScalarT, LocalDim, LocalDim > assemble_local_matrix(
         const int local_subdomain_id,
         const int x_cell,
         const int y_cell,
         const int r_cell,
-        const int wedge,
-        const int dimi,
-        const int dimj ) const
+        const int wedge ) const
     {
         // Gather surface points for each wedge.
         // TODO gather this for only 1 wedge
@@ -449,84 +422,93 @@ class EpsilonDivDiv
         extract_local_wedge_scalar_coefficients( k_local_hex, local_subdomain_id, x_cell, y_cell, r_cell, k_ );
 
         // Compute the local element matrix.
-        dense::Mat< ScalarT, 6, 6 > A = { 0 };
-
-        // spatial dimensions: quadrature points and wedge
-        for ( int q = 0; q < num_quad_points; q++ )
+        dense::Mat< ScalarT, LocalDim, LocalDim > A = { 0 };
+        for ( int dimi = 0; dimi < 3; ++dimi )
         {
-            dense::Mat< ScalarType, VecDim, VecDim > sym_grad_i[num_nodes_per_wedge];
-            dense::Mat< ScalarType, VecDim, VecDim > sym_grad_j[num_nodes_per_wedge];
-            ScalarType                               jdet_keval_quadweight = 0;
-            assemble_trial_test_vecs(
-                wedge,
-                quad_points[q],
-                quad_weights[q],
-                r_1,
-                r_2,
-                wedge_phy_surf,
-                k_local_hex,
-                dimi,
-                dimj,
-                sym_grad_i,
-                sym_grad_j,
-                jdet_keval_quadweight );
-
-            // propagate on local matrix by outer product of test and trial vecs
-            for ( int i = 0; i < num_nodes_per_wedge; i++ )
+            for ( int dimj = 0; dimj < 3; ++dimj )
             {
-                for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                // spatial dimensions: quadrature points and wedge
+                for ( int q = 0; q < num_quad_points; q++ )
                 {
-                    A( i, j ) += jdet_keval_quadweight *
-                                 ( 2 * sym_grad_j[j].double_contract( sym_grad_i[i] ) -
-                                   2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * sym_grad_i[i]( dimi, dimi ) );
-                    // for the div, we just extract the component from the gradient vector
+                    dense::Mat< ScalarType, VecDim, VecDim > sym_grad_i[num_nodes_per_wedge];
+                    dense::Mat< ScalarType, VecDim, VecDim > sym_grad_j[num_nodes_per_wedge];
+                    ScalarType                               jdet_keval_quadweight = 0;
+                    assemble_trial_test_vecs(
+                        wedge,
+                        quad_points[q],
+                        quad_weights[q],
+                        r_1,
+                        r_2,
+                        wedge_phy_surf,
+                        k_local_hex,
+                        dimi,
+                        dimj,
+                        sym_grad_i,
+                        sym_grad_j,
+                        jdet_keval_quadweight );
+
+                    // propagate on local matrix by outer product of test and trial vecs
+                    for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                    {
+                        for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                        {
+                            A( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) += jdet_keval_quadweight *
+                                         ( 2 * sym_grad_j[j].double_contract( sym_grad_i[i] ) -
+                                           2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * sym_grad_i[i]( dimi, dimi ) );
+                            // for the div, we just extract the component from the gradient vector
+                        }
+                    }
                 }
             }
         }
 
         if ( treat_boundary_ )
         {
-            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+            dense::Mat< ScalarT, LocalDim, LocalDim > boundary_mask;
+            boundary_mask.fill( 1.0 );
+
+            for ( int dimi = 0; dimi < 3; ++dimi )
             {
-                dense::Mat< ScalarT, 6, 6 > boundary_mask;
-                boundary_mask.fill( 1.0 );
-
-                if ( r_cell == 0 )
+                for ( int dimj = 0; dimj < 3; ++dimj )
                 {
-                    // Inner boundary (CMB).
-                    for ( int i = 0; i < 6; i++ )
+                    if ( r_cell == 0 )
                     {
-                        for ( int j = 0; j < 6; j++ )
+                        // Inner boundary (CMB).
+                        for ( int i = 0; i < 6; i++ )
                         {
-                            // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
-                            if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
-                                 ( dimi != dimj && ( i < 3 || j < 3 ) ) )
+                            for ( int j = 0; j < 6; j++ )
                             {
-                                boundary_mask( i, j ) = 0.0;
+                                // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
+                                if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
+                                     ( dimi != dimj && ( i < 3 || j < 3 ) ) )
+                                {
+                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                        0.0;
+                                }
+                            }
+                        }
+                    }
+
+                    if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                    {
+                        // Outer boundary (surface).
+                        for ( int i = 0; i < 6; i++ )
+                        {
+                            for ( int j = 0; j < 6; j++ )
+                            {
+                                // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
+                                if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
+                                     ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
+                                {
+                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                        0.0;
+                                }
                             }
                         }
                     }
                 }
-
-                if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
-                {
-                    // Outer boundary (surface).
-                    for ( int i = 0; i < 6; i++ )
-                    {
-                        for ( int j = 0; j < 6; j++ )
-                        {
-                            // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
-                            if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
-                                 ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
-                            {
-                                boundary_mask( i, j ) = 0.0;
-                            }
-                        }
-                    }
-                }
-
-                A.hadamard_product( boundary_mask );
             }
+            A.hadamard_product( boundary_mask );
         }
 
         return A;
