@@ -132,10 +132,10 @@ terraneox/
 - [x] timing(tree?)
 - [x] ~~compress VTK(?)~~ XDMF output (binary, actual float data, and ~~/or~~ ~~HDF5/ADIOS2~~ with a single mesh file)
 - [x] CLI interface / parameter files
-- [ ] viscosity-weighted pressure-mass / lumped mass (Fabi)
+- [x] viscosity-weighted pressure-mass / lumped mass (Fabi)
 - [ ] unify/cleanup boundary handling in operators
 - [ ] unify/cleanup operator interfaces and documentation
-- [ ] concept for GCA-capable operators
+- [x] concept for GCA-capable operators
 
 ## Small features / improvements (not necessarily / maybe required)
 
