@@ -261,8 +261,10 @@ class EpsilonDivDiv
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
-        // if we have stored lmatrices, use them
-        // user's responsibility to write meaningful matrices
+        // If we have stored lmatrices, use them.
+        // It's the user's responsibility to write meaningful matrices via set_lmatrix()
+        // We probably never want to assemble lmatrices with DCA and store, 
+        // so GCA should be the actor storing matrices.
         if ( lmatrices_.data() != nullptr )
         {
             // Compute the local element matrix.
@@ -278,7 +280,6 @@ class EpsilonDivDiv
 
                     for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
                     {
-                       
                         // FE dimensions: local DoFs/associated shape functions
                         for ( int i = 0; i < num_nodes_per_wedge; i++ )
                         {
@@ -379,6 +380,7 @@ class EpsilonDivDiv
                             dense::Mat< ScalarType, VecDim, VecDim > sym_grad_i[num_nodes_per_wedge];
                             dense::Mat< ScalarType, VecDim, VecDim > sym_grad_j[num_nodes_per_wedge];
                             ScalarType                               jdet_keval_quadweight = 0;
+
                             assemble_trial_test_vecs(
                                 wedge,
                                 quad_points[q],
@@ -613,7 +615,7 @@ class EpsilonDivDiv
     }
 };
 
-static_assert( linalg::OperatorLike< EpsilonDivDiv< float > > );
-static_assert( linalg::OperatorLike< EpsilonDivDiv< double > > );
+static_assert( linalg::GCACapable< EpsilonDivDiv< float > > );
+static_assert( linalg::GCACapable< EpsilonDivDiv< double > > );
 
 } // namespace terra::fe::wedge::operators::shell

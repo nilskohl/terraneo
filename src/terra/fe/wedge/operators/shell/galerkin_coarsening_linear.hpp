@@ -4,7 +4,7 @@
 
 #include "communication/shell/communication.hpp"
 #include "dense/vec.hpp"
-#include "fe/wedge/operators/shell/epsilon_divdiv_simple.hpp"
+#include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
 #include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "grid/grid_types.hpp"
 #include "linalg/operator.hpp"
@@ -21,7 +21,7 @@ namespace terra::fe::wedge::operators::shell {
 /// triple-product P^TAP with the fine-operator local matrix A and adds the resulting gca matrix
 /// up for all fine wedges comprising the coarse wedge. Finally, it stores the result in the
 /// wedge-wise matrix storage of the coarse operator.
-template < typename ScalarT, typename Operator >
+template < typename ScalarT, terra::linalg::GCACapable Operator >
 class TwoGridGCA
 {
   public:

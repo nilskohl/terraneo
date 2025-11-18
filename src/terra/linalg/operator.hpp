@@ -1,6 +1,6 @@
 #pragma once
-#include "vector.hpp"
 #include "linalg.hpp"
+#include "vector.hpp"
 
 namespace terra::linalg {
 
@@ -44,6 +44,37 @@ concept OperatorLike = requires(
     //       it is handy to reuse send/recv buffers that are members of an operator implementation.
     //       To modify these members (i.e., to communicate) we cannot be const :(
     { self.apply_impl( src, dst ) } -> std::same_as< void >;
+};
+
+/// @brief Concept for types that can be used as Galerkin coarse-grid operators in a multigrid hierarchy.
+/// Requires vector types, matvec implementation, and compatibility with VectorLike.
+template < typename Op >
+concept GCACapable = requires(
+    // dummy variables to define requirements
+    Op&                                                self,
+    const int                                          local_subdomain_id,
+    const int                                          x_cell,
+    const int                                          y_cell,
+    const int                                          r_cell,
+    const int                                          wedge,
+    const int                                          dimi,
+    const int                                          dimj,
+    const dense::Mat< typename Op::ScalarType, 6, 6 >& mat ) {
+
+    // Require that the argument to be a linear operator
+    requires OperatorLike< Op >;
+
+    // The operator must allow read/write access to his local matrices in order to GCA them
+    {
+        self.get_lmatrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, dimi, dimj )
+    } -> std::same_as< dense::Mat< typename Op::ScalarType, 6, 6 > >;
+    { self.set_lmatrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, dimi, dimj, mat ) } -> std::same_as< void >;
+
+    // Since TwoGridGCA works with multiple operators, and their respective domains (coarse-fine nested loop),
+    // it is required to have access to geometric information stored in the operators.
+    { self.get_domain() } -> std::same_as< grid::shell::DistributedDomain& >;
+    { self.get_radii() } -> std::same_as< grid::Grid2DDataScalar< typename Op::ScalarType >& >;
+
 };
 
 /// @brief Concept for types that behave like block 2x2 operators.
