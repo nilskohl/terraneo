@@ -24,9 +24,7 @@ class EpsilonDivDiv
     using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, LocalMatrixDim, LocalMatrixDim, 2 >;
 
   private:
-    bool apply_stored_lmatrices_ =
-        false; // set to make apply_impl() load and use the stored local matrices for the operator application
-
+    
     Grid4DDataLocalMatrices lmatrices_;
 
     grid::shell::DistributedDomain domain_;
@@ -293,7 +291,7 @@ class EpsilonDivDiv
                 }
             }
 
-            dense::Vec< ScalarT, 18 > dst[num_wedges_per_hex_cell];
+            dense::Vec< ScalarT, LocalMatrixDim > dst[num_wedges_per_hex_cell];
 
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];

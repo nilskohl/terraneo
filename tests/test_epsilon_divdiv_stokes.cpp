@@ -4,7 +4,6 @@
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv_stokes.hpp"
-#include "fe/wedge/operators/shell/galerkin_coarsening_linear.hpp"
 #include "fe/wedge/operators/shell/identity.hpp"
 #include "fe/wedge/operators/shell/kmass.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
@@ -17,6 +16,8 @@
 #include "io/xdmf.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/fgmres.hpp"
+#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca_elements_collector.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -46,13 +47,13 @@ using grid::Grid4DDataVec;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using linalg::DiagonallyScaledOperator;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
-using fe::wedge::operators::shell::TwoGridGCA;
-using linalg::DiagonallyScaledOperator;
 using linalg::solvers::DiagonalSolver;
 using linalg::solvers::power_iteration;
+using linalg::solvers::TwoGridGCA;
 
 struct SolutionVelocityInterpolator
 {
@@ -205,8 +206,16 @@ struct KInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
-        data_( local_subdomain_id, x, y, r ) = value;
+        //const double value                   = 2 + Kokkos::sin( coords( 2 ) );
+        //data_( local_subdomain_id, x, y, r ) = value;
+        if ( coords.norm() > 0.70 )
+        {
+            data_( local_subdomain_id, x, y, r ) = 1000;
+        }
+        else
+        {
+            data_( local_subdomain_id, x, y, r ) = 1;
+        }
     }
 };
 
@@ -237,10 +246,9 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         boundary_mask_data.push_back( grid::shell::setup_boundary_mask_data( domains[idx] ) );
     }
 
-    VectorQ1Scalar< ScalarType > k( "k", domains[max_level - min_level], mask_data[max_level - min_level] );
-    const auto                   num_levels     = domains.size();
-    const auto                   velocity_level = num_levels - 1;
-    const auto                   pressure_level = num_levels - 2;
+    const auto num_levels     = domains.size();
+    const auto velocity_level = num_levels - 1;
+    const auto pressure_level = num_levels - 2;
 
     // Set up Stokes vectors for the finest grid.
 
@@ -303,10 +311,31 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
     using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
 
+    // coefficient data
+
+    VectorQ1Scalar< ScalarType > k( "k", domains[velocity_level], mask_data[velocity_level] );
+    VectorQ1Scalar< ScalarType > k_grad_norms(
+        "k_grad_norms", domains[velocity_level], mask_data[velocity_level] );
+
     Kokkos::parallel_for(
         "coefficient interpolation",
         local_domain_md_range_policy_nodes( domains[velocity_level] ),
         KInterpolator( coords_shell[velocity_level], coords_radii[velocity_level], k.grid_data() ) );
+
+    VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], mask_data[0] );
+
+    terra::linalg::solvers::GCAElementsCollector< ScalarType >(
+        domains[velocity_level],
+        k.grid_data(),
+        GCAElements.grid_data(),
+        k_grad_norms.grid_data(),
+        velocity_level );
+
+
+    io::XDMFOutput xdmf_gcaelems( "gca_elems", domains[0], coords_shell[0], coords_radii[0] );
+    xdmf_gcaelems.add( GCAElements.grid_data() );
+    xdmf_gcaelems.write();
+
 
     Stokes K(
         domains[velocity_level],
@@ -641,18 +670,18 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 5;
+    const int max_level = 4;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    for ( int level = 1; level <= max_level; ++level )
+    for ( int level = max_level; level <= max_level; ++level )
     {
         std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;
         timer.reset();
-        const auto [l2_error_vel, l2_error_pre, iterations] = test( 0, level, table );
+        const auto [l2_error_vel, l2_error_pre, iterations] = test( level - 1, level, table );
         const auto time_total                               = timer.seconds();
         table->add_row( { { "level", level }, { "time_total", time_total } } );
 

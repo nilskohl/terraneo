@@ -5,8 +5,8 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
-#include "fe/wedge/operators/shell/div_k_grad_simple.hpp"
-#include "fe/wedge/operators/shell/galerkin_coarsening_linear.hpp"
+#include "fe/wedge/operators/shell/div_k_grad.hpp"
+#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
@@ -38,7 +38,7 @@ using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
-using terra::fe::wedge::operators::shell::TwoGridGCA;
+using linalg::solvers::TwoGridGCA;
 
 template < std::floating_point T >
 struct SolutionInterpolator
@@ -103,7 +103,6 @@ struct RHSInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        /* Analytical rhs
         const double x0 = Kokkos::sinh( coords( 1 ) );
         const double x1 = 2 * coords( 0 );
         const double x2 = Kokkos::sin( x1 );
@@ -117,9 +116,9 @@ struct RHSInterpolator
         const double x9                      = x6 * ( 1 - Kokkos::pow( x7, 2 ) ) / x5;
         data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
                                                coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
-                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );*/
-        data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
-                                               Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
+                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
+        //data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
+        ///                                       Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
     }
 };
 
@@ -178,19 +177,19 @@ struct KInterpolator
     {
            const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
       
-        /*
+        
        const double                  rad    = coords.norm();
         const double                  x0     = 0.5 * r_max_;
         const double                  x1     = 0.5 * r_min_;
         data_( local_subdomain_id, x, y, r ) =
-            0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;*/
-            if (coords.norm() > 0.6123) {
+            0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
+          /*  if (coords.norm() > 0.70) {
                  
              data_( local_subdomain_id, x, y, r ) = k_max_;
             } else {
 
              data_( local_subdomain_id, x, y, r ) = 1;
-            }
+            }*/
     }
 };
 
@@ -206,7 +205,7 @@ T test(
     bool                                  gca )
 {
     using ScalarType       = T;
-    using DivKGrad         = fe::wedge::operators::shell::DivKGradSimple< ScalarType >;
+    using DivKGrad         = fe::wedge::operators::shell::DivKGrad< ScalarType >;
     using Smoother         = linalg::solvers::Jacobi< DivKGrad >;
     using CoarseGridSolver = linalg::solvers::PCG< DivKGrad >;
 
@@ -260,11 +259,9 @@ T test(
     Kokkos::fence();
 
     DivKGrad A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), true, false );
-    //A.store_lmatrices();
     // A.set_single_quadpoint( true );
     DivKGrad A_neumann(
         domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), false, false );
-    A_neumann.store_lmatrices();
     //A_neumann.set_single_quadpoint( true );
     DivKGrad A_neumann_diag(
         domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), false, true );
@@ -306,7 +303,9 @@ T test(
             Kokkos::fence();
             A_c.emplace_back(
                 domains[level], subdomain_shell_coords[level], subdomain_radii[level], k_c.grid_data(), true, false );
-            A_c.back().store_lmatrices();
+
+            if (gca)
+                A_c.back().allocate_local_matrix_memory();
 
             if constexpr ( std::is_same_v<
                                Prolongation,
@@ -376,7 +375,7 @@ T test(
     VectorQ1Scalar< ScalarType > f( "f", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > solution( "solution", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > error( "error", domains.back(), mask_data.back() );
-
+ 
     const auto num_dofs = kernels::common::count_masked< long >( mask_data.back(), grid::NodeOwnershipFlag::OWNED );
     std::cout << "num_dofs = " << num_dofs << std::endl;
 
@@ -418,7 +417,6 @@ T test(
         A_neumann, A_neumann_diag, u, error, f, boundary_mask_data.back(), grid::shell::ShellBoundaryFlag::BOUNDARY );
 
     assign( u, 0.0 );
-    assign( error, 0.0 );
 
     Kokkos::fence();
 
@@ -432,6 +430,13 @@ T test(
     multigrid_solver.collect_statistics( table );
 
     //assign( u, 1.0 );
+       
+    //VectorQ1Scalar< ScalarType > pcg_tmp0( "pcg_tmp0", domains.back(), mask_data.back() );
+    //VectorQ1Scalar< ScalarType > pcg_tmp1( "pcg_tmp1", domains.back(), mask_data.back() );
+    //VectorQ1Scalar< ScalarType > pcg_tmp2( "pcg_tmp2", domains.back(), mask_data.back() );
+
+   //linalg::solvers::PCG< DivKGrad > pcg( solver_params, table, { error, pcg_tmp0, pcg_tmp1, pcg_tmp2 } );
+    //pcg.set_tag( "pcg_solver");
 
     Kokkos::fence();
     Kokkos::Timer timer;
@@ -440,6 +445,7 @@ T test(
     Kokkos::fence();
     const auto time_solver = timer.seconds();
 
+    assign( error, 0.0 );
     linalg::lincomb( error, { 1.0, -1.0 }, { u, solution } );
     const auto l2_error = linalg::norm_2_scaled( error, 1.0 / static_cast< T >( num_dofs ) );
 
@@ -472,9 +478,9 @@ int run_test()
 
     constexpr T           omega          = 0.666;
     constexpr int         prepost_smooth = 2;
-    std::vector< double > alphas         = { 1000000 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< int >    k_maxs         = { 1, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< bool >   gcas           = { 0, 1 }; //, 1 };
+    std::vector< double > alphas         = { 1 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
+    std::vector< int >    k_maxs         = { 1 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
+    std::vector< bool >   gcas           = { 1 };//, 1 };
 
     auto table_dca = std::make_shared< util::Table >();
     auto table_gca = std::make_shared< util::Table >();
@@ -486,7 +492,7 @@ int run_test()
             cycles["alpha"] = alpha;
             for ( int k_max : k_maxs )
             {
-                for ( int level = max_level; level <= max_level; level++ )
+                for ( int level = 1; level <= max_level; level++ )
                 {
                     auto table = std::make_shared< util::Table >();
 
@@ -505,7 +511,7 @@ int run_test()
                     table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
                     std::cout << "l2_error = " << l2_error << std::endl;
 
-                    if ( false )
+                    if ( true )
                     {
                         const T order = prev_l2_error / l2_error;
                         std::cout << "order = " << order << std::endl;
@@ -515,7 +521,7 @@ int run_test()
                     prev_l2_error = l2_error;
 
                     table->query_rows_equals( "tag", "multigrid" ).print_pretty();
-                    // table->query_rows_equals( "tag", "pcg_solver" ).print_pretty();
+                    //table->query_rows_equals( "tag", "pcg_solver" ).print_pretty();
                     //table->query_rows_equals( "tag", "time_solver" ).print_pretty();
                     //table->query_rows_equals( "tag", "time_total" ).print_pretty();
 
