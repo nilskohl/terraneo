@@ -1,5 +1,7 @@
 #pragma once
 
+#include <numeric>
+
 #include "kokkos/kokkos_wrapper.hpp"
 #include "linalg/vector_q1.hpp"
 #include "util/interpolation.hpp"
@@ -258,10 +260,28 @@ grid::Grid2DDataScalar< ProfileOutDataType > interpolate_radial_profile_into_sub
 
     auto coords_radii_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, coords_radii );
 
+    // Sort ascending (by radius - from innermost to outermost shell).
+
+    std::vector< int > idx( profile_radii.size() );
+    std::iota( idx.begin(), idx.end(), 0 );
+
+    // sort indices by comparing keys
+    std::sort( idx.begin(), idx.end(), [&]( int a, int b ) { return profile_radii[a] < profile_radii[b]; } );
+
+    // apply permutation
+    std::vector< ProfileInRadiiType > profile_radii_sorted( profile_radii );
+    std::vector< ProfileInValueType > profile_values_sorted( profile_values );
+
+    for ( size_t i = 0; i < idx.size(); i++ )
+    {
+        profile_radii_sorted[i]  = profile_radii[idx[i]];
+        profile_values_sorted[i] = profile_values[idx[i]];
+    }
+
     for ( int local_subdomain_id = 0; local_subdomain_id < profile_data_host.extent( 0 ); local_subdomain_id++ )
     {
         const size_t subdomain_size_r   = profile_data_host.extent( 1 );
-        const size_t input_profile_size = profile_radii.size();
+        const size_t input_profile_size = profile_radii_sorted.size();
 
         if ( input_profile_size == 0 )
         {
@@ -272,7 +292,7 @@ grid::Grid2DDataScalar< ProfileOutDataType > interpolate_radial_profile_into_sub
         {
             for ( int r = 0; r < subdomain_size_r; r++ )
             {
-                profile_data_host( local_subdomain_id, r ) = profile_values[0];
+                profile_data_host( local_subdomain_id, r ) = profile_values_sorted[0];
             }
             continue;
         }
@@ -284,28 +304,33 @@ grid::Grid2DDataScalar< ProfileOutDataType > interpolate_radial_profile_into_sub
             double x = coords_radii_host( local_subdomain_id, r );
 
             // Advance src index to the correct interval
-            while ( i + 1 < input_profile_size && profile_radii[i + 1] < x )
+            while ( i + 1 < input_profile_size && profile_radii_sorted[i + 1] < x )
             {
                 ++i;
             }
 
             // If x is below the first point → clamp
-            if ( x <= profile_radii.front() )
+            if ( x <= profile_radii_sorted.front() )
             {
-                profile_data_host( local_subdomain_id, r ) = profile_values.front();
+                profile_data_host( local_subdomain_id, r ) = profile_values_sorted.front();
                 continue;
             }
 
             // If x is above the last point → clamp
-            if ( x >= profile_radii.back() )
+            if ( x >= profile_radii_sorted.back() )
             {
-                profile_data_host( local_subdomain_id, r ) = profile_values.back();
+                profile_data_host( local_subdomain_id, r ) = profile_values_sorted.back();
                 continue;
             }
 
             // Interpolate between i and i+1
             profile_data_host( local_subdomain_id, r ) = util::interpolate_linear_1D(
-                profile_radii[i], profile_radii[i + 1], profile_values[i], profile_values[i + 1], x, true );
+                profile_radii_sorted[i],
+                profile_radii_sorted[i + 1],
+                profile_values_sorted[i],
+                profile_values_sorted[i + 1],
+                x,
+                true );
         }
     }
 
@@ -348,6 +373,23 @@ grid::Grid2DDataScalar< ProfileOutDataType > interpolate_radial_profile_into_sub
 
     return interpolate_radial_profile_into_subdomains(
         "radial_profile_" + key_values, coords_radii, profile_radii, profile_values );
+}
+
+/// @brief Interpolating a constant radial profile into a grid.
+///
+/// @param coords_radii radii of each node for all local subdomains - see \ref terra::grid::shell::subdomain_shell_radii(),
+///                     the output grid data will have the same extents
+/// @param value the constant value to interpolate
+/// @return Kokkos::View with the same dimensions of coords_radii, populated with interpolated values per subdomain
+template < std::floating_point GridDataType, std::floating_point ProfileOutDataType = double >
+grid::Grid2DDataScalar< ProfileOutDataType > interpolate_constant_radial_profile(
+    const grid::Grid2DDataScalar< GridDataType >& coords_radii,
+    const ProfileOutDataType&                     value )
+{
+    grid::Grid2DDataScalar< ProfileOutDataType > profile_data(
+        "radial_profile_constant", coords_radii.extent( 0 ), coords_radii.extent( 1 ) );
+    kernels::common::set_constant( profile_data, value );
+    return profile_data;
 }
 
 } // namespace terra::shell
