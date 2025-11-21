@@ -138,7 +138,8 @@ class TwoGridGCA
         dense::Vec< int, 4 > coarse_hex_idx_fine = {
             local_subdomain_id, 2 * x_coarse_idx, 2 * y_coarse_idx, 2 * r_coarse_idx };
 
-        dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_coarse[num_wedges_per_hex_cell] = {};
+        dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_coarse[num_wedges_per_hex_cell] =
+            {};
         // loop finer hexes of our coarse hex
         for ( int fine_hex_lidx = 0; fine_hex_lidx < 8; fine_hex_lidx++ )
         {
@@ -280,12 +281,13 @@ class TwoGridGCA
                     P( fine_dof_lidx, coarse_dof_lindices[3] ) = weights( 1 );
                 }
 
-                dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_fine = fine_op_.get_local_matrix(
-                    local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
+                dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_fine =
+                    fine_op_.get_local_matrix(
+                        local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
 
                 // core part: assemble local gca matrix by mapping from coarse wedge to current fine wedge,
                 // applying the corresponding local operator and mapping back.
-                dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > P_vec = { 0 };
+                dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > P_vec = {};
                 if constexpr ( Operator::LocalMatrixDim == 18 )
                 {
                     // in a vectorial operator we need to setup a vectorial interpolation
@@ -349,7 +351,8 @@ class TwoGridGCA
                                 if ( ( dimi_ == dimj_ && i != j && ( i < 3 || j < 3 ) ) or
                                      ( dimi_ != dimj_ && ( i < 3 || j < 3 ) ) )
                                 {
-                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                        0.0;
                                 }
                             }
                         }
@@ -365,7 +368,8 @@ class TwoGridGCA
                                 if ( ( dimi_ == dimj_ && i != j && ( i >= 3 || j >= 3 ) ) or
                                      ( dimi_ != dimj_ && ( i >= 3 || j >= 3 ) ) )
                                 {
-                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                        0.0;
                                 }
                             }
                         }
