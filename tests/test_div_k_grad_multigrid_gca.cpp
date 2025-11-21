@@ -6,11 +6,12 @@
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/div_k_grad.hpp"
-#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_linear.hpp"
+#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca_elements_collector.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -103,12 +104,12 @@ struct RHSInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        const double x0 = Kokkos::sinh( coords( 1 ) );
-        const double x1 = 2 * coords( 0 );
-        const double x2 = Kokkos::sin( x1 );
-        const double x3 = 0.5 * r_max_;
-        const double x4 = 0.5 * r_min_;
-        const double x5 = Kokkos::sqrt(
+        const double                  x0     = Kokkos::sinh( coords( 1 ) );
+        const double                  x1     = 2 * coords( 0 );
+        const double                  x2     = Kokkos::sin( x1 );
+        const double                  x3     = 0.5 * r_max_;
+        const double                  x4     = 0.5 * r_min_;
+        const double                  x5     = Kokkos::sqrt(
             Kokkos::pow( coords( 0 ), 2 ) + Kokkos::pow( coords( 1 ), 2 ) + Kokkos::pow( coords( 2 ), 2 ) );
         const double x6                      = alpha_ / ( x3 - x4 );
         const double x7                      = Kokkos::tanh( x6 * ( -x3 - x4 + x5 ) );
@@ -175,15 +176,14 @@ struct KInterpolator
     KOKKOS_INLINE_FUNCTION
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
-           const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-      
-        
-       const double                  rad    = coords.norm();
-        const double                  x0     = 0.5 * r_max_;
-        const double                  x1     = 0.5 * r_min_;
+        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+
+        const double rad = coords.norm();
+        const double x0  = 0.5 * r_max_;
+        const double x1  = 0.5 * r_min_;
         data_( local_subdomain_id, x, y, r ) =
             0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-          /*  if (coords.norm() > 0.70) {
+        /*  if (coords.norm() > 0.70) {
                  
              data_( local_subdomain_id, x, y, r ) = k_max_;
             } else {
@@ -258,6 +258,20 @@ T test(
 
     Kokkos::fence();
 
+    // agca stuff
+    VectorQ1Scalar< ScalarType > k_grad_norms( "k_grad_norms", domains.back(), mask_data.back() );
+    VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[min_level], mask_data[min_level] );
+    if ( gca )
+    {
+        terra::linalg::solvers::GCAElementsCollector< ScalarType >(
+            domains.back(), k.grid_data(), GCAElements.grid_data(), k_grad_norms.grid_data(), max_level - min_level );
+
+        io::XDMFOutput xdmf_gcaelems(
+            "gca_elems", domains[min_level], subdomain_shell_coords[min_level], subdomain_radii[min_level] );
+        xdmf_gcaelems.add( GCAElements.grid_data() );
+        xdmf_gcaelems.write();
+    }
+
     DivKGrad A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), true, false );
     // A.set_single_quadpoint( true );
     DivKGrad A_neumann(
@@ -304,7 +318,7 @@ T test(
             A_c.emplace_back(
                 domains[level], subdomain_shell_coords[level], subdomain_radii[level], k_c.grid_data(), true, false );
 
-            if (gca)
+            if ( gca )
                 A_c.back().allocate_local_matrix_memory();
 
             if constexpr ( std::is_same_v<
@@ -375,7 +389,7 @@ T test(
     VectorQ1Scalar< ScalarType > f( "f", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > solution( "solution", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > error( "error", domains.back(), mask_data.back() );
- 
+
     const auto num_dofs = kernels::common::count_masked< long >( mask_data.back(), grid::NodeOwnershipFlag::OWNED );
     std::cout << "num_dofs = " << num_dofs << std::endl;
 
@@ -430,12 +444,12 @@ T test(
     multigrid_solver.collect_statistics( table );
 
     //assign( u, 1.0 );
-       
+
     //VectorQ1Scalar< ScalarType > pcg_tmp0( "pcg_tmp0", domains.back(), mask_data.back() );
     //VectorQ1Scalar< ScalarType > pcg_tmp1( "pcg_tmp1", domains.back(), mask_data.back() );
     //VectorQ1Scalar< ScalarType > pcg_tmp2( "pcg_tmp2", domains.back(), mask_data.back() );
 
-   //linalg::solvers::PCG< DivKGrad > pcg( solver_params, table, { error, pcg_tmp0, pcg_tmp1, pcg_tmp2 } );
+    //linalg::solvers::PCG< DivKGrad > pcg( solver_params, table, { error, pcg_tmp0, pcg_tmp1, pcg_tmp2 } );
     //pcg.set_tag( "pcg_solver");
 
     Kokkos::fence();
@@ -480,7 +494,7 @@ int run_test()
     constexpr int         prepost_smooth = 2;
     std::vector< double > alphas         = { 1 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
     std::vector< int >    k_maxs         = { 1 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< bool >   gcas           = { 1 };//, 1 };
+    std::vector< bool >   gcas           = { 1 }; //, 1 };
 
     auto table_dca = std::make_shared< util::Table >();
     auto table_gca = std::make_shared< util::Table >();

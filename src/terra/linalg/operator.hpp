@@ -22,6 +22,19 @@ enum class OperatorCommunicationMode
     CommunicateAdditively,
 };
 
+
+/// @brief Modes for applying stored matrices.
+/// Off: Do not use stored matrices.
+/// Full: Use stored matrices on all elements.
+/// Selective: Use stored matrices on selected, marked elements only,
+///            assemble on all others.
+enum class OperatorStoredMatrixMode
+{
+    Off,
+    Full,
+    Selective,
+};
+
 /// @brief Concept for types that behave like linear operators.
 /// Requires vector types, matvec implementation, and compatibility with VectorLike.
 template < typename T >
@@ -63,7 +76,7 @@ concept GCACapable = requires(
     // Require that the argument to be a linear operator
     requires OperatorLike< Op >;
 
-    // dimensions of the local matrix (might be 18 for vectorial diffusion ops in 3D like EpsilonDivDiv,
+    // The operator must show the dimensions of the local matrix (might be 18 for vectorial diffusion ops in 3D like EpsilonDivDiv,
     //  or 6 for a simple scalar div-k-grad)
     { Op::LocalMatrixDim } -> std::convertible_to<int>;
 

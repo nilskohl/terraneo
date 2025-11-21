@@ -9,6 +9,7 @@
 #include "grid/grid_types.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
+#include "linalg/solvers/gca/gca_matrix_storage.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 
@@ -25,8 +26,10 @@ class DivKGrad
     using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, LocalMatrixDim, LocalMatrixDim, 2 >;
 
   private:
-    Grid4DDataLocalMatrices lmatrices_;
-    bool                    single_quadpoint_ = false;
+    std::optional< linalg::solvers::GCAMatrixStorage > local_matrices_;
+    //Grid4DDataLocalMatrices lmatrices_;
+
+    bool single_quadpoint_ = false;
 
     grid::shell::DistributedDomain domain_;
 
@@ -39,6 +42,7 @@ class DivKGrad
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
+    linalg::OperatorStoredMatrixMode  operator_stored_matrix_mode_;
 
     communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT > send_buffers_;
     communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT > recv_buffers_;
@@ -61,7 +65,8 @@ class DivKGrad
         bool                                        diagonal,
         linalg::OperatorApplyMode                   operator_apply_mode = linalg::OperatorApplyMode::Replace,
         linalg::OperatorCommunicationMode           operator_communication_mode =
-            linalg::OperatorCommunicationMode::CommunicateAdditively )
+            linalg::OperatorCommunicationMode::CommunicateAdditively,
+        linalg::OperatorStoredMatrixMode operator_stored_matrix_mode = linalg::OperatorStoredMatrixMode::Off )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
@@ -70,6 +75,7 @@ class DivKGrad
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
+    , operator_stored_matrix_mode_( operator_stored_matrix_mode )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain )
     , recv_buffers_( domain )
@@ -106,7 +112,22 @@ class DivKGrad
     /// @brief S/Getter for quadpoint member
     void set_single_quadpoint( bool v ) { single_quadpoint_ = v; }
 
-    /// @brief allocates memory for the local matrices
+    void set_stored_matrix_mode(
+        linalg::OperatorStoredMatrixMode     operator_stored_matrix_mode,
+        const int                            level_range,
+        grid::Grid4DDataScalar< ScalarType > GCAElements_ )
+    {
+        operator_stored_matrix_mode_ = operator_stored_matrix_mode;
+
+        // initialize storage if necessary
+        if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::All )
+        {
+            local_matrices_ = GCAMatrixStorage(
+                domain_,
+                
+            );
+        }
+    }
     void allocate_local_matrix_memory()
     {
         if ( lmatrices_.data() == nullptr )
@@ -130,6 +151,7 @@ class DivKGrad
         const int                                                    wedge,
         const dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim >& mat ) const
     {
+        //TODO: request from storage
         assert( lmatrices_.data() != nullptr );
         for ( int i = 0; i < LocalMatrixDim; ++i )
         {
@@ -151,6 +173,7 @@ class DivKGrad
         const int r_cell,
         const int wedge ) const
     {
+        //TODO: request from storage
         if ( lmatrices_.data() != nullptr )
         {
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > ijslice;
@@ -203,15 +226,21 @@ class DivKGrad
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
-            constexpr int hex_offset_x[8]  = { 0, 1, 0, 1, 0, 1, 0, 1 };
-            constexpr int hex_offset_y[8]  = { 0, 0, 1, 1, 0, 0, 1, 1 };
-            constexpr int hex_offset_r[8]  = { 0, 0, 0, 0, 1, 1, 1, 1 };
-        if ( lmatrices_.data() != nullptr )
+        constexpr int hex_offset_x[8] = { 0, 1, 0, 1, 0, 1, 0, 1 };
+        constexpr int hex_offset_y[8] = { 0, 0, 1, 1, 0, 0, 1, 1 };
+        constexpr int hex_offset_r[8] = { 0, 0, 0, 0, 1, 1, 1, 1 };
+        // use stored matrices (at least on some elements)
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::None )
         {
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = { 0 };
-            A[0] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
-            A[1] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
 
+            if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::All )
+            {
+                assert( lmatrices_.data() != nullptr );
+                A[0] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                A[1] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+            }
+            else if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Selective ) {}
             if ( diagonal_ )
             {
                 A[0] = A[0].diagonal();
@@ -224,12 +253,13 @@ class DivKGrad
 
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];
-          
+
             atomically_add_local_wedge_scalar_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, dst );
-          
         }
         else
         {
+            // assemble on-the-fly
+
             // Gather surface points for each wedge.
             dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
             wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
@@ -245,8 +275,8 @@ class DivKGrad
             dense::Vec< ScalarT, 6 > k_local_hex[num_wedges_per_hex_cell];
             extract_local_wedge_scalar_coefficients( k_local_hex, local_subdomain_id, x_cell, y_cell, r_cell, k_ );
 
-            ScalarType    src_local_hex[8] = { 0 };
-            ScalarType    dst_local_hex[8] = { 0 };
+            ScalarType src_local_hex[8] = { 0 };
+            ScalarType dst_local_hex[8] = { 0 };
 
             for ( int i = 0; i < 8; i++ )
             {
@@ -470,7 +500,7 @@ class DivKGrad
             {
                 const auto grad_u_diag =
                     grad[i] * src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]];
-             
+
                 dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
                     jdet_keval_quadweight * ( grad[i] ).dot( grad_u_diag );
             }
@@ -478,7 +508,7 @@ class DivKGrad
     }
 };
 
-static_assert( linalg::OperatorLike< DivKGrad< float > > );
-static_assert( linalg::OperatorLike< DivKGrad< double > > );
+static_assert( linalg::GCACapable< DivKGrad< float > > );
+static_assert( linalg::GCACapable< DivKGrad< double > > );
 
 } // namespace terra::fe::wedge::operators::shell

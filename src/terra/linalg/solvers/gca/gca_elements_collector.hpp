@@ -12,6 +12,9 @@
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 
+using terra::fe::wedge::num_nodes_per_wedge;
+using terra::fe::wedge::num_wedges_per_hex_cell;
+
 namespace terra::linalg::solvers {
 
 template < typename ScalarT >
@@ -19,7 +22,6 @@ class GCAElementsCollector
 {
   public:
     using ScalarType = ScalarT;
-    using WedgeIndex = std::tuple< int, int, int, int, bool >;
 
   private:
     grid::shell::DistributedDomain fine_domain_;
