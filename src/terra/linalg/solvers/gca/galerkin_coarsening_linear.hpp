@@ -5,13 +5,17 @@
 #include "communication/shell/communication.hpp"
 #include "dense/vec.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
+#include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "grid/grid_types.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 
-namespace terra::fe::wedge::operators::shell {
+using terra::fe::wedge::num_nodes_per_wedge;
+using terra::fe::wedge::num_wedges_per_hex_cell;
+
+namespace terra::linalg::solvers {
 
 /// @brief: Galerkin coarse approximation (GCA).
 /// TwoGridGCA takes a coarser and a finer operator. Each thread assembles a
@@ -30,28 +34,29 @@ class TwoGridGCA
     using ScalarType    = ScalarT;
 
   private:
-    grid::shell::DistributedDomain&    domain_fine_;
-    Operator                           fine_op_;
-    Operator                           coarse_op_;
-    grid::Grid3DDataVec< ScalarT, 3 >& grid_fine_;
-    grid::Grid2DDataScalar< ScalarT >& radii_fine_;
-    grid::Grid2DDataScalar< ScalarT >& radii_coarse_;
-    int                                dimi_ = 0;
-    int                                dimj_ = 0;
-    bool                               treat_boundary_;
+    grid::shell::DistributedDomain&             domain_fine_;
+    Operator                                    fine_op_;
+    Operator                                    coarse_op_;
+    grid::Grid3DDataVec< ScalarT, 3 >&          grid_fine_;
+    grid::Grid2DDataScalar< ScalarT >&          radii_fine_;
+    grid::Grid2DDataScalar< ScalarT >&          radii_coarse_;
+    bool                                        treat_boundary_;
+ //   const grid::Grid4DDataScalar< ScalarType >& GCAElements_;
 
   public:
-    explicit TwoGridGCA( Operator fine_op, Operator coarse_op, int dimi = 0, int dimj = 0, bool treat_boundary = true )
+    explicit TwoGridGCA(
+        Operator                              fine_op,
+        Operator                              coarse_op,
+      //  grid::Grid4DDataScalar< ScalarType >& GCAElements,
+        bool                                  treat_boundary = true )
     : domain_fine_( fine_op.get_domain() )
     , fine_op_( fine_op )
     , coarse_op_( coarse_op )
     , grid_fine_( fine_op.get_grid() )
     , radii_fine_( fine_op.get_radii() )
     , radii_coarse_( coarse_op.get_radii() )
-    , dimi_( dimi )
-    , dimj_( dimj )
     , treat_boundary_( treat_boundary )
-
+  //  , GCAElements_( GCAElements )
     {
         // this probably cant not happen
         if ( coarse_op.get_domain().subdomains().size() != domain_fine_.subdomains().size() )
@@ -121,6 +126,8 @@ class TwoGridGCA
         const int y_coarse_idx,
         const int r_coarse_idx ) const
     {
+
+        
         dense::Vec< int, 4 > fine_hex_shifts[8] = {
             { 0, 0, 0, 0 },
             { 0, 1, 0, 0 },
@@ -138,7 +145,8 @@ class TwoGridGCA
         dense::Vec< int, 4 > coarse_hex_idx_fine = {
             local_subdomain_id, 2 * x_coarse_idx, 2 * y_coarse_idx, 2 * r_coarse_idx };
 
-        dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_coarse[num_wedges_per_hex_cell] = {};
+        dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_coarse[num_wedges_per_hex_cell] =
+            {};
         // loop finer hexes of our coarse hex
         for ( int fine_hex_lidx = 0; fine_hex_lidx < 8; fine_hex_lidx++ )
         {
@@ -184,7 +192,7 @@ class TwoGridGCA
                         const auto fine_dof_y_idx_coarse = fine_dof_idx( 2 ) / 2;
 
                         // actual weight computation
-                        const auto weights = wedge::shell::prolongation_linear_weights(
+                        const auto weights = fe::wedge::shell::prolongation_linear_weights(
                             dense::Vec< int, 4 >{
                                 local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
                             dense::Vec< int, 4 >{
@@ -266,7 +274,7 @@ class TwoGridGCA
                         coarse_dof_lindices[3] = 5;
                     }
 
-                    const auto weights = wedge::shell::prolongation_linear_weights(
+                    const auto weights = fe::wedge::shell::prolongation_linear_weights(
                         dense::Vec< int, 4 >{
                             local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
                         dense::Vec< int, 4 >{ local_subdomain_id, x0_idx_coarse, y0_idx_coarse, r_idx_coarse_bot },
@@ -280,8 +288,9 @@ class TwoGridGCA
                     P( fine_dof_lidx, coarse_dof_lindices[3] ) = weights( 1 );
                 }
 
-                dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_fine = fine_op_.get_local_matrix(
-                    local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
+                dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_fine =
+                    fine_op_.get_local_matrix(
+                        local_subdomain_id, fine_hex_idx( 1 ), fine_hex_idx( 2 ), fine_hex_idx( 3 ), wedge );
 
                 // core part: assemble local gca matrix by mapping from coarse wedge to current fine wedge,
                 // applying the corresponding local operator and mapping back.
@@ -302,7 +311,9 @@ class TwoGridGCA
                 }
                 else
                 {
-                    Kokkos::abort( "Not implemented." );
+                    // for scalar operators we just use the scalar interpolation
+                    P_vec = P;
+                    //Kokkos::abort( "Not implemented." );
                 }
                 dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > PTAP =
                     P_vec.transposed() * A_fine * P_vec;
@@ -335,6 +346,9 @@ class TwoGridGCA
             dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > boundary_mask;
             boundary_mask.fill( 1.0 );
 
+            if constexpr ( Operator::LocalMatrixDim == 18 )
+                {
+               
             for ( int dimi = 0; dimi < 3; ++dimi )
             {
                 for ( int dimj = 0; dimj < 3; ++dimj )
@@ -346,10 +360,11 @@ class TwoGridGCA
                         {
                             for ( int j = 0; j < num_nodes_per_wedge; j++ )
                             {
-                                if ( ( dimi_ == dimj_ && i != j && ( i < 3 || j < 3 ) ) or
-                                     ( dimi_ != dimj_ && ( i < 3 || j < 3 ) ) )
+                                if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
+                                     ( dimi != dimj && ( i < 3 || j < 3 ) ) )
                                 {
-                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                        0.0;
                                 }
                             }
                         }
@@ -362,15 +377,49 @@ class TwoGridGCA
                         {
                             for ( int j = 0; j < num_nodes_per_wedge; j++ )
                             {
-                                if ( ( dimi_ == dimj_ && i != j && ( i >= 3 || j >= 3 ) ) or
-                                     ( dimi_ != dimj_ && ( i >= 3 || j >= 3 ) ) )
+                                if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
+                                     ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
                                 {
-                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    boundary_mask( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                        0.0;
                                 }
                             }
                         }
                     }
                 }
+                }
+            } else {
+                   if ( r_coarse_idx == 0 )
+                    {
+                        // Inner boundary (CMB).
+                        for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                        {
+                            for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                            {
+                                if (  i != j && ( i < 3 || j < 3 )  )
+                                {
+                                    boundary_mask( i , j  ) =
+                                        0.0;
+                                }
+                            }
+                        }
+                    }
+
+                    if ( r_coarse_idx + 1 == radii_coarse_.extent( 1 ) - 1 )
+                    {
+                        // Outer boundary (surface).
+                        for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                        {
+                            for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                            {
+                                if (  i != j && ( i >= 3 || j >= 3 )  )
+                                {
+                                    boundary_mask( i, j  ) =
+                                        0.0;
+                                }
+                            }
+                        }
+                    }
             }
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
@@ -378,19 +427,9 @@ class TwoGridGCA
             }
         }
 
-        if constexpr ( std::is_same< Operator, EpsilonDivDiv< double > >::value )
-        {
-            // store coarse matrices
-            coarse_op_.set_local_matrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0, A_coarse[0] );
-            coarse_op_.set_local_matrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1, A_coarse[1] );
-        }
-        else
-        {
-            // Does not build
-            Kokkos::abort( "Not implemented" );
-            // coarse_op_.set_lmatrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0, A_coarse[0] );
-            // coarse_op_.set_lmatrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1, A_coarse[1] );
-        }
+        // store coarse matrices
+        coarse_op_.set_local_matrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0, A_coarse[0] );
+        coarse_op_.set_local_matrix( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1, A_coarse[1] );
     }
 };
-} // namespace terra::fe::wedge::operators::shell
+} // namespace terra::linalg::solvers
