@@ -40,13 +40,13 @@ namespace terra::mantlecirculation {
 inline Result<> create_directories( const IOParameters& io_parameters )
 {
     const auto xdmf_dir            = io_parameters.outdir + "/" + io_parameters.xdmf_dir;
-    const auto radial_profiles_dir = io_parameters.outdir + "/" + io_parameters.radial_profiles_dir;
+    const auto radial_profiles_dir = io_parameters.outdir + "/" + io_parameters.radial_profiles_out_dir;
     const auto timer_trees_dir     = io_parameters.outdir + "/" + io_parameters.timer_trees_dir;
 
     if ( !io_parameters.overwrite && std::filesystem::exists( io_parameters.outdir ) )
     {
         return { "Will not overwrite existing directory (to not accidentally delete old simulation data). "
-                 "Use -h for help and look for overwrite option or choose a different output dir name." };
+                 "Use -h for help and look for an overwrite option or choose a different output dir name." };
     }
 
     util::prepare_empty_directory( io_parameters.outdir );
@@ -58,18 +58,19 @@ inline Result<> create_directories( const IOParameters& io_parameters )
 }
 
 inline Result<> compute_and_write_radial_profiles(
-    const VectorQ1Scalar< ScalarType >& T,
+    const VectorQ1Scalar< ScalarType >& scalar_function,
     const Grid2DDataScalar< int >&      subdomain_shell_idx,
     const DistributedDomain&            domain,
     const IOParameters&                 io_parameters,
     const int                           timestep )
 {
     const auto profiles = shell::radial_profiles_to_table< ScalarType >(
-        shell::radial_profiles( T, subdomain_shell_idx, static_cast< int >( domain.domain_info().radii().size() ) ),
+        shell::radial_profiles(
+            scalar_function, subdomain_shell_idx, static_cast< int >( domain.domain_info().radii().size() ) ),
         domain.domain_info().radii() );
     std::ofstream out(
-        io_parameters.outdir + "/" + io_parameters.radial_profiles_dir + "/radial_profiles_" +
-        std::to_string( timestep ) + ".csv" );
+        io_parameters.outdir + "/" + io_parameters.radial_profiles_out_dir + "/radial_profiles_" +
+        scalar_function.grid_data().label() + "_" + std::to_string( timestep ) + ".csv" );
     profiles.print_csv( out );
 
     return { Ok{} };
