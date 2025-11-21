@@ -263,7 +263,7 @@ class EpsilonDivDiv
         if ( lmatrices_.data() != nullptr )
         {
             // Compute the local element matrix.
-            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = { 0 };
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = {};
             A[0] =// assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
             lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
             A[1] = //assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
@@ -334,8 +334,8 @@ class EpsilonDivDiv
                     if ( diagonal_ and dimi != dimj )
                         continue;
 
-                    ScalarType src_local_hex[8] = { 0 };
-                    ScalarType dst_local_hex[8] = { 0 };
+                    ScalarType src_local_hex[8] = {};
+                    ScalarType dst_local_hex[8] = {};
 
                     for ( int i = 0; i < 8; i++ )
                     {
@@ -422,7 +422,7 @@ class EpsilonDivDiv
         extract_local_wedge_scalar_coefficients( k_local_hex, local_subdomain_id, x_cell, y_cell, r_cell, k_ );
 
         // Compute the local element matrix.
-        dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A = { 0 };
+        dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A = {};
         for ( int dimi = 0; dimi < 3; ++dimi )
         {
             for ( int dimj = 0; dimj < 3; ++dimj )
