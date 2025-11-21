@@ -1,111 +1,30 @@
-**TerraNeoX** is a mantle convection code based on [Kokkos](https://github.com/kokkos/kokkos) for performance portability.
 
-\if NOT_DOXYGEN_GENERATED
+Extreme-scale, performance-portable mantle convection code. Originating from the [TerraNeo](https://terraneo.fau.de) project.
 
-> It seems you are viewing this in plain text or with a standard Markdown renderer (e.g., on GitHub).
-> 
-> ❗️This file is best read in HTML format after generating the documentation via running `doxygen` inside of `doc/src/`.
+* 📖 [Documentation](framework/framework.md)
+* 💻 [Cluster setup](cluster-setup/cluster-setup.md)
 
-\endif
+\note This code is still in the alpha phase. Feel free to try it out, but expect bugs and missing features.
 
-> Looking for the [general framework documentation](framework/framework.md)? 
+### Main features (possibly not completely implemented at the moment)
 
-# Features
+* Runs in massively parallel settings on CPU and GPU systems (via [Kokkos](https://github.com/kokkos/kokkos) and MPI)
+* Spherical wedge finite-elements
+* Stable discretization of the generalized, compressible Stokes equations (Q1-iso-Q2 / Q1)
+* Advection-Diffusion discretization using SUPG
+* Plate boundary conditions
+* Fully matrix-free
+* Krylov methods and geometric multigrid preconditioners (using GCA coarse grid operators)
+* Memory efficient unified visualization and checkpoint format (using XDMF)
+* Tools (input and output of radial profiles, spherical harmonics)
+* Written in modern C++20
 
-🏗️
-
-\docseplarge
-
-# Building
-
-## Dependencies
-
-Mandatory:
-
-* MPI (e.g. OpenMPI)
-
-Optional:
-
-* CUDA (for GPU support)
-
-## Compiling on the LMU systems (`cachemiss`, `memoryleak`) for usage with CUDA:
-
-```
-$ module load mpi.ompi
-$ module load nvidia-hpc
-
-$ mkdir terraneox-build
-
-$ ll
-terraneox/               # <== the cloned source code
-terraneox-build/
-
-$ cd terraneox-build
-
-$ cmake ../terraneox/ -Kokkos_ENABLE_CUDA=ON
-
-# Build tests
-$ cd tests
-$ make -j16
-```
-
-Note the capitalization: it must be `Kokkos_ENABLE_CUDA=ON`, NOT `KOKKOS_ENABLE_CUDA=ON`.
-
-\docseplarge
-
-## Compiling on the NHR systems, e.g. helma (NVIDIA H100 GPUs):
-
-Access form: https://hpc.fau.de/access-to-helma/
-
-SSH Connect and other info on helma: https://doc.nhr.fau.de/clusters/helma/
-
-```
-$ module load openmpi/5.0.5-nvhpc24.11-cuda
-$ module load cmake
-$ mkdir terra-kokkos-build
-$ cd terra-kokkos-build
-
-# give parallel backend and architecture via cmake (Kokkos may be unable to autodetect the arch)
-$ cmake ../terra-kokkos -DKokkos_ENABLE_CUDA=ON -DKokkos_ARCH_HOPPER90=ON
-
-# Build tests
-$ cd tests
-$ make -j 16
-```
-
-\docseplarge
-
-# Project Structure
-
-```
-terraneox/
-├── apps/                     # Applications (benchmarks, tools, ...) using the framework.
-│   ├── benchmarks/           # Benchmarks ...
-│   │   ├── performance/      # ... run time
-│   │   └── physics/          # ... physics
-│   └── tools/                # Tools (e.g., for visualization of meshes)
-├── data/                     # Stuff that is not exactly library/framework source code
-│   └── scripts/              # Scripts, e.g., for post-processing
-│       └── plotting/         # Scripts for visualization, e.g., timing, radial profiles, ... 
-├── doc/                      # Documentation
-│   ├── documents/            # Documents that are not part of the generated documentation (e.g., Latex documents)
-│   └── src/                  # Doxygen documentation
-│       └── documentation/    # Doxygen documentation source (this page is likely here)
-├── extern/                   # External libraries shipped with this repository
-├── src/                      # Source code
-└── tests/                    # Tests
-```
-
-\docseplarge
-
-# Todo Items
-
-## Bugs
+### Bugs
 
 - [ ] random value interpolation is not correctly working since values at overlapping nodes are not equal without proper 
       communication, just summing them up destroys randomness though
 
-## Big features (definitely required - order not clear)
+### Big features (definitely required - order not clear)
 
 - [x] advection-diffusion discretization / solver
 - [x] advection-diffusion boundary handling
@@ -146,7 +65,7 @@ terraneox/
       grid operators a little unintuitive and error-prone (why would I need to allocate the coarse grid viscosity 
       functions if I actually only need the fine grid viscosity functions?).
 
-## Small features / improvements (not necessarily / maybe required)
+### Small features / improvements (not necessarily / maybe required)
 
 - [ ] cube-like test case (this may require some new FE features)
 - [ ] performance engineering
@@ -159,7 +78,7 @@ terraneox/
 - [ ] BFBT-preconditioner (Fabi)
 - [ ] Chebychev-smoother (Fabi)
 
-## Documentation / cleanup / refactoring
+### Documentation / cleanup / refactoring
 
 - [ ] Github page
 - [ ] Licensing (GPLv3 since we are including HyTeG/TN code)
