@@ -64,6 +64,11 @@ Extreme-scale, performance-portable mantle convection code. Originating from the
       (i.e., a sparse matrix like class (storing local matrices or stencils)). I find the construction of the coarse 
       grid operators a little unintuitive and error-prone (why would I need to allocate the coarse grid viscosity 
       functions if I actually only need the fine grid viscosity functions?).
+- [ ] Checkpointing: read in checkpoints with different subdomain distribution somehow (e.g., MT256 -> MT512)
+      (maybe with a conversion function with different subdomain distribution but the same number of global elements,
+      then first split up (using that conversion function) into more subdomains (same global number of elements), 
+      and then in a second step interpolate to a finer level     
+      
 
 ### Small features / improvements (not necessarily / maybe required)
 
