@@ -100,6 +100,11 @@ terraneox/
 
 # Todo Items
 
+## Bugs
+
+- [ ] random value interpolation is not correctly working since values at overlapping nodes are not equal without proper 
+      communication, just summing them up destroys randomness though
+
 ## Big features (definitely required - order not clear)
 
 - [x] advection-diffusion discretization / solver
@@ -136,6 +141,10 @@ terraneox/
 - [ ] unify/cleanup boundary handling in operators
 - [ ] unify/cleanup operator interfaces and documentation
 - [x] concept for GCA-capable operators
+- [ ] GCA: add matrix class that can be used to assemble GCA operators that are independent of the type of the operator
+      (i.e., a sparse matrix like class (storing local matrices or stencils)). I find the construction of the coarse 
+      grid operators a little unintuitive and error-prone (why would I need to allocate the coarse grid viscosity 
+      functions if I actually only need the fine grid viscosity functions?).
 
 ## Small features / improvements (not necessarily / maybe required)
 
