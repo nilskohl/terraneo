@@ -17,6 +17,17 @@ using terra::fe::wedge::num_wedges_per_hex_cell;
 
 namespace terra::linalg::solvers {
 
+KOKKOS_INLINE_FUNCTION
+int map_to_coarse_element( const int fine_cell, const int level_range )
+{
+    int coarse_cell = fine_cell;
+    for ( int l = 0; l < level_range; ++l )
+    {
+        coarse_cell = Kokkos::floor( coarse_cell / 2 );
+    }
+    return coarse_cell;
+}
+
 template < typename ScalarT >
 class GCAElementsCollector
 {
@@ -79,23 +90,18 @@ class GCAElementsCollector
             {
                 k_grad_norms_( local_subdomain_id, x_cell, y_cell, r_cell ) = k_grad_norm;
                 // Todo: map to parent coarsest element
-                int x_cell_coarsest = x_cell;
-                int y_cell_coarsest = y_cell;
-                int r_cell_coarsest = r_cell;
-                for ( int l = 0; l < level_range_; ++l )
-                {
-                    x_cell_coarsest = Kokkos::floor( x_cell_coarsest / 2 );
-                    y_cell_coarsest = Kokkos::floor( y_cell_coarsest / 2 );
-                    r_cell_coarsest = Kokkos::floor( r_cell_coarsest / 2 );
-                }
-                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest )             = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest )         = 1;
+                int x_cell_coarsest = map_to_coarse_element( x_cell, level_range_ );
+                int y_cell_coarsest = map_to_coarse_element( y_cell, level_range_ );
+                int r_cell_coarsest = map_to_coarse_element( r_cell, level_range_ );
+
+                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest ) = 1;
+                /* GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest )         = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest + 1, r_cell_coarsest )         = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest )     = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest + 1 )         = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest + 1 )     = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest + 1, r_cell_coarsest + 1 )     = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest + 1 ) = 1;
+                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest + 1 ) = 1;*/
             }
         }
     }
