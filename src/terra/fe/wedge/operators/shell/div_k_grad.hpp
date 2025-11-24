@@ -9,7 +9,7 @@
 #include "grid/grid_types.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
-#include "linalg/solvers/gca/gca_matrix_storage.hpp"
+#include "linalg/solvers/gca/local_matrix_storage.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 
@@ -24,10 +24,10 @@ class DivKGrad
     using ScalarType                    = ScalarT;
     static constexpr int LocalMatrixDim = 6;
     using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, LocalMatrixDim, LocalMatrixDim, 2 >;
+    using LocalMatrixStorage      = linalg::solvers::LocalMatrixStorage< ScalarType, LocalMatrixDim >;
 
   private:
-    std::optional< linalg::solvers::GCAMatrixStorage > local_matrices_;
-    //Grid4DDataLocalMatrices lmatrices_;
+    LocalMatrixStorage local_matrix_storage_;
 
     bool single_quadpoint_ = false;
 
@@ -113,33 +113,21 @@ class DivKGrad
     void set_single_quadpoint( bool v ) { single_quadpoint_ = v; }
 
     void set_stored_matrix_mode(
-        linalg::OperatorStoredMatrixMode     operator_stored_matrix_mode,
-        const int                            level_range,
-        grid::Grid4DDataScalar< ScalarType > GCAElements_ )
+        linalg::OperatorStoredMatrixMode                      operator_stored_matrix_mode,
+        std::optional< int >                                  level_range,
+        std::optional< grid::Grid4DDataScalar< ScalarType > > GCAElements )
     {
         operator_stored_matrix_mode_ = operator_stored_matrix_mode;
 
-        // initialize storage if necessary
-        if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::All )
+        // allocate storage if necessary
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off )
         {
-            local_matrices_ = GCAMatrixStorage(
-                domain_,
-                
-            );
+            local_matrix_storage_ = linalg::solvers::LocalMatrixStorage< ScalarType, LocalMatrixDim >(
+                domain_, operator_stored_matrix_mode_, level_range, GCAElements );
         }
     }
-    void allocate_local_matrix_memory()
-    {
-        if ( lmatrices_.data() == nullptr )
-        {
-            lmatrices_ = Grid4DDataLocalMatrices(
-                "DivKGrad::lmatrices_",
-                domain_.subdomains().size(),
-                domain_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
-                domain_.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
-                domain_.domain_info().subdomain_num_nodes_radially() - 1 );
-        }
-    }
+
+    linalg::OperatorStoredMatrixMode get_stored_matrix_mode() { return operator_stored_matrix_mode_; }
 
     /// @brief Set the local matrix stored in the operator
     KOKKOS_INLINE_FUNCTION
@@ -151,15 +139,9 @@ class DivKGrad
         const int                                                    wedge,
         const dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim >& mat ) const
     {
-        //TODO: request from storage
-        assert( lmatrices_.data() != nullptr );
-        for ( int i = 0; i < LocalMatrixDim; ++i )
-        {
-            for ( int j = 0; j < LocalMatrixDim; ++j )
-            {
-                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )( i, j ) = mat( i, j );
-            }
-        }
+        // request from storage
+        KOKKOS_ASSERT( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off );
+        local_matrix_storage_.set_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, mat );
     }
 
     /// @brief Retrives the local matrix
@@ -173,18 +155,14 @@ class DivKGrad
         const int r_cell,
         const int wedge ) const
     {
-        //TODO: request from storage
-        if ( lmatrices_.data() != nullptr )
+        // request from storage
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off )
         {
-            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > ijslice;
-            for ( int i = 0; i < LocalMatrixDim; ++i )
+            if ( !local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge ) )
             {
-                for ( int j = 0; j < LocalMatrixDim; ++j )
-                {
-                    ijslice( i, j ) = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge )( i, j );
-                }
+                Kokkos::abort( "No matrix found at that spatial index." );
             }
-            return ijslice;
+            return local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge );
         }
         else
         {
@@ -229,18 +207,33 @@ class DivKGrad
         constexpr int hex_offset_x[8] = { 0, 1, 0, 1, 0, 1, 0, 1 };
         constexpr int hex_offset_y[8] = { 0, 0, 1, 1, 0, 0, 1, 1 };
         constexpr int hex_offset_r[8] = { 0, 0, 0, 0, 1, 1, 1, 1 };
+
         // use stored matrices (at least on some elements)
-        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::None )
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off )
         {
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = { 0 };
 
-            if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::All )
+            if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Full )
             {
-                assert( lmatrices_.data() != nullptr );
-                A[0] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
-                A[1] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+                A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
             }
-            else if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Selective ) {}
+            else if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Selective )
+            {
+                if ( local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) &&
+                     local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) )
+                {
+                    A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                    A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+                }
+                else
+                {
+                    // Kokkos::abort("Matrix not found.");
+                    A[0] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                    A[1] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+                }
+            }
+
             if ( diagonal_ )
             {
                 A[0] = A[0].diagonal();
