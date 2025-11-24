@@ -34,11 +34,11 @@ KOKKOS_INLINE_FUNCTION constexpr E operator&( E a, E b )
 /// @brief Checks if a bitmask value contains a specific flag.
 ///
 /// This function checks if the bitmask value `mask_value` has the flag `flag` set.
-/// If `flag` is `E::NO_FLAG`, it checks if `mask_value` is also `E::NO_FLAG`.
+/// If `flag` is `E::NO_FLAG`, it checks if `mask_value` is exactly `E::NO_FLAG`.
 /// @tparam E The enum type representing the bitmask.
 /// @param mask_value The bitmask value to check.
 /// @param flag The flag to check for in `mask_value`.
-/// @return `true` if `mask_value` contains `flag`, otherwise `false`.
+/// @return `true` if `mask_value` contains `flag` or whether `mask_value == flag` if `flag == E::NO_FLAG`, otherwise `false`.
 template < FlagLike E >
 KOKKOS_INLINE_FUNCTION constexpr bool has_flag( E mask_value, E flag ) noexcept
 {
