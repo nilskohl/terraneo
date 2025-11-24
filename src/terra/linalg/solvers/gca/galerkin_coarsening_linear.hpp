@@ -43,7 +43,7 @@ class TwoGridGCA
     grid::Grid2DDataScalar< ScalarT >& radii_coarse_;
     bool                               treat_boundary_;
 
-    int                                         level_range_;
+    int                                  level_range_;
     grid::Grid4DDataScalar< ScalarType > GCAElements_;
 
   public:
@@ -61,10 +61,8 @@ class TwoGridGCA
     , radii_coarse_( coarse_op.get_radii() )
     , treat_boundary_( treat_boundary )
     {
-        if ( GCAElements.has_value() )
-        {
-            assert( coarse_op_.get_stored_matrix_mode() == linalg::OperatorStoredMatrixMode::Selective );
-        }
+        assert( coarse_op_.get_stored_matrix_mode() != linalg::OperatorStoredMatrixMode::Off );
+
         GCAElements_ = GCAElements.value();
         level_range_ = level_range.value();
 

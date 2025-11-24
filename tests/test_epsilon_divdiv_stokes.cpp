@@ -206,16 +206,16 @@ struct KInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        //const double value                   = 2 + Kokkos::sin( coords( 2 ) );
-        //data_( local_subdomain_id, x, y, r ) = value;
-        if ( coords.norm() > 0.70 )
+        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
+        data_( local_subdomain_id, x, y, r ) = value;
+        /*if ( coords.norm() > 0.70 )
         {
             data_( local_subdomain_id, x, y, r ) = 1000;
         }
         else
         {
             data_( local_subdomain_id, x, y, r ) = 1;
-        }
+        }*/
     }
 };
 
@@ -316,19 +316,20 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     VectorQ1Scalar< ScalarType > k( "k", domains[velocity_level], mask_data[velocity_level] );
     VectorQ1Scalar< ScalarType > k_grad_norms( "k_grad_norms", domains[velocity_level], mask_data[velocity_level] );
 
+    std::cout << "Interpolating k " << std::endl;
     Kokkos::parallel_for(
         "coefficient interpolation",
         local_domain_md_range_policy_nodes( domains[velocity_level] ),
         KInterpolator( coords_shell[velocity_level], coords_radii[velocity_level], k.grid_data() ) );
 
+    // agca stuff
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], mask_data[0] );
-
-    terra::linalg::solvers::GCAElementsCollector< ScalarType >(
-        domains[velocity_level], k.grid_data(), GCAElements.grid_data(), k_grad_norms.grid_data(), velocity_level );
-
-    io::XDMFOutput xdmf_gcaelems( "gca_elems", domains[0], coords_shell[0], coords_radii[0] );
-    xdmf_gcaelems.add( GCAElements.grid_data() );
-    xdmf_gcaelems.write();
+    bool                         gca = true;
+    if ( gca )
+    {
+        // gca on all elements for now
+        linalg::assign( GCAElements, 1 );
+    }
 
     Stokes K(
         domains[velocity_level],
@@ -372,17 +373,17 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
 
     for ( int level = 0; level < num_levels; level++ )
     {
-        VectorQ1Scalar< ScalarType > k_c( "k_c", domains[level - min_level], mask_data[level - min_level] );
+        VectorQ1Scalar< ScalarType > k_c( "k_c", domains[level], mask_data[level] );
         Kokkos::parallel_for(
             "coefficient interpolation",
-            local_domain_md_range_policy_nodes( domains[level - min_level] ),
-            KInterpolator( coords_shell[level - min_level], coords_radii[level - min_level], k_c.grid_data() ) );
+            local_domain_md_range_policy_nodes( domains[level] ),
+            KInterpolator( coords_shell[level], coords_radii[level], k_c.grid_data() ) );
         A_diag.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, true );
 
         if ( level < num_levels - 1 )
         {
             A_c.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, false );
-            A_c.back().allocate_local_matrix_memory();
+            A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
             P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
             R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
         }
@@ -443,14 +444,17 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     // Multigrid preconditioner for velocity block
 
     // setup gca coarse ops
-    if ( true )
+    if ( gca )
     {
         for ( int level = num_levels - 2; level >= 0; level-- )
         {
             std::cout << "Assembling GCA on level " << level << std::endl;
 
             TwoGridGCA< ScalarType, Viscous >(
-                ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1], A_c[level] );
+                ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1],
+                A_c[level],
+                level,
+                GCAElements.grid_data() );
         }
     }
 
@@ -664,7 +668,7 @@ int main( int argc, char** argv )
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    for ( int level = max_level; level <= max_level; ++level )
+    for ( int level = 1; level <= max_level; ++level )
     {
         std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;
