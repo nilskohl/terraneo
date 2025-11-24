@@ -24,6 +24,9 @@ using Grid3DDataScalar = Kokkos::View< ScalarType***, Layout >;
 template < typename ScalarType >
 using Grid4DDataScalar = Kokkos::View< ScalarType****, Layout >;
 
+template < typename ScalarType >
+using Grid5DDataScalar = Kokkos::View< ScalarType*****, Layout >;
+
 template < typename ScalarType, int VecDim >
 using Grid0DDataVec = Kokkos::View< ScalarType[VecDim], Layout >;
 

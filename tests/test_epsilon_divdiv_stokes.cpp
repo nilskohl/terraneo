@@ -314,8 +314,7 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     // coefficient data
 
     VectorQ1Scalar< ScalarType > k( "k", domains[velocity_level], mask_data[velocity_level] );
-    VectorQ1Scalar< ScalarType > k_grad_norms(
-        "k_grad_norms", domains[velocity_level], mask_data[velocity_level] );
+    VectorQ1Scalar< ScalarType > k_grad_norms( "k_grad_norms", domains[velocity_level], mask_data[velocity_level] );
 
     Kokkos::parallel_for(
         "coefficient interpolation",
@@ -325,17 +324,11 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], mask_data[0] );
 
     terra::linalg::solvers::GCAElementsCollector< ScalarType >(
-        domains[velocity_level],
-        k.grid_data(),
-        GCAElements.grid_data(),
-        k_grad_norms.grid_data(),
-        velocity_level );
-
+        domains[velocity_level], k.grid_data(), GCAElements.grid_data(), k_grad_norms.grid_data(), velocity_level );
 
     io::XDMFOutput xdmf_gcaelems( "gca_elems", domains[0], coords_shell[0], coords_radii[0] );
     xdmf_gcaelems.add( GCAElements.grid_data() );
     xdmf_gcaelems.write();
-
 
     Stokes K(
         domains[velocity_level],
@@ -455,14 +448,9 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         for ( int level = num_levels - 2; level >= 0; level-- )
         {
             std::cout << "Assembling GCA on level " << level << std::endl;
-            for ( int dimi = 0; dimi < 3; dimi++ )
-            {
-                for ( int dimj = 0; dimj < 3; dimj++ )
-                {
-                    TwoGridGCA< ScalarType, Viscous >(
-                        ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1], A_c[level], dimi, dimj );
-                }
-            }
+
+            TwoGridGCA< ScalarType, Viscous >(
+                ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1], A_c[level] );
         }
     }
 

@@ -181,15 +181,16 @@ struct KInterpolator
         const double rad = coords.norm();
         const double x0  = 0.5 * r_max_;
         const double x1  = 0.5 * r_min_;
-        data_( local_subdomain_id, x, y, r ) =
-            0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-        /*  if (coords.norm() > 0.70) {
-                 
-             data_( local_subdomain_id, x, y, r ) = k_max_;
-            } else {
-
-             data_( local_subdomain_id, x, y, r ) = 1;
-            }*/
+        //data_( local_subdomain_id, x, y, r ) =
+        //    0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
+        if ( coords.norm() > 0.70 )
+        {
+            data_( local_subdomain_id, x, y, r ) = k_max_;
+        }
+        else
+        {
+            data_( local_subdomain_id, x, y, r ) = 1;
+        }
     }
 };
 
@@ -234,7 +235,7 @@ T test(
     //const double alpha = 1000.0;
     //const double k_max = 100000.0;
     //const bool   gca   = false;
-
+    std::cout << "Domain setup " << std::endl;
     for ( int level = 0; level <= max_level; level++ )
     {
         auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, r_min, r_max );
@@ -250,6 +251,7 @@ T test(
 
     VectorQ1Scalar< ScalarType > k( "k", domains.back(), mask_data.back() );
     // Set up coefficient data.
+    std::cout << "K interpolation " << std::endl;
     Kokkos::parallel_for(
         "coefficient interpolation",
         local_domain_md_range_policy_nodes( domains.back() ),
@@ -263,6 +265,8 @@ T test(
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[min_level], mask_data[min_level] );
     if ( gca )
     {
+        linalg::assign( GCAElements, 0 );
+        std::cout << "GCA: determining gca elements on level " << max_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
             domains.back(), k.grid_data(), GCAElements.grid_data(), k_grad_norms.grid_data(), max_level - min_level );
 
@@ -270,6 +274,8 @@ T test(
             "gca_elems", domains[min_level], subdomain_shell_coords[min_level], subdomain_radii[min_level] );
         xdmf_gcaelems.add( GCAElements.grid_data() );
         xdmf_gcaelems.write();
+
+        //linalg::assign( GCAElements, 1 );
     }
 
     DivKGrad A( domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), true, false );
@@ -284,10 +290,13 @@ T test(
     // setup operators (prolongation, restriction, matrix storage)
     for ( int level = min_level; level <= max_level; level++ )
     {
+        std::cout << "MG hierarchy level " << level << std::endl;
         tmp.emplace_back( "tmp_level_" + std::to_string( level ), domains[level], mask_data[level] );
 
         if ( level == min_level )
         {
+            std::cout << "CGS " << level << std::endl;
+
             constexpr int num_coarse_grid_tmps = 4;
             for ( int i = 0; i < num_coarse_grid_tmps; ++i )
             {
@@ -300,14 +309,14 @@ T test(
         {
             tmp_r_c.emplace_back( "tmp_r_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
             tmp_e_c.emplace_back( "tmp_e_c_level_" + std::to_string( level ), domains[level], mask_data[level] );
-
+            std::cout << "K Int " << level << std::endl;
             VectorQ1Scalar< ScalarType > k_c( "k_c", domains[level], mask_data[level] );
             Kokkos::parallel_for(
                 "coefficient interpolation",
-                local_domain_md_range_policy_nodes( domains.back() ),
+                local_domain_md_range_policy_nodes( domains[level] ),
                 KInterpolator(
-                    subdomain_shell_coords.back(),
-                    subdomain_radii.back(),
+                    subdomain_shell_coords[level],
+                    subdomain_radii[level],
                     k_c.grid_data(),
                     r_min,
                     r_max,
@@ -315,12 +324,19 @@ T test(
                     k_max ) );
 
             Kokkos::fence();
+            std::cout << "A_c " << level << std::endl;
             A_c.emplace_back(
                 domains[level], subdomain_shell_coords[level], subdomain_radii[level], k_c.grid_data(), true, false );
 
             if ( gca )
-                A_c.back().allocate_local_matrix_memory();
+            {
+                // adaptive gca: store gca matrices only on selected elements
+                A_c.back().set_stored_matrix_mode(linalg::OperatorStoredMatrixMode::Selective, level - min_level, GCAElements.grid_data());
 
+                // "full gca": gca on all elements
+                //A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
+            }
+            std::cout << "P/R " << level << std::endl;
             if constexpr ( std::is_same_v<
                                Prolongation,
                                fe::wedge::operators::shell::ProlongationLinear< ScalarType > > )
@@ -346,15 +362,20 @@ T test(
     // setup gca coarse ops
     if ( gca )
     {
+        std::cout << "Assembling GCA operators" << std::endl;
+        //linalg::assign( GCAElements, 1 );
+
         for ( int level = max_level - 1; level >= min_level; level-- )
         {
             if ( level == max_level - 1 )
             {
-                TwoGridGCA< ScalarType, DivKGrad >( A_neumann, A_c[level] );
+                TwoGridGCA< ScalarType, DivKGrad >(
+                    A_neumann, A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
             else
             {
-                TwoGridGCA< ScalarType, DivKGrad >( A_c[level + 1], A_c[level] );
+                TwoGridGCA< ScalarType, DivKGrad >(
+                    A_c[level + 1 - min_level], A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
         }
     }
@@ -369,9 +390,9 @@ T test(
         assign( tmp_smoother, 1.0 );
         if ( level < max_level )
         {
-            A_c[level].set_diagonal( true );
-            apply( A_c[level], tmp_smoother, inverse_diagonal );
-            A_c[level].set_diagonal( false );
+            A_c[level - min_level].set_diagonal( true );
+            apply( A_c[level - min_level], tmp_smoother, inverse_diagonal );
+            A_c[level - min_level].set_diagonal( false );
         }
         else
         {
@@ -492,9 +513,9 @@ int run_test()
 
     constexpr T           omega          = 0.666;
     constexpr int         prepost_smooth = 2;
-    std::vector< double > alphas         = { 1 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< int >    k_maxs         = { 1 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< bool >   gcas           = { 1 }; //, 1 };
+    std::vector< double > alphas         = { 1 };    //, 10, 100, 1000, 10000, 100000, 1000000 };
+    std::vector< int >    k_maxs         = { 1000 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
+    std::vector< bool >   gcas           = { 1 };    //, 1 };
 
     auto table_dca = std::make_shared< util::Table >();
     auto table_gca = std::make_shared< util::Table >();
@@ -506,7 +527,7 @@ int run_test()
             cycles["alpha"] = alpha;
             for ( int k_max : k_maxs )
             {
-                for ( int level = 1; level <= max_level; level++ )
+                for ( int level = 3; level <= max_level; level++ )
                 {
                     auto table = std::make_shared< util::Table >();
 
@@ -519,7 +540,7 @@ int run_test()
                         T,
                         fe::wedge::operators::shell::ProlongationLinear< T >,
                         fe::wedge::operators::shell::RestrictionLinear< T > >(
-                        0, level, table, omega, prepost_smooth, alpha, k_max, gca );
+                        2, level, table, omega, prepost_smooth, alpha, k_max, gca );
 
                     const auto time_total = timer.seconds();
                     table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
