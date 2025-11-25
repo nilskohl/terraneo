@@ -668,7 +668,7 @@ int main( int argc, char** argv )
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    for ( int level = 1; level <= max_level; ++level )
+    for ( int level = max_level; level <= max_level; ++level )
     {
         std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;

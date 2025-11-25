@@ -68,7 +68,7 @@ struct SolutionInterpolator
         // const T value = 0.0;
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
-            data_( local_subdomain_id, x, y, r ) = value;
+            data_( local_subdomain_id, x, y, r ) = 0.0;
         }
     }
 };
@@ -115,11 +115,11 @@ struct RHSInterpolator
         const double x7                      = Kokkos::tanh( x6 * ( -x3 - x4 + x5 ) );
         const double x8                      = 0.5 * k_max_;
         const double x9                      = x6 * ( 1 - Kokkos::pow( x7, 2 ) ) / x5;
-        data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
-                                               coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
-                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
-        //data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
-        ///                                       Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
+        //data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
+        //                                       coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
+        //                                       1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
+        data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
+                                           Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
     }
 };
 
@@ -182,8 +182,8 @@ struct KInterpolator
         const double x0  = 0.5 * r_max_;
         const double x1  = 0.5 * r_min_;
         //data_( local_subdomain_id, x, y, r ) =
-        //    0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-        if ( coords.norm() > 0.70 )
+         //   0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -falsex0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
+        if ( coords.norm() > 0.71 )
         {
             data_( local_subdomain_id, x, y, r ) = k_max_;
         }
@@ -232,9 +232,6 @@ T test(
 
     const double r_min = 0.5;
     const double r_max = 1.0;
-    //const double alpha = 1000.0;
-    //const double k_max = 100000.0;
-    //const bool   gca   = false;
     std::cout << "Domain setup " << std::endl;
     for ( int level = 0; level <= max_level; level++ )
     {
@@ -324,14 +321,14 @@ T test(
                     k_max ) );
 
             Kokkos::fence();
-            std::cout << "A_c " << level << std::endl;
+            std::cout << "A_c " << level << ", kmax " << k_max << std::endl;
             A_c.emplace_back(
                 domains[level], subdomain_shell_coords[level], subdomain_radii[level], k_c.grid_data(), true, false );
 
             if ( gca )
             {
                 // adaptive gca: store gca matrices only on selected elements
-                A_c.back().set_stored_matrix_mode(linalg::OperatorStoredMatrixMode::Selective, level - min_level, GCAElements.grid_data());
+               // A_c.back().set_stored_matrix_mode(linalg::OperatorStoredMatrixMode::Selective, level - min_level, GCAElements.grid_data());
 
                 // "full gca": gca on all elements
                 //A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
@@ -441,10 +438,10 @@ T test(
     assign( u, 0.0 );
 
     // Set up boundary data.
-    Kokkos::parallel_for(
-        "boundary interpolation",
-        local_domain_md_range_policy_nodes( domains.back() ),
-        SolutionInterpolator( subdomain_shell_coords.back(), subdomain_radii.back(), u.grid_data(), true ) );
+   // Kokkos::parallel_for(
+   //     "boundary interpolation",
+   //     local_domain_md_range_policy_nodes( domains.back() ),
+   //     SolutionInterpolator( subdomain_shell_coords.back(), subdomain_radii.back(), u.grid_data(), true ) );
 
     Kokkos::fence();
 
@@ -460,7 +457,7 @@ T test(
     CoarseGridSolver coarse_grid_solver( solver_params, table, coarse_grid_tmps );
 
     linalg::solvers::Multigrid< DivKGrad, Prolongation, Restriction, Smoother, CoarseGridSolver > multigrid_solver(
-        P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 50, 1e-6 );
+        P_additive, R, A_c, tmp_r_c, tmp_e_c, tmp, smoothers, smoothers, coarse_grid_solver, 100, 1e-6 );
 
     multigrid_solver.collect_statistics( table );
 
@@ -484,13 +481,13 @@ T test(
     linalg::lincomb( error, { 1.0, -1.0 }, { u, solution } );
     const auto l2_error = linalg::norm_2_scaled( error, 1.0 / static_cast< T >( num_dofs ) );
 
-    if ( false )
+    if ( true )
     {
-        io::XDMFOutput xdmf( ".", domains.back(), subdomain_shell_coords.back(), subdomain_radii.back() );
+        io::XDMFOutput xdmf( "gca_coeffs", domains.back(), subdomain_shell_coords.back(), subdomain_radii.back() );
         xdmf.add( u.grid_data() );
         xdmf.add( solution.grid_data() );
         xdmf.add( error.grid_data() );
-        xdmf.add( k.grid_data() );
+        xdmf.add( A.k_grid_data() );
         xdmf.write();
     }
 
@@ -513,9 +510,9 @@ int run_test()
 
     constexpr T           omega          = 0.666;
     constexpr int         prepost_smooth = 2;
-    std::vector< double > alphas         = { 1 };    //, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< int >    k_maxs         = { 1000 }; //, 10, 100, 1000, 10000, 100000, 1000000 };
-    std::vector< bool >   gcas           = { 1 };    //, 1 };
+    std::vector< double > alphas         = { 1 };
+    std::vector< int >    k_maxs         = { 1, 10, 100, 1000 };
+    std::vector< bool >   gcas           = { 0 };    //, 1 };
 
     auto table_dca = std::make_shared< util::Table >();
     auto table_gca = std::make_shared< util::Table >();
@@ -527,7 +524,7 @@ int run_test()
             cycles["alpha"] = alpha;
             for ( int k_max : k_maxs )
             {
-                for ( int level = 3; level <= max_level; level++ )
+                for ( int level = max_level; level <= max_level; level++ )
                 {
                     auto table = std::make_shared< util::Table >();
 
@@ -540,7 +537,7 @@ int run_test()
                         T,
                         fe::wedge::operators::shell::ProlongationLinear< T >,
                         fe::wedge::operators::shell::RestrictionLinear< T > >(
-                        2, level, table, omega, prepost_smooth, alpha, k_max, gca );
+                        0, level, table, omega, prepost_smooth, alpha, k_max, gca );
 
                     const auto time_total = timer.seconds();
                     table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
