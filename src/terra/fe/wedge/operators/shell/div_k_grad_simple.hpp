@@ -29,7 +29,7 @@ class DivKGradSimple
     bool applyStoredLMatrices_ =
         false; // set to make apply_impl() load and use the stored LMatrices for the operator application
     Grid4DDataLocalMatrices lmatrices_;
-    bool                    single_quadpoint_ = false;
+    bool                    single_quadpoint_ = true;
 
     grid::shell::DistributedDomain domain_;
 
