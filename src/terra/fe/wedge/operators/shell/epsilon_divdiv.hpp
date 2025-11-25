@@ -17,9 +17,9 @@ template < typename ScalarT, int VecDim = 3 >
 class EpsilonDivDiv
 {
   public:
-    using SrcVectorType           = linalg::VectorQ1Vec< ScalarT, VecDim >;
-    using DstVectorType           = linalg::VectorQ1Vec< ScalarT, VecDim >;
-    using ScalarType              = ScalarT;
+    using SrcVectorType                 = linalg::VectorQ1Vec< ScalarT, VecDim >;
+    using DstVectorType                 = linalg::VectorQ1Vec< ScalarT, VecDim >;
+    using ScalarType                    = ScalarT;
     static constexpr int LocalMatrixDim = 18;
     using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, LocalMatrixDim, LocalMatrixDim, 2 >;
 
@@ -95,13 +95,13 @@ class EpsilonDivDiv
     const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
 
     /// @brief Getter for domain member
-    grid::shell::DistributedDomain& get_domain() { return domain_; }
+    const grid::shell::DistributedDomain& get_domain() const { return domain_; }
 
     /// @brief Getter for radii member
-    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+    grid::Grid2DDataScalar< ScalarT > get_radii() const { return radii_; }
 
     /// @brief Getter for grid member
-    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    grid::Grid3DDataVec< ScalarT, 3 > get_grid() { return grid_; }
 
     /// @brief allocates memory for the local matrices
     void allocate_local_matrix_memory()
@@ -120,11 +120,11 @@ class EpsilonDivDiv
     /// @brief Set the local matrix stored in the operator
     KOKKOS_INLINE_FUNCTION
     void set_local_matrix(
-        const int                                        local_subdomain_id,
-        const int                                        x_cell,
-        const int                                        y_cell,
-        const int                                        r_cell,
-        const int                                        wedge,
+        const int                                                    local_subdomain_id,
+        const int                                                    x_cell,
+        const int                                                    y_cell,
+        const int                                                    r_cell,
+        const int                                                    wedge,
         const dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim >& mat ) const
     {
         assert( lmatrices_.data() != nullptr );
@@ -264,10 +264,10 @@ class EpsilonDivDiv
         {
             // Compute the local element matrix.
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = {};
-            A[0] =// assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
-            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+            A[0] = // assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
             A[1] = //assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
-            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
 
             // BCs are applied by GCA ... to be discussed for free-slip
 
@@ -452,9 +452,10 @@ class EpsilonDivDiv
                     {
                         for ( int j = 0; j < num_nodes_per_wedge; j++ )
                         {
-                            A( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) += jdet_keval_quadweight *
-                                         ( 2 * sym_grad_j[j].double_contract( sym_grad_i[i] ) -
-                                           2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * sym_grad_i[i]( dimi, dimi ) );
+                            A( i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) +=
+                                jdet_keval_quadweight *
+                                ( 2 * sym_grad_j[j].double_contract( sym_grad_i[i] ) -
+                                  2.0 / 3.0 * sym_grad_j[j]( dimj, dimj ) * sym_grad_i[i]( dimi, dimi ) );
                             // for the div, we just extract the component from the gradient vector
                         }
                     }

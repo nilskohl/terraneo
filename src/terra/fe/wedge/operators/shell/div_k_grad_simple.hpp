@@ -18,10 +18,11 @@ template < typename ScalarT >
 class DivKGradSimple
 {
   public:
-    using SrcVectorType           = linalg::VectorQ1Scalar< ScalarT >;
-    using DstVectorType           = linalg::VectorQ1Scalar< ScalarT >;
-    using ScalarType              = ScalarT;
-    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, 6, 6, 2 >;
+    using SrcVectorType                 = linalg::VectorQ1Scalar< ScalarT >;
+    using DstVectorType                 = linalg::VectorQ1Scalar< ScalarT >;
+    using ScalarType                    = ScalarT;
+    using Grid4DDataLocalMatrices       = terra::grid::Grid4DDataMatrices< ScalarType, 6, 6, 2 >;
+    static constexpr int LocalMatrixDim = 6;
 
   private:
     bool storeLMatrices_ =
@@ -84,13 +85,13 @@ class DivKGradSimple
     }
 
     /// @brief Getter for domain member
-    grid::shell::DistributedDomain& get_domain() { return domain_; }
+    const grid::shell::DistributedDomain& get_domain() const { return domain_; }
 
     /// @brief Getter for radii member
-    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+    grid::Grid2DDataScalar< ScalarT > get_radii() const { return radii_; }
 
     /// @brief Getter for grid member
-    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    grid::Grid3DDataVec< ScalarT, 3 > get_grid() const { return grid_; }
 
     /// @brief S/Getter for diagonal member
     void set_diagonal( bool v ) { diagonal_ = v; }
@@ -100,7 +101,7 @@ class DivKGradSimple
 
     /// @brief Retrives the local matrix stored in the operator
     KOKKOS_INLINE_FUNCTION
-    dense::Mat< ScalarT, 6, 6 >& get_lmatrix(
+    dense::Mat< ScalarT, 6, 6 > get_local_matrix(
         const int local_subdomain_id,
         const int x_cell,
         const int y_cell,
@@ -111,6 +112,17 @@ class DivKGradSimple
 
         return lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge );
     }
+
+    /// @brief Set the local matrix stored in the operator
+    KOKKOS_INLINE_FUNCTION
+    void set_local_matrix(
+        const int                                                    local_subdomain_id,
+        const int                                                    x_cell,
+        const int                                                    y_cell,
+        const int                                                    r_cell,
+        const int                                                    wedge,
+        const dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim >& mat ) const
+    { Kokkos::abort( "Not implemented." ); }
 
     /// @brief Setter/Getter for app applyStoredLMatrices_: usage of stored local matrices during apply
     void setApplyStoredLMatrices( bool v ) { applyStoredLMatrices_ = v; }
@@ -303,5 +315,6 @@ class DivKGradSimple
 
 static_assert( linalg::OperatorLike< DivKGradSimple< float > > );
 static_assert( linalg::OperatorLike< DivKGradSimple< double > > );
+static_assert( linalg::GCACapable< DivKGradSimple< double > > );
 
 } // namespace terra::fe::wedge::operators::shell
