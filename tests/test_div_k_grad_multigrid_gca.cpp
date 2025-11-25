@@ -6,6 +6,7 @@
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/div_k_grad.hpp"
+#include "fe/wedge/operators/shell/div_k_grad_simple.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
@@ -115,11 +116,11 @@ struct RHSInterpolator
         const double x7                      = Kokkos::tanh( x6 * ( -x3 - x4 + x5 ) );
         const double x8                      = 0.5 * k_max_;
         const double x9                      = x6 * ( 1 - Kokkos::pow( x7, 2 ) ) / x5;
-        //data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
-        //                                       coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
-        //                                       1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
-        data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
-                                           Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
+        data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
+                                               coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
+                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
+        //data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
+        //s                                   Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
     }
 };
 
@@ -206,7 +207,7 @@ T test(
     bool                                  gca )
 {
     using ScalarType       = T;
-    using DivKGrad         = fe::wedge::operators::shell::DivKGrad< ScalarType >;
+    using DivKGrad         = fe::wedge::operators::shell::DivKGradSimple< ScalarType >;
     using Smoother         = linalg::solvers::Jacobi< DivKGrad >;
     using CoarseGridSolver = linalg::solvers::PCG< DivKGrad >;
 
@@ -366,13 +367,13 @@ T test(
         {
             if ( level == max_level - 1 )
             {
-                TwoGridGCA< ScalarType, DivKGrad >(
-                    A_neumann, A_c[level - min_level], level - min_level, GCAElements.grid_data() );
+             //   TwoGridGCA< ScalarType, DivKGrad >(
+             //       A_neumann, A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
             else
             {
-                TwoGridGCA< ScalarType, DivKGrad >(
-                    A_c[level + 1 - min_level], A_c[level - min_level], level - min_level, GCAElements.grid_data() );
+             //   TwoGridGCA< ScalarType, DivKGrad >(
+             //       A_c[level + 1 - min_level], A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
         }
     }
@@ -461,7 +462,7 @@ T test(
 
     multigrid_solver.collect_statistics( table );
 
-    //assign( u, 1.0 );
+    assign( u, 1.0 );
 
     //VectorQ1Scalar< ScalarType > pcg_tmp0( "pcg_tmp0", domains.back(), mask_data.back() );
     //VectorQ1Scalar< ScalarType > pcg_tmp1( "pcg_tmp1", domains.back(), mask_data.back() );
@@ -487,7 +488,7 @@ T test(
         xdmf.add( u.grid_data() );
         xdmf.add( solution.grid_data() );
         xdmf.add( error.grid_data() );
-        xdmf.add( A.k_grid_data() );
+        xdmf.add( k.grid_data() );
         xdmf.write();
     }
 
@@ -510,7 +511,7 @@ int run_test()
 
     constexpr T           omega          = 0.666;
     constexpr int         prepost_smooth = 2;
-    std::vector< double > alphas         = { 1 };
+    std::vector< double > alphas         = { 10000000 };
     std::vector< int >    k_maxs         = { 1, 10, 100, 1000 };
     std::vector< bool >   gcas           = { 0 };    //, 1 };
 
