@@ -187,7 +187,7 @@ struct KInterpolator
         // const double x1  = 0.5 * r_min_;
         // data_( local_subdomain_id, x, y, r ) =
         //     0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-        if ( coords.norm() > 0.7123 ) //2*Kokkos::abs(sin(-2*coords(0))*sin(4*coords(1))) )
+        if ( coords.norm() > 0.75 ) //2*Kokkos::abs(sin(-2*coords(0))*sin(4*coords(1))) )
         {
             data_( local_subdomain_id, x, y, r ) = k_max_;
         }
@@ -219,7 +219,7 @@ T test(
         // return
         //    0.5 * k_max * ( Kokkos::tanh( alpha * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max;
         //    const double                  rad    = coords.norm();
-        if ( rad > 0.7123 )
+        if ( rad > 0.75 )
         {
             return k_max;
         }
@@ -279,23 +279,92 @@ T test(
 
     Kokkos::fence();
 
-
     // agca stuff
     VectorQ1Scalar< ScalarType > k_grad_norms( "k_grad_norms", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[min_level], mask_data[min_level] );
 
-    bool coeff_eval_plotting = true;
-    if (coeff_eval_plotting) {
-        int level = min_level;
-        int subdomain = 0;
-        int x_cell = 0;
-        int y_cell = 0;
-        
+    bool coeff_eval_plotting = false;
+    if ( coeff_eval_plotting )
+    {
+        for ( int level = 0; level < 4; ++level )
+        {
+            VectorQ1Scalar< ScalarType > k_c( "k_c", domains[level], mask_data[level] );
+
+            Kokkos::parallel_for(
+                "coefficient interpolation",
+                local_domain_md_range_policy_nodes( domains[level] ),
+                KInterpolator(
+                    subdomain_shell_coords[level],
+                    subdomain_radii[level],
+                    k_c.grid_data(),
+                    r_min,
+                    r_max,
+                    alpha,
+                    k_max ) );
+
+            int subdomain = 0;
+            int x_cell    = 0;
+            int y_cell    = 0;
+            std::cout << "Level " << level << ": Coefficient evaluations along a line away from the core on subdomain "
+                      << subdomain << ": " << std::endl;
+            for ( int r_cell = 0; r_cell < subdomain_radii[level].extent( 1 ) - 1; r_cell++ )
+            {
+                const dense::Vec< double, 3 > coords = grid::shell::coords(
+                    subdomain, x_cell, y_cell, r_cell, subdomain_shell_coords[level], subdomain_radii[level] );
+                std::cout << "---------------" << std::endl;
+                std::cout << "r_cell: \n" << r_cell << std::endl << "\nCoord: \n" << coords << std::endl;
+
+                {
+                    dense::Vec< double, 6 > k_local_hex[num_wedges_per_hex_cell];
+                    dense::Vec< double, 3 > qp = { 1.0 / 3.0, 1.0 / 3.0, 0.0 };
+                    terra::fe::wedge::extract_local_wedge_scalar_coefficients(
+                        k_local_hex, subdomain, x_cell, y_cell, r_cell, k_c.grid_data() );
+
+                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    {
+                        double k_fe_eval = 0;
+
+                        for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                        {
+                            k_fe_eval += terra::fe::wedge::shape( k, qp ) * k_local_hex[wedge]( k );
+                        }
+                        std::cout << "k fe eval on wedge " << wedge << ": " << k_fe_eval << std::endl;
+                    }
+                }
+                {
+                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    {
+                        double                      k_function_eval = 0;
+                        dense::Vec< ScalarType, 3 > qp_physical     = { 0, 0, 0 };
+                        constexpr int               offset_x[2][6]  = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
+                        constexpr int               offset_y[2][6]  = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
+                        constexpr int               offset_r[2][6]  = { { 0, 0, 0, 1, 1, 1 }, { 0, 0, 0, 1, 1, 1 } };
+
+                        for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                        {
+                            qp_physical = qp_physical + grid::shell::coords(
+                                                            subdomain,
+                                                            x_cell + offset_x[wedge][k],
+                                                            y_cell + offset_y[wedge][k],
+                                                            r_cell + offset_r[wedge][k],
+                                                            subdomain_shell_coords[level],
+                                                            subdomain_radii[level] );
+                        }
+                        // evaluate at the middle of the element for now
+                        k_function_eval = k_function(
+                            qp_physical( 0 ) / num_nodes_per_wedge,
+                            qp_physical( 1 ) / num_nodes_per_wedge,
+                            qp_physical( 2 ) / num_nodes_per_wedge );
+
+                        std::cout << "k function eval on wedge " << wedge << ": " << k_function_eval << std::endl;
+                    }
+                }
+            }
+        }
+        exit( 0 );
     }
     if ( gca == 2 )
     {
-
-
         linalg::assign( GCAElements, 0 );
         std::cout << "adaptive gca: determining gca elements on level " << max_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
@@ -309,11 +378,10 @@ T test(
         //linalg::assign( GCAElements, 1 );
     }
 
-
     DivKGrad A(
         domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), k_function, true, false );
     // A.set_single_quadpoint( true );
-    DivKGrad A_neumann(nongca_elements
+    DivKGrad A_neumann(
         domains.back(),
         subdomain_shell_coords.back(),
         subdomain_radii.back(),
@@ -354,7 +422,7 @@ T test(
                     subdomain_shell_coords[level],
                     subdomain_radii[level],
                     k_c.grid_data(),
-                    r_min,nongca_elements
+                    r_min,
                     r_max,
                     alpha,
                     k_max ) );
@@ -582,8 +650,8 @@ int run_test()
 
     constexpr int         prepost_smooth = 3;
     std::vector< double > alphas         = { 1 };
-    std::vector< int >    k_maxs         = { 200 };
-    std::vector< int >    gcas           = { 2 }; //, 1 };
+    std::vector< int >    pows         = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    std::vector< int >    gcas           = { 0, 1 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
@@ -594,8 +662,9 @@ int run_test()
         {
             terra::util::Table::Row cycles;
             cycles["alpha"] = alpha;
-            for ( int k_max : k_maxs )
+            for ( int pow : pows )
             {
+                int k_max = Kokkos::pow(10, pow);
                 for ( int level = max_level; level <= max_level; level++ )
                 {
                     auto table = std::make_shared< util::Table >();
@@ -609,7 +678,7 @@ int run_test()
                         T,
                         fe::wedge::operators::shell::ProlongationLinear< T >,
                         fe::wedge::operators::shell::RestrictionLinear< T > >(
-                        3, level, table, prepost_smooth, alpha, k_max, gca );
+                        1, level, table, prepost_smooth, alpha, k_max, gca );
 
                     const auto time_total = timer.seconds();
                     table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
@@ -653,7 +722,6 @@ int run_test()
     table_gca->print_pretty();
     std::cout << "AGCA: " << std::endl;
     table_agca->print_pretty();
-
 
     return EXIT_SUCCESS;
 }

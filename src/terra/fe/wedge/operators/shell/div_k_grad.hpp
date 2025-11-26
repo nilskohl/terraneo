@@ -30,7 +30,7 @@ class DivKGrad
     LocalMatrixStorage local_matrix_storage_;
 
     bool single_quadpoint_ = true;
-    bool k_function_eval   = true;
+    bool k_function_eval   = false;
 
     grid::shell::DistributedDomain domain_;
 
