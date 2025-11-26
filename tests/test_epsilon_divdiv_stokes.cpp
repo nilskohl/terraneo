@@ -191,14 +191,17 @@ struct KInterpolator
     Grid3DDataVec< double, 3 > grid_;
     Grid2DDataScalar< double > radii_;
     Grid4DDataScalar< double > data_;
+    double                     kmax_;
 
     KInterpolator(
         const Grid3DDataVec< double, 3 >& grid,
         const Grid2DDataScalar< double >& radii,
-        const Grid4DDataScalar< double >& data )
+        const Grid4DDataScalar< double >& data,
+        const double                      kmax )
     : grid_( grid )
     , radii_( radii )
     , data_( data )
+    , kmax_( kmax )
     {}
 
     KOKKOS_INLINE_FUNCTION
@@ -206,20 +209,21 @@ struct KInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
-        data_( local_subdomain_id, x, y, r ) = value;
-        /*if ( coords.norm() > 0.70 )
+        const double value = 2 + Kokkos::sin( coords( 2 ) );
+        //data_( local_subdomain_id, x, y, r ) = value;
+        if ( coords.norm() > 0.70 )
         {
-            data_( local_subdomain_id, x, y, r ) = 1000;
+            data_( local_subdomain_id, x, y, r ) = kmax_;
         }
         else
         {
             data_( local_subdomain_id, x, y, r ) = 1;
-        }*/
+        }
     }
 };
 
-std::tuple< double, double, int > test( int min_level, int max_level, const std::shared_ptr< util::Table >& table )
+std::tuple< double, double, int >
+    test( double kmax, bool gca, int min_level, int max_level, const std::shared_ptr< util::Table >& table )
 {
     using ScalarType = double;
 
@@ -320,11 +324,10 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     Kokkos::parallel_for(
         "coefficient interpolation",
         local_domain_md_range_policy_nodes( domains[velocity_level] ),
-        KInterpolator( coords_shell[velocity_level], coords_radii[velocity_level], k.grid_data() ) );
+        KInterpolator( coords_shell[velocity_level], coords_radii[velocity_level], k.grid_data(), kmax ) );
 
     // agca stuff
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], mask_data[0] );
-    bool                         gca = true;
     if ( gca )
     {
         // gca on all elements for now
@@ -377,13 +380,14 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         Kokkos::parallel_for(
             "coefficient interpolation",
             local_domain_md_range_policy_nodes( domains[level] ),
-            KInterpolator( coords_shell[level], coords_radii[level], k_c.grid_data() ) );
+            KInterpolator( coords_shell[level], coords_radii[level], k_c.grid_data(), kmax ) );
         A_diag.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, true );
 
         if ( level < num_levels - 1 )
         {
             A_c.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, false );
-            A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
+            if (gca)
+                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
             P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
             R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
         }
@@ -668,29 +672,40 @@ int main( int argc, char** argv )
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    for ( int level = max_level; level <= max_level; ++level )
+    std::vector< int > kmaxs = { 100000000 };
+
+    std::vector< bool > gcas = { 0, 1 }; //, 1 };
+
+    for ( bool gca : gcas )
     {
-        std::cout << "level = " << level << std::endl;
-        Kokkos::Timer timer;
-        timer.reset();
-        const auto [l2_error_vel, l2_error_pre, iterations] = test( level - 1, level, table );
-        const auto time_total                               = timer.seconds();
-        table->add_row( { { "level", level }, { "time_total", time_total } } );
-
-        if ( level > 1 )
+        for ( int kmax : kmaxs )
         {
-            const double order_vel = prev_l2_error_vel / l2_error_vel;
-            const double order_pre = prev_l2_error_pre / l2_error_pre;
+            for ( int level = max_level; level <= max_level; ++level )
+            {
+                std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
+                std::cout << "level = " << level << std::endl;
+                Kokkos::Timer timer;
+                timer.reset();
+                const auto [l2_error_vel, l2_error_pre, iterations] = test( kmax, gca, 0, level, table );
+                const auto time_total                               = timer.seconds();
+                table->add_row( { { "level", level }, { "time_total", time_total } } );
 
-            std::cout << "Level " << level << ": order_vel = " << order_vel << ", l2_error_vel = " << l2_error_vel
-                      << std::endl;
-            std::cout << "Level " << level << ": order_pre = " << order_pre << ", l2_error_pre = " << l2_error_pre
-                      << std::endl;
+                if ( level > 1 )
+                {
+                    const double order_vel = prev_l2_error_vel / l2_error_vel;
+                    const double order_pre = prev_l2_error_pre / l2_error_pre;
 
-            table->add_row( { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+                    std::cout << "Level " << level << ": order_vel = " << order_vel
+                              << ", l2_error_vel = " << l2_error_vel << std::endl;
+                    std::cout << "Level " << level << ": order_pre = " << order_pre
+                              << ", l2_error_pre = " << l2_error_pre << std::endl;
+
+                    table->add_row( { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+                }
+                prev_l2_error_vel = l2_error_vel;
+                prev_l2_error_pre = l2_error_pre;
+            }
         }
-        prev_l2_error_vel = l2_error_vel;
-        prev_l2_error_pre = l2_error_pre;
     }
     table->query_rows_not_none( "dofs_vel" )
         .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel" } )

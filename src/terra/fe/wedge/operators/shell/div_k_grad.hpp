@@ -15,7 +15,7 @@
 
 namespace terra::fe::wedge::operators::shell {
 
-template < typename ScalarT >
+template < typename ScalarT, typename KFunction >
 class DivKGrad
 {
   public:
@@ -29,13 +29,15 @@ class DivKGrad
   private:
     LocalMatrixStorage local_matrix_storage_;
 
-    bool single_quadpoint_ = false;
+    bool single_quadpoint_ = true;
+    bool k_function_eval   = true;
 
     grid::shell::DistributedDomain domain_;
 
     grid::Grid3DDataVec< ScalarT, 3 >    grid_;
     grid::Grid2DDataScalar< ScalarT >    radii_;
     grid::Grid4DDataScalar< ScalarType > k_;
+    KFunction                            k_function_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -61,6 +63,7 @@ class DivKGrad
         const grid::Grid3DDataVec< ScalarT, 3 >&    grid,
         const grid::Grid2DDataScalar< ScalarT >&    radii,
         const grid::Grid4DDataScalar< ScalarType >& k,
+        KFunction                                   k_function,
         bool                                        treat_boundary,
         bool                                        diagonal,
         linalg::OperatorApplyMode                   operator_apply_mode = linalg::OperatorApplyMode::Replace,
@@ -71,6 +74,7 @@ class DivKGrad
     , grid_( grid )
     , radii_( radii )
     , k_( k )
+    , k_function_( k_function )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
@@ -292,6 +296,40 @@ class DivKGrad
                     assemble_trial_test_vecs(
                         wedge, qp, w, r_1, r_2, wedge_phy_surf, k_local_hex, grad, jdet_keval_quadweight );
 
+                    // dot of coeff dofs and element-local shape functions to evaluate the coefficent on the current element
+                    ScalarType k_eval = 0.0;
+                    if ( !k_function_eval )
+                    {
+                        for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                        {
+                            k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
+                        }
+                    }
+                    else
+                    {
+                        constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
+                        constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
+                        constexpr int offset_r[2][6] = { { 0, 0, 0, 1, 1, 1 }, { 0, 0, 0, 1, 1, 1 } };
+                        assert( single_quadpoint_ );
+                        dense::Vec< ScalarType, 3 > qp_physical = { 0, 0, 0 };
+                        for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                        {
+                            qp_physical = qp_physical + grid::shell::coords(
+                                                            local_subdomain_id,
+                                                            x_cell + offset_x[wedge][k],
+                                                            y_cell + offset_y[wedge][k],
+                                                            r_cell + offset_r[wedge][k],
+                                                            grid_,
+                                                            radii_ );
+                        }
+                        // evaluate at the middle of the element for now
+                        k_eval = k_function_(
+                            qp_physical( 0 ) / num_nodes_per_wedge,
+                            qp_physical( 1 ) / num_nodes_per_wedge,
+                            qp_physical( 2 ) / num_nodes_per_wedge );
+                    }
+                    jdet_keval_quadweight *= k_eval;
+
                     fused_local_mv( src_local_hex, dst_local_hex, wedge, jdet_keval_quadweight, grad, r_cell );
                 }
             }
@@ -318,25 +356,18 @@ class DivKGrad
         dense::Vec< ScalarT, 3 > ( *wedge_phy_surf )[3],
         const dense::Vec< ScalarT, 6 >* k_local_hex,
         dense::Vec< ScalarType, 3 >*    grad,
-        ScalarType&                     jdet_keval_quadweight ) const
+        ScalarType&                     jdet_quadweight ) const
     {
         dense::Mat< ScalarType, 3, 3 >       J                = jac( wedge_phy_surf[wedge], r_1, r_2, quad_point );
         const auto                           det              = J.det();
         const auto                           abs_det          = Kokkos::abs( det );
         const dense::Mat< ScalarType, 3, 3 > J_inv_transposed = J.inv_transposed( det );
 
-        // dot of coeff dofs and element-local shape functions to evaluate the coefficent on the current element
-        ScalarType k_eval = 0.0;
-        for ( int k = 0; k < num_nodes_per_wedge; k++ )
-        {
-            k_eval += shape( k, quad_point ) * k_local_hex[wedge]( k );
-        }
-
         for ( int k = 0; k < num_nodes_per_wedge; k++ )
         {
             grad[k] = J_inv_transposed * grad_shape( k, quad_point );
         }
-        jdet_keval_quadweight = quad_weight * k_eval * abs_det;
+        jdet_quadweight = quad_weight * abs_det;
     }
 
     /// @brief assemble the local matrix and return it for a given element, wedge, and vectorial component
@@ -376,6 +407,40 @@ class DivKGrad
             ScalarType                  jdet_keval_quadweight = 0;
             assemble_trial_test_vecs(
                 wedge, qp, w, r_1, r_2, wedge_phy_surf, k_local_hex, grad, jdet_keval_quadweight );
+
+            // dot of coeff dofs and element-local shape functions to evaluate the coefficent on the current element
+            ScalarType k_eval = 0.0;
+            if ( !k_function_eval )
+            {
+                for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                {
+                    k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
+                }
+            }
+            else
+            {
+                constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
+                constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
+                constexpr int offset_r[2][6] = { { 0, 0, 0, 1, 1, 1 }, { 0, 0, 0, 1, 1, 1 } };
+                assert( single_quadpoint_ );
+                dense::Vec< ScalarType, 3 > qp_physical = { 0, 0, 0 };
+                for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                {
+                    qp_physical = qp_physical + grid::shell::coords(
+                                                    local_subdomain_id,
+                                                    x_cell + offset_x[wedge][k],
+                                                    y_cell + offset_y[wedge][k],
+                                                    r_cell + offset_r[wedge][k],
+                                                    grid_,
+                                                    radii_ );
+                }
+                // evaluate at the middle of the element for now
+                k_eval = k_function_(
+                    qp_physical( 0 ) / num_nodes_per_wedge,
+                    qp_physical( 1 ) / num_nodes_per_wedge,
+                    qp_physical( 2 ) / num_nodes_per_wedge );
+            }
+            jdet_keval_quadweight *= k_eval;
 
             // propagate on local matrix by outer product of test and trial vecs
             for ( int i = 0; i < num_nodes_per_wedge; i++ )
@@ -501,7 +566,7 @@ class DivKGrad
     }
 };
 
-static_assert( linalg::GCACapable< DivKGrad< float > > );
-static_assert( linalg::GCACapable< DivKGrad< double > > );
+//static_assert( linalg::GCACapable< DivKGrad< float > > );
+//static_assert( linalg::GCACapable< DivKGrad< double > > );
 
 } // namespace terra::fe::wedge::operators::shell
