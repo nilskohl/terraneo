@@ -168,7 +168,7 @@ class EpsilonDivDiv
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        util::Timer timer_apply( "vector_laplace_apply" );
+        util::Timer timer_apply( "epsilon_divdiv_apply" );
 
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
