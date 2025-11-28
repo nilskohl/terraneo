@@ -183,11 +183,13 @@ struct KInterpolator
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
         const double rad = coords.norm();
+        const double polar = Kokkos::acos(coords(2)/rad);
+        const double azimut = Kokkos::atan2(coords(1), coords(0));
         // const double x0  = 0.5 * r_max_;
         // const double x1  = 0.5 * r_min_;
         // data_( local_subdomain_id, x, y, r ) =
         //     0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-        if ( coords.norm() > 0.75 ) //2*Kokkos::abs(sin(-2*coords(0))*sin(4*coords(1))) )
+        if ( coords.norm() > 0.69931 )// 0.75 + 0.1 * sin( -2 * polar) * sin( 4 * azimut ) )
         {
             data_( local_subdomain_id, x, y, r ) = k_max_;
         }
@@ -219,7 +221,7 @@ T test(
         // return
         //    0.5 * k_max * ( Kokkos::tanh( alpha * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max;
         //    const double                  rad    = coords.norm();
-        if ( rad > 0.75 )
+        if ( rad > 0.777 ) //+ 0.1 * sin( -2 * x ) * sin( 4 * y ) )
         {
             return k_max;
         }
@@ -280,13 +282,12 @@ T test(
     Kokkos::fence();
 
     // agca stuff
-    VectorQ1Scalar< ScalarType > k_grad_norms( "k_grad_norms", domains.back(), mask_data.back() );
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[min_level], mask_data[min_level] );
 
     bool coeff_eval_plotting = false;
     if ( coeff_eval_plotting )
     {
-        for ( int level = 0; level < 4; ++level )
+        for ( int level = 0; level < 5; ++level )
         {
             VectorQ1Scalar< ScalarType > k_c( "k_c", domains[level], mask_data[level] );
 
@@ -307,58 +308,68 @@ T test(
             int y_cell    = 0;
             std::cout << "Level " << level << ": Coefficient evaluations along a line away from the core on subdomain "
                       << subdomain << ": " << std::endl;
+            const dense::Vec< double, 3 > coordsend = grid::shell::coords(
+                subdomain,
+                x_cell,
+                y_cell,
+                subdomain_radii[level].extent( 1 ) - 1,
+                subdomain_shell_coords[level],
+                subdomain_radii[level] );
+
+            // std::cout << "Coords end " << coordsend
+            //           << ", Edge at: " << ( 0.75 + 0.1 * sin( -2 * coordsend( 0 ) ) * sin( 4 * coordsend( 1 ) ) )
+            //           << std::endl;
+
             for ( int r_cell = 0; r_cell < subdomain_radii[level].extent( 1 ) - 1; r_cell++ )
             {
                 const dense::Vec< double, 3 > coords = grid::shell::coords(
                     subdomain, x_cell, y_cell, r_cell, subdomain_shell_coords[level], subdomain_radii[level] );
-                std::cout << "---------------" << std::endl;
-                std::cout << "r_cell: \n" << r_cell << std::endl << "\nCoord: \n" << coords << std::endl;
+                const dense::Vec< double, 3 > coordspr = grid::shell::coords(
+                    subdomain, x_cell, y_cell, r_cell + 1, subdomain_shell_coords[level], subdomain_radii[level] );
 
+                //  std::cout << "---------------" << std::endl;
+                for ( int wedge = 0; wedge < 2; ++wedge )
                 {
-                    dense::Vec< double, 6 > k_local_hex[num_wedges_per_hex_cell];
-                    dense::Vec< double, 3 > qp = { 1.0 / 3.0, 1.0 / 3.0, 0.0 };
-                    terra::fe::wedge::extract_local_wedge_scalar_coefficients(
-                        k_local_hex, subdomain, x_cell, y_cell, r_cell, k_c.grid_data() );
+                    dense::Vec< ScalarType, 3 > midpoint       = { 0, 0, 0 };
+                    constexpr int               offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
+                    constexpr int               offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
+                    constexpr int               offset_r[2][6] = { { 0, 0, 0, 1, 1, 1 }, { 0, 0, 0, 1, 1, 1 } };
 
-                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    for ( int k = 0; k < num_nodes_per_wedge; k++ )
                     {
-                        double k_fe_eval = 0;
+                        midpoint = midpoint + grid::shell::coords(
+                                                  subdomain,
+                                                  x_cell + offset_x[wedge][k],
+                                                  y_cell + offset_y[wedge][k],
+                                                  r_cell + offset_r[wedge][k],
+                                                  subdomain_shell_coords[level],
+                                                  subdomain_radii[level] );
+                    }
+                    midpoint( 0 ) /= num_nodes_per_wedge;
+                    midpoint( 1 ) /= num_nodes_per_wedge;
+                    midpoint( 2 ) /= num_nodes_per_wedge;
+                    double k_fe_eval       = 0;
+                    double k_function_eval = 0;
+
+                    {
+                        dense::Vec< double, 6 > k_local_hex[num_wedges_per_hex_cell];
+                        dense::Vec< double, 3 > qp = { 1.0 / 3.0, 1.0 / 3.0, 0.0 };
+                        terra::fe::wedge::extract_local_wedge_scalar_coefficients(
+                            k_local_hex, subdomain, x_cell, y_cell, r_cell, k_c.grid_data() );
 
                         for ( int k = 0; k < num_nodes_per_wedge; k++ )
                         {
                             k_fe_eval += terra::fe::wedge::shape( k, qp ) * k_local_hex[wedge]( k );
                         }
-                        std::cout << "k fe eval on wedge " << wedge << ": " << k_fe_eval << std::endl;
                     }
-                }
-                {
-                    for ( int wedge = 0; wedge < 2; ++wedge )
                     {
-                        double                      k_function_eval = 0;
-                        dense::Vec< ScalarType, 3 > qp_physical     = { 0, 0, 0 };
-                        constexpr int               offset_x[2][6]  = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
-                        constexpr int               offset_y[2][6]  = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
-                        constexpr int               offset_r[2][6]  = { { 0, 0, 0, 1, 1, 1 }, { 0, 0, 0, 1, 1, 1 } };
-
-                        for ( int k = 0; k < num_nodes_per_wedge; k++ )
-                        {
-                            qp_physical = qp_physical + grid::shell::coords(
-                                                            subdomain,
-                                                            x_cell + offset_x[wedge][k],
-                                                            y_cell + offset_y[wedge][k],
-                                                            r_cell + offset_r[wedge][k],
-                                                            subdomain_shell_coords[level],
-                                                            subdomain_radii[level] );
-                        }
                         // evaluate at the middle of the element for now
-                        k_function_eval = k_function(
-                            qp_physical( 0 ) / num_nodes_per_wedge,
-                            qp_physical( 1 ) / num_nodes_per_wedge,
-                            qp_physical( 2 ) / num_nodes_per_wedge );
-
-                        std::cout << "k function eval on wedge " << wedge << ": " << k_function_eval << std::endl;
+                        k_function_eval = k_function( midpoint( 0 ), midpoint( 1 ), midpoint( 2 ) );
                     }
+                    std::cout << ( coords.norm() + coordspr.norm() ) / 2 << " " << k_fe_eval << " " << k_function_eval
+                              << std::endl;
                 }
+                // std::cout << coords.norm() << ", ";
             }
         }
         exit( 0 );
@@ -368,7 +379,7 @@ T test(
         linalg::assign( GCAElements, 0 );
         std::cout << "adaptive gca: determining gca elements on level " << max_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
-            domains.back(), k.grid_data(), GCAElements.grid_data(), k_grad_norms.grid_data(), max_level - min_level );
+            domains.back(), k.grid_data(), &GCAElements.grid_data(), max_level - min_level );
 
         io::XDMFOutput xdmf_gcaelems(
             "gca_elems", domains[min_level], subdomain_shell_coords[min_level], subdomain_radii[min_level] );
@@ -650,79 +661,82 @@ int run_test()
 
     constexpr int         prepost_smooth = 3;
     std::vector< double > alphas         = { 1 };
-    std::vector< int >    pows         = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    std::vector< int >    gcas           = { 0, 1 }; //, 1 };
+    std::vector< int >    pows           = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    std::vector< int >    gcas           = { 0 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
     auto table_agca = std::make_shared< util::Table >();
-    for ( int gca : gcas )
+    for ( int minlevel = 0; minlevel < max_level; minlevel++ )
     {
-        for ( int alpha : alphas )
+        std::cout << "Minlevel=" << minlevel << std::endl;
+        for ( int gca : gcas )
         {
-            terra::util::Table::Row cycles;
-            cycles["alpha"] = alpha;
-            for ( int pow : pows )
+            for ( int alpha : alphas )
             {
-                int k_max = Kokkos::pow(10, pow);
-                for ( int level = max_level; level <= max_level; level++ )
+                terra::util::Table::Row cycles;
+                cycles["alpha"] = alpha;
+                for ( int pow : pows )
                 {
-                    auto table = std::make_shared< util::Table >();
-
-                    Kokkos::Timer timer;
-                    timer.reset();
-
-                    std::cout << " <<<<<<<< alpha = " << alpha << ", k_max = " << k_max << ", gca = " << gca
-                              << " >>>>>>>>>" << std::endl;
-                    T l2_error = test<
-                        T,
-                        fe::wedge::operators::shell::ProlongationLinear< T >,
-                        fe::wedge::operators::shell::RestrictionLinear< T > >(
-                        1, level, table, prepost_smooth, alpha, k_max, gca );
-
-                    const auto time_total = timer.seconds();
-                    table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
-                    std::cout << "l2_error = " << l2_error << std::endl;
-
-                    if ( true )
+                    int k_max = Kokkos::pow( 10, pow );
+                    for ( int level = max_level; level <= max_level; level++ )
                     {
-                        const T order = prev_l2_error / l2_error;
-                        std::cout << "order = " << order << std::endl;
+                        auto table = std::make_shared< util::Table >();
 
-                        table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
+                        Kokkos::Timer timer;
+                        timer.reset();
+
+                        std::cout << " <<<<<<<< alpha = " << alpha << ", k_max = " << k_max << ", gca = " << gca
+                                  << " >>>>>>>>>" << std::endl;
+                        T l2_error = test<
+                            T,
+                            fe::wedge::operators::shell::ProlongationLinear< T >,
+                            fe::wedge::operators::shell::RestrictionLinear< T > >(
+                            minlevel, level, table, prepost_smooth, alpha, k_max, gca );
+
+                        const auto time_total = timer.seconds();
+                        table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
+
+                        if ( false )
+                        {
+                            std::cout << "l2_error = " << l2_error << std::endl;
+                            const T order = prev_l2_error / l2_error;
+                            std::cout << "order = " << order << std::endl;
+
+                            table->add_row( { { "level", level }, { "order", prev_l2_error / l2_error } } );
+                        }
+                        prev_l2_error = l2_error;
+
+                        //table->query_rows_equals( "tag", "multigrid" ).print_pretty();
+                        //table->query_rows_equals( "tag", "pcg_solver" ).print_pretty();
+                        //table->query_rows_equals( "tag", "time_solver" ).print_pretty();
+                        //table->query_rows_equals( "tag", "time_total" ).print_pretty();
+                        std::cout << "Iters: " <<  table->query_rows_equals( "tag", "multigrid" ).rows().size() << std::endl;
+                        cycles[std::string( "k_max=" ) + std::to_string( k_max )] =
+                            table->query_rows_equals( "tag", "multigrid" ).rows().size();
                     }
-                    prev_l2_error = l2_error;
-
-                    table->query_rows_equals( "tag", "multigrid" ).print_pretty();
-                    //table->query_rows_equals( "tag", "pcg_solver" ).print_pretty();
-                    //table->query_rows_equals( "tag", "time_solver" ).print_pretty();
-                    //table->query_rows_equals( "tag", "time_total" ).print_pretty();
-
-                    cycles[std::string( "k_max=" ) + std::to_string( k_max )] =
-                        table->query_rows_equals( "tag", "multigrid" ).rows().size();
+                }
+                if ( gca == 1 )
+                {
+                    table_gca->add_row( cycles );
+                }
+                else if ( gca == 2 )
+                {
+                    table_agca->add_row( cycles );
+                }
+                else
+                {
+                    table_dca->add_row( cycles );
                 }
             }
-            if ( gca == 1 )
-            {
-                table_gca->add_row( cycles );
-            }
-            else if ( gca == 2 )
-            {
-                table_agca->add_row( cycles );
-            }
-            else
-            {
-                table_dca->add_row( cycles );
-            }
         }
+        std::cout << "DCA: " << std::endl;
+        table_dca->print_pretty();
+        std::cout << "GCA: " << std::endl;
+        table_gca->print_pretty();
+        std::cout << "AGCA: " << std::endl;
+        table_agca->print_pretty();
     }
-    std::cout << "DCA: " << std::endl;
-    table_dca->print_pretty();
-    std::cout << "GCA: " << std::endl;
-    table_gca->print_pretty();
-    std::cout << "AGCA: " << std::endl;
-    table_agca->print_pretty();
-
     return EXIT_SUCCESS;
 }
 

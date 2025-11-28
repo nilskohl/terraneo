@@ -209,9 +209,10 @@ struct KInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const double value = 2 + Kokkos::sin( coords( 2 ) );
+        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
+        data_( local_subdomain_id, x, y, r ) = value;
         //data_( local_subdomain_id, x, y, r ) = value;
-        if ( coords.norm() > 0.70 )
+        if ( coords.norm() > 0.666 )
         {
             data_( local_subdomain_id, x, y, r ) = kmax_;
         }
@@ -223,7 +224,7 @@ struct KInterpolator
 };
 
 std::tuple< double, double, int >
-    test( double kmax, bool gca, int min_level, int max_level, const std::shared_ptr< util::Table >& table )
+    test( double kmax, int gca, int min_level, int max_level, const std::shared_ptr< util::Table >& table )
 {
     using ScalarType = double;
 
@@ -318,7 +319,6 @@ std::tuple< double, double, int >
     // coefficient data
 
     VectorQ1Scalar< ScalarType > k( "k", domains[velocity_level], mask_data[velocity_level] );
-    VectorQ1Scalar< ScalarType > k_grad_norms( "k_grad_norms", domains[velocity_level], mask_data[velocity_level] );
 
     std::cout << "Interpolating k " << std::endl;
     Kokkos::parallel_for(
@@ -328,10 +328,25 @@ std::tuple< double, double, int >
 
     // agca stuff
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], mask_data[0] );
-    if ( gca )
+    if ( gca == 2 )
     {
         // gca on all elements for now
-        linalg::assign( GCAElements, 1 );
+        //linalg::assign( GCAElements, 1 );
+        linalg::assign( GCAElements, 0 );
+        std::cout << "Adaptive gca: determining gca elements on level " << velocity_level << std::endl;
+        terra::linalg::solvers::GCAElementsCollector< ScalarType >(
+            domains[velocity_level], k.grid_data(), velocity_level, GCAElements.grid_data() );
+
+        //io::XDMFOutput xdmf_gcaelems(
+        //    "gca_elems", domains[0], subdomain_shell_coords[0], subdomain_radii[0] );
+        //xdmf_gcaelems.add( GCAElements.grid_data() );
+        //xdmf_gcaelems.write();
+    }
+    else if ( gca == 1 )
+    {
+        std::cout << "Gca on all elements " << std::endl;
+
+        assign( GCAElements, 1 );
     }
 
     Stokes K(
@@ -386,8 +401,15 @@ std::tuple< double, double, int >
         if ( level < num_levels - 1 )
         {
             A_c.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, false );
-            if (gca)
+            if ( gca == 2 )
+            {
+                A_c.back().set_stored_matrix_mode(
+                    linalg::OperatorStoredMatrixMode::Selective, level, GCAElements.grid_data() );
+            }
+            else if ( gca == 1 )
+            {
                 A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
+            }
             P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
             R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
         }
@@ -448,7 +470,7 @@ std::tuple< double, double, int >
     // Multigrid preconditioner for velocity block
 
     // setup gca coarse ops
-    if ( gca )
+    if ( gca > 0 )
     {
         for ( int level = num_levels - 2; level >= 0; level-- )
         {
@@ -672,45 +694,50 @@ int main( int argc, char** argv )
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    std::vector< int > kmaxs = { 100000000 };
+    std::vector< int > kmaxs = { 10000 };
 
-    std::vector< bool > gcas = { 0, 1 }; //, 1 };
-
-    for ( bool gca : gcas )
-    {
-        for ( int kmax : kmaxs )
+    std::vector< int > gcas = { 0, 2 }; //, 1 };
+    for ( int minlevel = 0; minlevel < 1; ++minlevel )
+    {std::cout << "minlevel = " << minlevel << std::endl;
+                    
+        for ( int gca : gcas )
         {
-            for ( int level = max_level; level <= max_level; ++level )
+            for ( int kmax : kmaxs )
             {
-                std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
-                std::cout << "level = " << level << std::endl;
-                Kokkos::Timer timer;
-                timer.reset();
-                const auto [l2_error_vel, l2_error_pre, iterations] = test( kmax, gca, 0, level, table );
-                const auto time_total                               = timer.seconds();
-                table->add_row( { { "level", level }, { "time_total", time_total } } );
-
-                if ( level > 1 )
+                for ( int level = max_level; level <= max_level; ++level )
                 {
-                    const double order_vel = prev_l2_error_vel / l2_error_vel;
-                    const double order_pre = prev_l2_error_pre / l2_error_pre;
+                    std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
+                    std::cout << "level = " << level << std::endl;
+                    Kokkos::Timer timer;
+                    timer.reset();
+                    const auto [l2_error_vel, l2_error_pre, iterations] = test( kmax, gca, minlevel, level, table );
+                    const auto time_total                               = timer.seconds();
+                    table->add_row( { { "level", level }, { "time_total", time_total } } );
 
-                    std::cout << "Level " << level << ": order_vel = " << order_vel
-                              << ", l2_error_vel = " << l2_error_vel << std::endl;
-                    std::cout << "Level " << level << ": order_pre = " << order_pre
-                              << ", l2_error_pre = " << l2_error_pre << std::endl;
+                    if ( level > 1 )
+                    {
+                        const double order_vel = prev_l2_error_vel / l2_error_vel;
+                        const double order_pre = prev_l2_error_pre / l2_error_pre;
 
-                    table->add_row( { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+                        std::cout << "Level " << level << ": order_vel = " << order_vel
+                                  << ", l2_error_vel = " << l2_error_vel << std::endl;
+                        std::cout << "Level " << level << ": order_pre = " << order_pre
+                                  << ", l2_error_pre = " << l2_error_pre << std::endl;
+
+                        table->add_row(
+                            { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+                    }
+                    prev_l2_error_vel = l2_error_vel;
+                    prev_l2_error_pre = l2_error_pre;
                 }
-                prev_l2_error_vel = l2_error_vel;
-                prev_l2_error_pre = l2_error_pre;
             }
         }
+        table->query_rows_not_none( "dofs_vel" )
+            .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel" } )
+            .print_pretty();
+        table->query_rows_not_none( "order_vel" )
+            .select_columns( { "level", "order_pre", "order_vel" } )
+            .print_pretty();
     }
-    table->query_rows_not_none( "dofs_vel" )
-        .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel" } )
-        .print_pretty();
-    table->query_rows_not_none( "order_vel" ).select_columns( { "level", "order_pre", "order_vel" } ).print_pretty();
-
     return 0;
 }

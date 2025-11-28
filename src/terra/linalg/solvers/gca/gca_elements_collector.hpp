@@ -41,22 +41,19 @@ class GCAElementsCollector
     grid::Grid4DDataScalar< ScalarType > k_;
 
     // coarsest grid boolean field for elements on which a GCA hierarchy has to be built
-    grid::Grid4DDataScalar< ScalarType >& GCAElements_;
+    grid::Grid4DDataScalar< ScalarType > GCAElements_;
 
-    grid::Grid4DDataScalar< ScalarType >& k_grad_norms_;
-    const int                             level_range_;
+    const int level_range_;
 
   public:
     GCAElementsCollector(
         const grid::shell::DistributedDomain&       fine_domain,
         const grid::Grid4DDataScalar< ScalarType >& k,
-        grid::Grid4DDataScalar< ScalarType >&       GCAElements,
-        grid::Grid4DDataScalar< ScalarType >&       k_grad_norms,
-        const int                                   level_range )
+        const int                                   level_range,
+        grid::Grid4DDataScalar< ScalarType >        GCAElements )
     : fine_domain_( fine_domain )
     , k_( k )
     , GCAElements_( GCAElements )
-    , k_grad_norms_( k_grad_norms )
     , level_range_( level_range )
     {
         Kokkos::parallel_for(
@@ -88,20 +85,19 @@ class GCAElementsCollector
             auto k_grad_norm = k_grad_eval.norm();
             if ( k_grad_norm > 10 )
             {
-                k_grad_norms_( local_subdomain_id, x_cell, y_cell, r_cell ) = k_grad_norm;
                 // Todo: map to parent coarsest element
                 int x_cell_coarsest = map_to_coarse_element( x_cell, level_range_ );
                 int y_cell_coarsest = map_to_coarse_element( y_cell, level_range_ );
                 int r_cell_coarsest = map_to_coarse_element( r_cell, level_range_ );
 
-                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest )             = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest )         = 1;
+                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest ) = 1;
+                /*  GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest )         = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest + 1, r_cell_coarsest )         = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest )     = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest + 1 )         = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest + 1 )     = 1;
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest + 1, r_cell_coarsest + 1 )     = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest + 1 ) = 1;
+                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest + 1 ) = 1;*/
             }
         }
     }
