@@ -39,6 +39,7 @@
 
 using namespace terra;
 
+using fe::wedge::operators::shell::TwoGridGCA;
 using grid::Grid2DDataScalar;
 using grid::Grid3DDataScalar;
 using grid::Grid3DDataVec;

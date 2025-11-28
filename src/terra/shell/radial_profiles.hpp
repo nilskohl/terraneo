@@ -1,7 +1,11 @@
 #pragma once
 
+#include <numeric>
+
 #include "kokkos/kokkos_wrapper.hpp"
 #include "linalg/vector_q1.hpp"
+#include "util/interpolation.hpp"
+#include "util/table.hpp"
 
 namespace terra::shell {
 
@@ -223,6 +227,169 @@ util::Table
               { "cnt", radial_profiles_host_cnt( r ) } } );
     }
     return table;
+}
+
+/// @brief Linearly interpolates radial data from a std::vector (host) into a 2D grid (device) with dimensions
+/// (local_subdomain_id, subdomain_size_r) for straightforward use in kernels.
+///
+/// This function takes care of handling possibly duplicated nodes at subdomain boundaries.
+///
+/// @note This will clamp values outside the passed radial profile values to the first and last values in the vector
+///       respectively.
+///
+/// @param profile_out_label label of the returned Kokkos::View
+/// @param coords_radii radii of each node for all local subdomains - see \ref terra::grid::shell::subdomain_shell_radii(),
+///                     the output grid data will have the same extents
+/// @param profile_radii input profile: vector of radii
+/// @param profile_values input profile: vector of values to interpolate
+/// @return Kokkos::View with the same dimensions of coords_radii, populated with interpolated values per subdomain
+template <
+    std::floating_point GridDataType,
+    std::floating_point ProfileInRadiiType,
+    std::floating_point ProfileInValueType,
+    std::floating_point ProfileOutDataType = double >
+grid::Grid2DDataScalar< ProfileOutDataType > interpolate_radial_profile_into_subdomains(
+    const std::string&                            profile_out_label,
+    const grid::Grid2DDataScalar< GridDataType >& coords_radii,
+    const std::vector< ProfileInRadiiType >&      profile_radii,
+    const std::vector< ProfileInValueType >&      profile_values )
+{
+    grid::Grid2DDataScalar< ProfileOutDataType > profile_data(
+        profile_out_label, coords_radii.extent( 0 ), coords_radii.extent( 1 ) );
+    auto profile_data_host = Kokkos::create_mirror_view( Kokkos::HostSpace{}, profile_data );
+
+    auto coords_radii_host = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace{}, coords_radii );
+
+    // Sort ascending (by radius - from innermost to outermost shell).
+
+    std::vector< int > idx( profile_radii.size() );
+    std::iota( idx.begin(), idx.end(), 0 );
+
+    // sort indices by comparing keys
+    std::sort( idx.begin(), idx.end(), [&]( int a, int b ) { return profile_radii[a] < profile_radii[b]; } );
+
+    // apply permutation
+    std::vector< ProfileInRadiiType > profile_radii_sorted( profile_radii );
+    std::vector< ProfileInValueType > profile_values_sorted( profile_values );
+
+    for ( size_t i = 0; i < idx.size(); i++ )
+    {
+        profile_radii_sorted[i]  = profile_radii[idx[i]];
+        profile_values_sorted[i] = profile_values[idx[i]];
+    }
+
+    for ( int local_subdomain_id = 0; local_subdomain_id < profile_data_host.extent( 0 ); local_subdomain_id++ )
+    {
+        const size_t subdomain_size_r   = profile_data_host.extent( 1 );
+        const size_t input_profile_size = profile_radii_sorted.size();
+
+        if ( input_profile_size == 0 )
+        {
+            continue;
+        }
+
+        if ( input_profile_size == 1 )
+        {
+            for ( int r = 0; r < subdomain_size_r; r++ )
+            {
+                profile_data_host( local_subdomain_id, r ) = profile_values_sorted[0];
+            }
+            continue;
+        }
+
+        size_t i = 0;
+
+        for ( size_t r = 0; r < subdomain_size_r; ++r )
+        {
+            double x = coords_radii_host( local_subdomain_id, r );
+
+            // Advance src index to the correct interval
+            while ( i + 1 < input_profile_size && profile_radii_sorted[i + 1] < x )
+            {
+                ++i;
+            }
+
+            // If x is below the first point → clamp
+            if ( x <= profile_radii_sorted.front() )
+            {
+                profile_data_host( local_subdomain_id, r ) = profile_values_sorted.front();
+                continue;
+            }
+
+            // If x is above the last point → clamp
+            if ( x >= profile_radii_sorted.back() )
+            {
+                profile_data_host( local_subdomain_id, r ) = profile_values_sorted.back();
+                continue;
+            }
+
+            // Interpolate between i and i+1
+            profile_data_host( local_subdomain_id, r ) = util::interpolate_linear_1D(
+                profile_radii_sorted[i],
+                profile_radii_sorted[i + 1],
+                profile_values_sorted[i],
+                profile_values_sorted[i + 1],
+                x,
+                true );
+        }
+    }
+
+    Kokkos::deep_copy( profile_data, profile_data_host );
+
+    return profile_data;
+}
+
+/// @brief Interpolating a radial profile from a CSV file into a grid.
+///
+/// This is just a convenient wrapper around \ref interpolate_radial_profile_into_subdomains() that also
+/// reads the CSV file.
+///
+/// @note This will clamp values outside the passed radial profile values to the first and last values in the vector
+///       respectively.
+///
+/// @param filename csv file name containing the radial profile (radii and at least one value column)
+/// @param key_radii name of the radii column
+/// @param key_values name of the value column
+/// @param coords_radii radii of each node for all local subdomains - see \ref terra::grid::shell::subdomain_shell_radii(),
+///                     the output grid data will have the same extents
+/// @return Kokkos::View with the same dimensions of coords_radii, populated with interpolated values per subdomain
+template < std::floating_point GridDataType, std::floating_point ProfileOutDataType = double >
+grid::Grid2DDataScalar< ProfileOutDataType > interpolate_radial_profile_into_subdomains_from_csv(
+    const std::string&                            filename,
+    const std::string&                            key_radii,
+    const std::string&                            key_values,
+    const grid::Grid2DDataScalar< GridDataType >& coords_radii )
+{
+    auto profile_table_result = util::read_table_from_csv( filename );
+    if ( profile_table_result.is_err() )
+    {
+        util::logroot << profile_table_result.error() << std::endl;
+        Kokkos::abort( "Error reading csv file into table." );
+    }
+    const auto& profile_table = profile_table_result.unwrap();
+
+    const auto profile_radii  = profile_table.column_as_vector< double >( key_radii );
+    const auto profile_values = profile_table.column_as_vector< double >( key_values );
+
+    return interpolate_radial_profile_into_subdomains(
+        "radial_profile_" + key_values, coords_radii, profile_radii, profile_values );
+}
+
+/// @brief Interpolating a constant radial profile into a grid.
+///
+/// @param coords_radii radii of each node for all local subdomains - see \ref terra::grid::shell::subdomain_shell_radii(),
+///                     the output grid data will have the same extents
+/// @param value the constant value to interpolate
+/// @return Kokkos::View with the same dimensions of coords_radii, populated with interpolated values per subdomain
+template < std::floating_point GridDataType, std::floating_point ProfileOutDataType = double >
+grid::Grid2DDataScalar< ProfileOutDataType > interpolate_constant_radial_profile(
+    const grid::Grid2DDataScalar< GridDataType >& coords_radii,
+    const ProfileOutDataType&                     value )
+{
+    grid::Grid2DDataScalar< ProfileOutDataType > profile_data(
+        "radial_profile_constant", coords_radii.extent( 0 ), coords_radii.extent( 1 ) );
+    kernels::common::set_constant( profile_data, value );
+    return profile_data;
 }
 
 } // namespace terra::shell

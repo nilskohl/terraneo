@@ -23,6 +23,8 @@ class LaplaceSimple
     using ScalarType              = ScalarT;
     using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, 6, 6, 2 >;
 
+    static constexpr int LocalMatrixDim = 6;
+
   private:
     bool storeLMatrices_ =
         false; // set to let apply_impl() know, that it should store the local matrices after assembling them
@@ -83,13 +85,13 @@ class LaplaceSimple
     }
 
     /// @brief Getter for domain member
-    grid::shell::DistributedDomain& get_domain() { return domain_; }
+    const grid::shell::DistributedDomain& get_domain() const { return domain_; }
 
     /// @brief Getter for radii member
-    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+    grid::Grid2DDataScalar< ScalarT > get_radii() const { return radii_; }
 
     /// @brief Getter for grid member
-    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    grid::Grid3DDataVec< ScalarT, 3 > get_grid() const { return grid_; }
 
     /// @brief S/Getter for diagonal member
     void set_diagonal( bool v ) { diagonal_ = v; }
@@ -99,7 +101,7 @@ class LaplaceSimple
 
     /// @brief Retrives the local matrix stored in the operator
     KOKKOS_INLINE_FUNCTION
-    dense::Mat< ScalarT, 6, 6 >& get_lmatrix(
+    dense::Mat< ScalarT, 6, 6 > get_local_matrix(
         const int local_subdomain_id,
         const int x_cell,
         const int y_cell,
@@ -109,6 +111,18 @@ class LaplaceSimple
         assert( lmatrices_.data() != nullptr );
 
         return lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge );
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    void set_local_matrix(
+        const int                                                    local_subdomain_id,
+        const int                                                    x_cell,
+        const int                                                    y_cell,
+        const int                                                    r_cell,
+        const int                                                    wedge,
+        const dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim >& mat ) const
+    {
+        Kokkos::abort( "Not implemented." );
     }
 
     /// @brief Setter/Getter for app applyStoredLMatrices_: usage of stored local matrices during apply
@@ -294,5 +308,6 @@ class LaplaceSimple
 
 static_assert( linalg::OperatorLike< LaplaceSimple< float > > );
 static_assert( linalg::OperatorLike< LaplaceSimple< double > > );
+static_assert( linalg::GCACapable< LaplaceSimple< float > > );
 
 } // namespace terra::fe::wedge::operators::shell

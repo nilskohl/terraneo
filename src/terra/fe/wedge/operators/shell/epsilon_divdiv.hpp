@@ -97,13 +97,13 @@ class EpsilonDivDiv
     const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
 
     /// @brief Getter for domain member
-    grid::shell::DistributedDomain& get_domain() { return domain_; }
+    const grid::shell::DistributedDomain& get_domain() const { return domain_; }
 
     /// @brief Getter for radii member
-    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+    grid::Grid2DDataScalar< ScalarT > get_radii() const { return radii_; }
 
     /// @brief Getter for grid member
-    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    grid::Grid3DDataVec< ScalarT, 3 > get_grid() { return grid_; }
 
     /// @brief allocates memory for the local matrices
     void set_stored_matrix_mode(
@@ -165,7 +165,7 @@ class EpsilonDivDiv
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
-        util::Timer timer_apply( "vector_laplace_apply" );
+        util::Timer timer_apply( "epsilon_divdiv_apply" );
 
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
@@ -298,8 +298,8 @@ class EpsilonDivDiv
                     if ( diagonal_ and dimi != dimj )
                         continue;
 
-                    ScalarType src_local_hex[8] = { 0 };
-                    ScalarType dst_local_hex[8] = { 0 };
+                    ScalarType src_local_hex[8] = {};
+                    ScalarType dst_local_hex[8] = {};
 
                     for ( int i = 0; i < 8; i++ )
                     {
@@ -435,7 +435,7 @@ class EpsilonDivDiv
         extract_local_wedge_scalar_coefficients( k_local_hex, local_subdomain_id, x_cell, y_cell, r_cell, k_ );
 
         // Compute the local element matrix.
-        dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A = { 0 };
+        dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A = {};
         for ( int dimi = 0; dimi < 3; ++dimi )
         {
             for ( int dimj = 0; dimj < 3; ++dimj )

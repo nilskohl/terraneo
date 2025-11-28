@@ -9,6 +9,17 @@
 namespace terra::kernels::common {
 
 template < typename ScalarType >
+void set_constant( const grid::Grid2DDataScalar< ScalarType >& x, ScalarType value )
+{
+    Kokkos::parallel_for(
+        "set_constant (Grid2DDataScalar)",
+        Kokkos::MDRangePolicy( { 0, 0 }, { x.extent( 0 ), x.extent( 1 ) } ),
+        KOKKOS_LAMBDA( int i, int j ) { x( i, j ) = value; } );
+
+    Kokkos::fence();
+}
+
+template < typename ScalarType >
 void set_constant( const grid::Grid3DDataScalar< ScalarType >& x, ScalarType value )
 {
     Kokkos::parallel_for(

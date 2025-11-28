@@ -1,6 +1,7 @@
 
 #include <kernels/common/grid_operations.hpp>
 
+#include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
 #include "fe/wedge/operators/shell/laplace.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
@@ -11,11 +12,13 @@
 #include "terra/dense/vec.hpp"
 #include "terra/grid/shell/spherical_shell.hpp"
 #include "terra/kokkos/kokkos_wrapper.hpp"
+#include "util/cli11_helper.hpp"
 #include "util/info.hpp"
 #include "util/table.hpp"
 
 using namespace terra;
 
+using fe::wedge::operators::shell::EpsilonDivDiv;
 using fe::wedge::operators::shell::Laplace;
 using fe::wedge::operators::shell::Stokes;
 using fe::wedge::operators::shell::VectorLaplaceSimple;
@@ -26,6 +29,7 @@ using linalg::SrcOf;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
+using util::logroot;
 
 enum class BenchmarkType : int
 {
@@ -34,6 +38,8 @@ enum class BenchmarkType : int
     VectorLaplaceFloat,
     VectorLaplaceDouble,
     VectorLaplaceNeumannDouble,
+    EpsDivDivFloat,
+    EpsDivDivDouble,
     StokesDouble,
 };
 
@@ -43,6 +49,8 @@ constexpr auto all_benchmark_types = {
     BenchmarkType::VectorLaplaceFloat,
     BenchmarkType::VectorLaplaceDouble,
     BenchmarkType::VectorLaplaceNeumannDouble,
+    BenchmarkType::EpsDivDivFloat,
+    BenchmarkType::EpsDivDivDouble,
     BenchmarkType::StokesDouble };
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
@@ -51,6 +59,8 @@ const std::map< BenchmarkType, std::string > benchmark_description = {
     { BenchmarkType::VectorLaplaceFloat, "VectorLaplace (float)" },
     { BenchmarkType::VectorLaplaceDouble, "VectorLaplace (double)" },
     { BenchmarkType::VectorLaplaceNeumannDouble, "VectorLaplaceNeumann (double)" },
+    { BenchmarkType::EpsDivDivFloat, "EpsDivDiv (float)" },
+    { BenchmarkType::EpsDivDivDouble, "EpsDivDiv (double)" },
     { BenchmarkType::StokesDouble, "Stokes (double)" } };
 
 struct BenchmarkData
@@ -58,6 +68,13 @@ struct BenchmarkData
     int    level;
     long   dofs;
     double duration;
+};
+
+struct Parameters
+{
+    int min_level  = 1;
+    int max_level  = 6;
+    int executions = 5;
 };
 
 template < OperatorLike OperatorT >
@@ -143,6 +160,12 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     VectorQ1IsoQ2Q1< float > dst_stokes_float(
         "dst_stokes_double", domain, domain_coarse, mask_data, mask_data_coarse );
 
+    VectorQ1Scalar< double > coeff_double( "coeff_double", domain, mask_data );
+    VectorQ1Scalar< float >  coeff_float( "coeff_float", domain, mask_data );
+
+    linalg::assign( coeff_double, 1.0 );
+    linalg::assign( coeff_float, 1.0 );
+
     linalg::randomize( src_scalar_double );
     linalg::randomize( src_scalar_float );
     linalg::randomize( src_vec_double );
@@ -156,12 +179,14 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     if ( benchmark == BenchmarkType::LaplaceFloat )
     {
         Laplace< float > A( domain, coords_shell_float, coords_radii_float, boundary_mask_data, true, false );
+        util::Timer      t( "Laplace - float" );
         duration = measure_run_time( executions, A, src_scalar_float, dst_scalar_float );
         dofs     = dofs_scalar;
     }
     else if ( benchmark == BenchmarkType::LaplaceDouble )
     {
         Laplace< double > A( domain, coords_shell_double, coords_radii_double, boundary_mask_data, true, false );
+        util::Timer       t( "Laplace - double" );
         duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
         dofs     = dofs_scalar;
     }
@@ -174,12 +199,27 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     else if ( benchmark == BenchmarkType::VectorLaplaceDouble )
     {
         VectorLaplaceSimple< double > A( domain, coords_shell_double, coords_radii_double, true, false );
+        util::Timer                   t( "VectorLaplace - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
     }
     else if ( benchmark == BenchmarkType::VectorLaplaceNeumannDouble )
     {
         VectorLaplaceSimple< double > A( domain, coords_shell_double, coords_radii_double, false, false );
+        duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
+        dofs     = dofs_vec;
+    }
+    else if ( benchmark == BenchmarkType::EpsDivDivFloat )
+    {
+        EpsilonDivDiv A( domain, coords_shell_float, coords_radii_float, coeff_float.grid_data(), true, false );
+        util::Timer   t( "EpsDivDiv - float" );
+        duration = measure_run_time( executions, A, src_vec_float, dst_vec_float );
+        dofs     = dofs_vec;
+    }
+    else if ( benchmark == BenchmarkType::EpsDivDivDouble )
+    {
+        EpsilonDivDiv A( domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
+        util::Timer   t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
     }
@@ -197,21 +237,17 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     return BenchmarkData{ level, dofs, duration };
 }
 
-void run_all()
+void run_all( const int min_level, const int max_level, const int executions )
 {
-    constexpr int min_level  = 1;
-    constexpr int max_level  = 6;
-    constexpr int executions = 5;
-
-    std::cout << "Running operator (matvec) benchmarks." << std::endl;
-    std::cout << "min_level:            " << min_level << std::endl;
-    std::cout << "max_level:            " << max_level << std::endl;
-    std::cout << "executions per level: " << executions << std::endl;
-    std::cout << std::endl;
+    logroot << "Running operator (matvec) benchmarks." << std::endl;
+    logroot << "min_level:            " << min_level << std::endl;
+    logroot << "max_level:            " << max_level << std::endl;
+    logroot << "executions per level: " << executions << std::endl;
+    logroot << std::endl;
 
     for ( auto benchmark : all_benchmark_types )
     {
-        std::cout << benchmark_description.at( benchmark ) << std::endl;
+        logroot << benchmark_description.at( benchmark ) << std::endl;
 
         util::Table table;
 
@@ -227,8 +263,17 @@ void run_all()
 
         table.print_pretty();
 
-        std::cout << std::endl;
-        std::cout << std::endl;
+        logroot << std::endl;
+        logroot << std::endl;
+    }
+
+    util::TimerTree::instance().aggregate_mpi();
+    if ( mpi::rank() == 0 )
+    {
+        auto          timer_tree_file = "benchmark_operators_timer_tree.json";
+        std::ofstream out( timer_tree_file );
+        out << util::TimerTree::instance().json_aggregate();
+        out.close();
     }
 }
 
@@ -239,7 +284,31 @@ int main( int argc, char** argv )
 
     util::print_general_info( argc, argv );
 
-    run_all();
+    const auto description =
+        "Operator benchmark. Runs a couple of matrix-vector multiplications for various operators to get an idea of the throughput.";
+    CLI::App app{ description };
+
+    Parameters parameters{};
+
+    util::add_option_with_default( app, "--min-level", parameters.min_level, "Min refinement level." );
+    util::add_option_with_default( app, "--max-level", parameters.max_level, "Max refinement level." );
+    util::add_option_with_default(
+        app, "--executions", parameters.executions, "Number of matrix-vector multiplications to be executed." );
+
+    CLI11_PARSE( app, argc, argv );
+
+    if ( parameters.min_level < 1 )
+    {
+        logroot << "Error: min-level must be >= 1." << std::endl;
+        return 1;
+    }
+
+    logroot << "\n" << description << "\n\n";
+
+    util::print_cli_summary( app, logroot );
+    logroot << "\n\n";
+
+    run_all( parameters.min_level, parameters.max_level, parameters.executions );
 
     MPI_Finalize();
 }

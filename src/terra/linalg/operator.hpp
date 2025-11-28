@@ -64,35 +64,35 @@ concept OperatorLike = requires(
 template < typename Op >
 concept GCACapable = requires(
     // dummy variables to define requirements
-    Op&       self,
+    const Op& self_const,
     const int local_subdomain_id,
     const int x_cell,
     const int y_cell,
     const int r_cell,
     // 0 or 1 wedge within the hex cell on which GCA operates
-    const int wedge,
+    const int                                                                            wedge,
     const dense::Mat< typename Op::ScalarType, Op::LocalMatrixDim, Op::LocalMatrixDim >& mat ) {
-
     // Require that the argument to be a linear operator
     requires OperatorLike< Op >;
 
     // The operator must show the dimensions of the local matrix (might be 18 for vectorial diffusion ops in 3D like EpsilonDivDiv,
     //  or 6 for a simple scalar div-k-grad)
-    { Op::LocalMatrixDim } -> std::convertible_to<int>;
+    { Op::LocalMatrixDim } -> std::convertible_to< int >;
 
-    // The operator must allow read/write access to his local matrices in order to GCA them
+    // The operator must allow read/write access to his local matrices in order to GCA them.
+    // It is indeed weird that the write access set_local_matrix() shall be const.
+    // However, the View access implementation of Kokkos and the requirement of kernels being const
+    // make this possible and necessary.
     {
-        self.get_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge )
+        self_const.get_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge )
     } -> std::same_as< dense::Mat< typename Op::ScalarType, Op::LocalMatrixDim, Op::LocalMatrixDim > >;
 
-    {
-        self.set_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, mat )
-    } -> std::same_as< void >;
+    { self_const.set_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, wedge, mat ) } -> std::same_as< void >;
 
     // Since TwoGridGCA works with multiple operators, and their respective domains (coarse-fine nested loop),
     // it is required to have access to geometric information stored in the operators.
-    { self.get_domain() } -> std::same_as< grid::shell::DistributedDomain& >;
-    { self.get_radii() } -> std::same_as< grid::Grid2DDataScalar< typename Op::ScalarType >& >;
+    { self_const.get_domain() } -> std::same_as< const grid::shell::DistributedDomain& >;
+    { self_const.get_radii() } -> std::same_as< grid::Grid2DDataScalar< typename Op::ScalarType > >;
 };
 
 /// @brief Concept for types that behave like block 2x2 operators.
@@ -138,9 +138,7 @@ using DstOf = typename Operator::DstVectorType;
 /// @param dst Destination vector.
 template < OperatorLike Operator >
 void apply( Operator& A, const SrcOf< Operator >& src, DstOf< Operator >& dst )
-{
-    A.apply_impl( src, dst );
-}
+{ A.apply_impl( src, dst ); }
 
 namespace detail {
 

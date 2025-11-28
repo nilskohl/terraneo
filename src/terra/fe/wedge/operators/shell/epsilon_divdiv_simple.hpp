@@ -51,9 +51,9 @@ class EpsilonDivDivSimple
   public:
     EpsilonDivDivSimple(
         const grid::shell::DistributedDomain&    domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarT >& radii,
-        const grid::Grid4DDataScalar< ScalarT >& k,
+        const grid::Grid3DDataVec< ScalarT, 3 >  grid,
+        const grid::Grid2DDataScalar< ScalarT >  radii,
+        const grid::Grid4DDataScalar< ScalarT >  k,
         bool                                     treat_boundary,
         bool                                     diagonal,
         linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
@@ -75,13 +75,13 @@ class EpsilonDivDivSimple
     const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
 
     /// @brief Getter for domain member
-    grid::shell::DistributedDomain& get_domain() { return domain_; }
+    const grid::shell::DistributedDomain& get_domain() const { return domain_; }
 
     /// @brief Getter for radii member
-    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+    grid::Grid2DDataScalar< ScalarT > get_radii() const { return radii_; }
 
     /// @brief Getter for grid member
-    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    grid::Grid3DDataVec< ScalarT, 3 > get_grid() const { return grid_; }
 
     /// @brief Retrives the local matrix stored in the operator
     KOKKOS_INLINE_FUNCTION
