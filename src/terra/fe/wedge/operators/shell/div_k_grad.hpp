@@ -15,6 +15,11 @@
 
 namespace terra::fe::wedge::operators::shell {
 
+auto dummy_lambda = KOKKOS_LAMBDA( const double x, const double y, const double z )
+{
+    return 0;
+};
+
 template < typename ScalarT, typename KFunction >
 class DivKGrad
 {
@@ -105,13 +110,13 @@ class DivKGrad
     const grid::Grid4DDataScalar< ScalarType >& k_grid_data() { return k_; }
 
     /// @brief Getter for domain member
-    grid::shell::DistributedDomain& get_domain() { return domain_; }
+    const grid::shell::DistributedDomain& get_domain() const { return domain_; }
 
     /// @brief Getter for radii member
-    grid::Grid2DDataScalar< ScalarT >& get_radii() { return radii_; }
+    grid::Grid2DDataScalar< ScalarT > get_radii() const { return radii_; }
 
     /// @brief Getter for grid member
-    grid::Grid3DDataVec< ScalarT, 3 >& get_grid() { return grid_; }
+    grid::Grid3DDataVec< ScalarT, 3 > get_grid() const { return grid_; }
 
     /// @brief S/Getter for quadpoint member
     void set_single_quadpoint( bool v ) { single_quadpoint_ = v; }
@@ -566,7 +571,7 @@ class DivKGrad
     }
 };
 
-//static_assert( linalg::GCACapable< DivKGrad< float > > );
-//static_assert( linalg::GCACapable< DivKGrad< double > > );
+static_assert( linalg::GCACapable< DivKGrad< float, decltype(dummy_lambda) > > );
+static_assert( linalg::GCACapable< DivKGrad< double, decltype(dummy_lambda) > > );
 
 } // namespace terra::fe::wedge::operators::shell

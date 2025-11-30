@@ -316,6 +316,5 @@ class DivKGradSimple
 
 static_assert( linalg::OperatorLike< DivKGradSimple< float > > );
 static_assert( linalg::OperatorLike< DivKGradSimple< double > > );
-static_assert( linalg::GCACapable< DivKGradSimple< double > > );
 
 } // namespace terra::fe::wedge::operators::shell

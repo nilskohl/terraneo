@@ -35,13 +35,13 @@ class TwoGridGCA
     using ScalarType    = ScalarT;
 
   private:
-    grid::shell::DistributedDomain&    domain_fine_;
-    Operator                           fine_op_;
-    Operator                           coarse_op_;
+    grid::shell::DistributedDomain    domain_fine_;
+    Operator                          fine_op_;
+    Operator                          coarse_op_;
     grid::Grid3DDataVec< ScalarT, 3 > grid_fine_;
     grid::Grid2DDataScalar< ScalarT > radii_fine_;
     grid::Grid2DDataScalar< ScalarT > radii_coarse_;
-    bool                               treat_boundary_;
+    bool                              treat_boundary_;
 
     int                                  level_range_;
     grid::Grid4DDataScalar< ScalarType > GCAElements_;
