@@ -71,8 +71,6 @@ class LocalMatrixStorage
             KOKKOS_ASSERT( level_range.has_value() && GCAElements.has_value() );
             level_range_ = level_range.value();
             GCAElements_ = GCAElements.value();
-            std::cout << level_range_ << ", " << GCAElements_.extent( 0 ) << ", " << GCAElements_.extent( 1 ) << ", "
-                      << GCAElements_.extent( 2 ) << ", " << GCAElements_.extent( 3 ) << std::endl;
             // check level range and coarse-grid marked gca elements are consistent with fine-grid domain
             /*  KOKKOS_ASSERT(
                 GCAElements_.extent( 1 ) * Kokkos::pow( 2, level_range_ - 1 ) ==
@@ -88,8 +86,8 @@ class LocalMatrixStorage
             int nGCAElements = kernels::common::dot_product( GCAElements_, GCAElements_ );
             capacity_        = 2 * nGCAElements * Kokkos::pow( 2, ( 3 * level_range_ ) );
             std::cout << "Number of GCA coarse elements: " << nGCAElements << "/"
-                      << GCAElements_.extent( 0 ) * GCAElements_.extent( 1 ) * GCAElements_.extent( 2 ) *
-                             GCAElements_.extent( 2 )
+                      << GCAElements_.extent( 0 ) * (GCAElements_.extent( 1 ) - 1) * (GCAElements_.extent( 2 ) - 1) *
+                             (GCAElements_.extent( 2 ) - 1)
                       << ", capacity: " << capacity_ << std::endl;
             local_matrices_selective_ =
                 Kokkos::View< dense::Mat< ScalarType, LocalMatrixDim, LocalMatrixDim >*, terra::grid::Layout >(
@@ -176,13 +174,6 @@ class LocalMatrixStorage
                         mat( i, j );
                 }
             }
-            /*uto result =
-                local_matrices_selective_.insert( { local_subdomain_id, x_cell, y_cell, r_cell, wedge }, mat );
-
-            if ( result.failed() or !result.success() )
-            {
-                Kokkos::abort( "set_matrix() map insertion failed." );
-            }*/
         }
         else
         {
@@ -232,16 +223,6 @@ class LocalMatrixStorage
                         indices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge ) )( i, j );
                 }
             }
-            /*auto it = local_matrices_selective_.find( { local_subdomain_id, x_cell, y_cell, r_cell, wedge } );
-
-            if ( local_matrices_selective_.valid_at( it ) )
-            {
-                ijslice = local_matrices_selective_.value_at( it );
-            }
-            else
-            {
-                Kokkos::abort( "get_matrix() map retrieval failed." );
-            }*/
         }
         else
         {
@@ -266,7 +247,6 @@ class LocalMatrixStorage
         else if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Selective )
         {
             return indices_( local_subdomain_id, x_cell, y_cell, r_cell, wedge ) != -1;
-            //return local_matrices_selective_.exists( { local_subdomain_id, x_cell, y_cell, r_cell, wedge } );
         }
         else
         {
