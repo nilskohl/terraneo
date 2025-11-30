@@ -39,7 +39,6 @@
 
 using namespace terra;
 
-using fe::wedge::operators::shell::TwoGridGCA;
 using grid::Grid2DDataScalar;
 using grid::Grid3DDataScalar;
 using grid::Grid3DDataVec;
@@ -213,7 +212,7 @@ struct KInterpolator
         const double value                   = 2 + Kokkos::sin( coords( 2 ) );
         data_( local_subdomain_id, x, y, r ) = value;
         //data_( local_subdomain_id, x, y, r ) = value;
-        if ( coords.norm() > 0.666 )
+        if ( coords.norm() > 0.75 )
         {
             data_( local_subdomain_id, x, y, r ) = kmax_;
         }
@@ -334,7 +333,7 @@ std::tuple< double, double, int >
         // gca on all elements for now
         //linalg::assign( GCAElements, 1 );
         linalg::assign( GCAElements, 0 );
-        std::cout << "Adaptive gca: determining gca elements on level " << velocity_level << std::endl;
+        std::cout << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
             domains[velocity_level], k.grid_data(), velocity_level, GCAElements.grid_data() );
 
@@ -345,7 +344,7 @@ std::tuple< double, double, int >
     }
     else if ( gca == 1 )
     {
-        std::cout << "Gca on all elements " << std::endl;
+        std::cout << "GCA on all elements " << std::endl;
 
         assign( GCAElements, 1 );
     }
@@ -695,14 +694,21 @@ int main( int argc, char** argv )
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    std::vector< int > kmaxs = { 10000 };
+    std::vector< int > kmaxs = { 1, 10, 100, 1000, 10000 };
 
-    std::vector< int > gcas = { 0, 2 }; //, 1 };
-    for ( int minlevel = 0; minlevel < 1; ++minlevel )
-    {std::cout << "minlevel = " << minlevel << std::endl;
-                    
+    std::vector< int > gcas = { 0, 1, 2 }; //, 1 };
+
+    auto table_dca  = std::make_shared< util::Table >();
+    auto table_gca  = std::make_shared< util::Table >();
+    auto table_agca = std::make_shared< util::Table >();
+
+    for ( int minlevel = 1; minlevel <= 1; ++minlevel )
+    {
+        std::cout << "minlevel = " << minlevel << std::endl;
+
         for ( int gca : gcas )
         {
+            terra::util::Table::Row cycles;
             for ( int kmax : kmaxs )
             {
                 for ( int level = max_level; level <= max_level; ++level )
@@ -730,7 +736,24 @@ int main( int argc, char** argv )
                     }
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;
+
+                    std::cout << "Iters: " << iterations
+                              << std::endl;
+                    cycles[std::string( "k_max=" ) + std::to_string( kmax )] =
+                        iterations;
                 }
+            }
+            if ( gca == 1 )
+            {
+                table_gca->add_row( cycles );
+            }
+            else if ( gca == 2 )
+            {
+                table_agca->add_row( cycles );
+            }
+            else
+            {
+                table_dca->add_row( cycles );
             }
         }
         table->query_rows_not_none( "dofs_vel" )
@@ -740,5 +763,11 @@ int main( int argc, char** argv )
             .select_columns( { "level", "order_pre", "order_vel" } )
             .print_pretty();
     }
+    std::cout << "DCA: " << std::endl;
+    table_dca->print_pretty();
+    std::cout << "GCA: " << std::endl;
+    table_gca->print_pretty();
+    std::cout << "AGCA: " << std::endl;
+    table_agca->print_pretty();
     return 0;
 }

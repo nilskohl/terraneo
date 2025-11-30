@@ -189,7 +189,7 @@ struct KInterpolator
         // const double x1  = 0.5 * r_min_;
         // data_( local_subdomain_id, x, y, r ) =
         //     0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-        if ( coords.norm() > 0.69931 )// 0.75 + 0.1 * sin( -2 * polar) * sin( 4 * azimut ) )
+        if ( coords.norm() > 0.625 )// 0.75 + 0.1 * sin( -2 * polar) * sin( 4 * azimut ) )
         {
             data_( local_subdomain_id, x, y, r ) = k_max_;
         }
@@ -221,7 +221,7 @@ T test(
         // return
         //    0.5 * k_max * ( Kokkos::tanh( alpha * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max;
         //    const double                  rad    = coords.norm();
-        if ( rad > 0.777 ) //+ 0.1 * sin( -2 * x ) * sin( 4 * y ) )
+        if ( rad > 0.75 ) //+ 0.1 * sin( -2 * x ) * sin( 4 * y ) )
         {
             return k_max;
         }
@@ -379,7 +379,7 @@ T test(
         linalg::assign( GCAElements, 0 );
         std::cout << "adaptive gca: determining gca elements on level " << max_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
-            domains.back(), k.grid_data(), &GCAElements.grid_data(), max_level - min_level );
+            domains.back(), k.grid_data(), max_level - min_level, GCAElements.grid_data() );
 
         io::XDMFOutput xdmf_gcaelems(
             "gca_elems", domains[min_level], subdomain_shell_coords[min_level], subdomain_radii[min_level] );
