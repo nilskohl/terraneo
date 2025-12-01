@@ -102,16 +102,15 @@ for qi in range(num_qps):
         #    for j in range(0,i):
         #        kernel.append((local_mat_replaced[i, j], local_mat_replaced[j, i]))
                          
-     
-
-        print(srcs[w])
+    
         #print(local_mat_replaced)
         dst_wedge_rhss = local_mat_replaced * sp.Matrix(srcs[w])
         dsts_wedge = [sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)]
         for dst, dst_rhs in zip(dsts_wedge, dst_wedge_rhss):
             kernel.append((dst, dst_rhs))
-        dsts += dsts_wedge
+        dsts += [dsts_wedge]
        
+print(dsts)  
 kernel += print_atomic_add_local_wedge_scalar_coefficients(local_subdomain_id, x_cell, y_cell, r_cell, dsts)
 
 # Finally: print code
