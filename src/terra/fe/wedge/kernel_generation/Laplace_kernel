@@ -184,7 +184,81 @@ double w0_local_mat_replaced_5_2 = w0_tmpcse_local_mat_66;
 double w0_local_mat_replaced_5_3 = w0_tmpcse_local_mat_71;
 double w0_local_mat_replaced_5_4 = w0_tmpcse_local_mat_72;
 double w0_local_mat_replaced_5_5 = 0.25*absdet*pow(w0_J_invT_cse_0_1 + w0_tmpcse_local_mat_48, 2) + 0.25*absdet*pow(w0_J_invT_cse_1_1 + w0_tmpcse_local_mat_50, 2) + 0.25*absdet*pow(w0_J_invT_cse_2_1 + w0_tmpcse_local_mat_52, 2);
-double dst_0_0 = src_0_0*w0_local_mat_replaced_0_0 + src_0_1*w0_local_mat_replaced_0_1 + src_0_2*w0_local_mat_replaced_0_2 + src_0_3*w0_local_mat_replaced_0_3 + src_0_4*w0_local_mat_replaced_0_4 + src_0_5*w0_local_mat_replaced_0_5;
+
+        if ( treat_boundary_ )
+        {
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+            {
+                if ( r_cell == 0 )
+                {
+                    
+                    // Inner boundary (CMB).
+                    w0_local_mat_replaced_0_1 = 0.0;
+w0_local_mat_replaced_0_2 = 0.0;
+w0_local_mat_replaced_0_3 = 0.0;
+w0_local_mat_replaced_0_4 = 0.0;
+w0_local_mat_replaced_0_5 = 0.0;
+w0_local_mat_replaced_1_0 = 0.0;
+w0_local_mat_replaced_1_2 = 0.0;
+w0_local_mat_replaced_1_3 = 0.0;
+w0_local_mat_replaced_1_4 = 0.0;
+w0_local_mat_replaced_1_5 = 0.0;
+w0_local_mat_replaced_2_0 = 0.0;
+w0_local_mat_replaced_2_1 = 0.0;
+w0_local_mat_replaced_2_3 = 0.0;
+w0_local_mat_replaced_2_4 = 0.0;
+w0_local_mat_replaced_2_5 = 0.0;
+w0_local_mat_replaced_3_0 = 0.0;
+w0_local_mat_replaced_3_1 = 0.0;
+w0_local_mat_replaced_3_2 = 0.0;
+w0_local_mat_replaced_4_0 = 0.0;
+w0_local_mat_replaced_4_1 = 0.0;
+w0_local_mat_replaced_4_2 = 0.0;
+w0_local_mat_replaced_5_0 = 0.0;
+w0_local_mat_replaced_5_1 = 0.0;
+w0_local_mat_replaced_5_2 = 0.0;
+                }
+
+                if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                {
+                 w0_local_mat_replaced_0_3 = 0.0;
+w0_local_mat_replaced_0_4 = 0.0;
+w0_local_mat_replaced_0_5 = 0.0;
+w0_local_mat_replaced_1_3 = 0.0;
+w0_local_mat_replaced_1_4 = 0.0;
+w0_local_mat_replaced_1_5 = 0.0;
+w0_local_mat_replaced_2_3 = 0.0;
+w0_local_mat_replaced_2_4 = 0.0;
+w0_local_mat_replaced_2_5 = 0.0;
+w0_local_mat_replaced_3_0 = 0.0;
+w0_local_mat_replaced_3_1 = 0.0;
+w0_local_mat_replaced_3_2 = 0.0;
+w0_local_mat_replaced_3_4 = 0.0;
+w0_local_mat_replaced_3_5 = 0.0;
+w0_local_mat_replaced_4_0 = 0.0;
+w0_local_mat_replaced_4_1 = 0.0;
+w0_local_mat_replaced_4_2 = 0.0;
+w0_local_mat_replaced_4_3 = 0.0;
+w0_local_mat_replaced_4_5 = 0.0;
+w0_local_mat_replaced_5_0 = 0.0;
+w0_local_mat_replaced_5_1 = 0.0;
+w0_local_mat_replaced_5_2 = 0.0;
+w0_local_mat_replaced_5_3 = 0.0;
+w0_local_mat_replaced_5_4 = 0.0;
+                    // Outer boundary (surface).
+                    for ( int i = 0; i < 6; i++ )
+                    {
+                        for ( int j = 0; j < 6; j++ )
+                        {
+                            if ( i != j && ( i >= 3 || j >= 3 ) )
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        double dst_0_0 = src_0_0*w0_local_mat_replaced_0_0 + src_0_1*w0_local_mat_replaced_0_1 + src_0_2*w0_local_mat_replaced_0_2 + src_0_3*w0_local_mat_replaced_0_3 + src_0_4*w0_local_mat_replaced_0_4 + src_0_5*w0_local_mat_replaced_0_5;
 double dst_0_1 = src_0_0*w0_local_mat_replaced_1_0 + src_0_1*w0_local_mat_replaced_1_1 + src_0_2*w0_local_mat_replaced_1_2 + src_0_3*w0_local_mat_replaced_1_3 + src_0_4*w0_local_mat_replaced_1_4 + src_0_5*w0_local_mat_replaced_1_5;
 double dst_0_2 = src_0_0*w0_local_mat_replaced_2_0 + src_0_1*w0_local_mat_replaced_2_1 + src_0_2*w0_local_mat_replaced_2_2 + src_0_3*w0_local_mat_replaced_2_3 + src_0_4*w0_local_mat_replaced_2_4 + src_0_5*w0_local_mat_replaced_2_5;
 double dst_0_3 = src_0_0*w0_local_mat_replaced_3_0 + src_0_1*w0_local_mat_replaced_3_1 + src_0_2*w0_local_mat_replaced_3_2 + src_0_3*w0_local_mat_replaced_3_3 + src_0_4*w0_local_mat_replaced_3_4 + src_0_5*w0_local_mat_replaced_3_5;
@@ -326,7 +400,81 @@ double w1_local_mat_replaced_5_2 = w1_tmpcse_local_mat_66;
 double w1_local_mat_replaced_5_3 = w1_tmpcse_local_mat_71;
 double w1_local_mat_replaced_5_4 = w1_tmpcse_local_mat_72;
 double w1_local_mat_replaced_5_5 = 0.25*absdet*pow(w1_J_invT_cse_0_1 + w1_tmpcse_local_mat_48, 2) + 0.25*absdet*pow(w1_J_invT_cse_1_1 + w1_tmpcse_local_mat_50, 2) + 0.25*absdet*pow(w1_J_invT_cse_2_1 + w1_tmpcse_local_mat_52, 2);
-double dst_1_0 = src_1_0*w1_local_mat_replaced_0_0 + src_1_1*w1_local_mat_replaced_0_1 + src_1_2*w1_local_mat_replaced_0_2 + src_1_3*w1_local_mat_replaced_0_3 + src_1_4*w1_local_mat_replaced_0_4 + src_1_5*w1_local_mat_replaced_0_5;
+
+        if ( treat_boundary_ )
+        {
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+            {
+                if ( r_cell == 0 )
+                {
+                    
+                    // Inner boundary (CMB).
+                    w1_local_mat_replaced_0_1 = 0.0;
+w1_local_mat_replaced_0_2 = 0.0;
+w1_local_mat_replaced_0_3 = 0.0;
+w1_local_mat_replaced_0_4 = 0.0;
+w1_local_mat_replaced_0_5 = 0.0;
+w1_local_mat_replaced_1_0 = 0.0;
+w1_local_mat_replaced_1_2 = 0.0;
+w1_local_mat_replaced_1_3 = 0.0;
+w1_local_mat_replaced_1_4 = 0.0;
+w1_local_mat_replaced_1_5 = 0.0;
+w1_local_mat_replaced_2_0 = 0.0;
+w1_local_mat_replaced_2_1 = 0.0;
+w1_local_mat_replaced_2_3 = 0.0;
+w1_local_mat_replaced_2_4 = 0.0;
+w1_local_mat_replaced_2_5 = 0.0;
+w1_local_mat_replaced_3_0 = 0.0;
+w1_local_mat_replaced_3_1 = 0.0;
+w1_local_mat_replaced_3_2 = 0.0;
+w1_local_mat_replaced_4_0 = 0.0;
+w1_local_mat_replaced_4_1 = 0.0;
+w1_local_mat_replaced_4_2 = 0.0;
+w1_local_mat_replaced_5_0 = 0.0;
+w1_local_mat_replaced_5_1 = 0.0;
+w1_local_mat_replaced_5_2 = 0.0;
+                }
+
+                if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                {
+                 w1_local_mat_replaced_0_3 = 0.0;
+w1_local_mat_replaced_0_4 = 0.0;
+w1_local_mat_replaced_0_5 = 0.0;
+w1_local_mat_replaced_1_3 = 0.0;
+w1_local_mat_replaced_1_4 = 0.0;
+w1_local_mat_replaced_1_5 = 0.0;
+w1_local_mat_replaced_2_3 = 0.0;
+w1_local_mat_replaced_2_4 = 0.0;
+w1_local_mat_replaced_2_5 = 0.0;
+w1_local_mat_replaced_3_0 = 0.0;
+w1_local_mat_replaced_3_1 = 0.0;
+w1_local_mat_replaced_3_2 = 0.0;
+w1_local_mat_replaced_3_4 = 0.0;
+w1_local_mat_replaced_3_5 = 0.0;
+w1_local_mat_replaced_4_0 = 0.0;
+w1_local_mat_replaced_4_1 = 0.0;
+w1_local_mat_replaced_4_2 = 0.0;
+w1_local_mat_replaced_4_3 = 0.0;
+w1_local_mat_replaced_4_5 = 0.0;
+w1_local_mat_replaced_5_0 = 0.0;
+w1_local_mat_replaced_5_1 = 0.0;
+w1_local_mat_replaced_5_2 = 0.0;
+w1_local_mat_replaced_5_3 = 0.0;
+w1_local_mat_replaced_5_4 = 0.0;
+                    // Outer boundary (surface).
+                    for ( int i = 0; i < 6; i++ )
+                    {
+                        for ( int j = 0; j < 6; j++ )
+                        {
+                            if ( i != j && ( i >= 3 || j >= 3 ) )
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        double dst_1_0 = src_1_0*w1_local_mat_replaced_0_0 + src_1_1*w1_local_mat_replaced_0_1 + src_1_2*w1_local_mat_replaced_0_2 + src_1_3*w1_local_mat_replaced_0_3 + src_1_4*w1_local_mat_replaced_0_4 + src_1_5*w1_local_mat_replaced_0_5;
 double dst_1_1 = src_1_0*w1_local_mat_replaced_1_0 + src_1_1*w1_local_mat_replaced_1_1 + src_1_2*w1_local_mat_replaced_1_2 + src_1_3*w1_local_mat_replaced_1_3 + src_1_4*w1_local_mat_replaced_1_4 + src_1_5*w1_local_mat_replaced_1_5;
 double dst_1_2 = src_1_0*w1_local_mat_replaced_2_0 + src_1_1*w1_local_mat_replaced_2_1 + src_1_2*w1_local_mat_replaced_2_2 + src_1_3*w1_local_mat_replaced_2_3 + src_1_4*w1_local_mat_replaced_2_4 + src_1_5*w1_local_mat_replaced_2_5;
 double dst_1_3 = src_1_0*w1_local_mat_replaced_3_0 + src_1_1*w1_local_mat_replaced_3_1 + src_1_2*w1_local_mat_replaced_3_2 + src_1_3*w1_local_mat_replaced_3_3 + src_1_4*w1_local_mat_replaced_3_4 + src_1_5*w1_local_mat_replaced_3_5;
