@@ -120,7 +120,7 @@ def make_extract_local_wedge_scalar_assignments(local_subdomain_id, x_cell, y_ce
         (L(0,4), G(1,0,1)),
         (L(0,5), G(0,1,1)),
     ]
-    src_symbols += [L(0,i) for i in range(6)]
+    src_symbols += [[L(0,i) for i in range(6)]]
 
     # ---- wedge 1 ----
     assigns += [
@@ -131,7 +131,7 @@ def make_extract_local_wedge_scalar_assignments(local_subdomain_id, x_cell, y_ce
         (L(1,4), G(0,1,1)),
         (L(1,5), G(1,0,1)),
     ]
-    src_symbols += [L(1,i) for i in range(6)]
+    src_symbols += [[L(1,i) for i in range(6)]]
 
     return src_symbols, assigns
 

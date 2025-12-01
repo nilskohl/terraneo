@@ -15,12 +15,13 @@ def flattened_cse(M, prefix):
 def replace_matrix(matrix, prefix):
     replace_assignments = []
     replaced_matrix = []
-    for i in range(3):
-        for j in range(3):
+    row, col = matrix.shape
+    for i in range(row):
+        for j in range(col):
             tmp_ij = sp.symbols(f"{prefix}_{i}_{j}")
             replaced_matrix.append(tmp_ij)
             replace_assignments.append((tmp_ij, matrix[i,j]))
-    replaced_matrix = sp.Matrix(3, 3, replaced_matrix)
+    replaced_matrix = sp.Matrix(row, col, replaced_matrix)
     return replace_assignments, replaced_matrix
     
 kernel = []
@@ -76,20 +77,36 @@ for qi in range(num_qps):
         kernel.append((absdet, J_absdet_reduced_exprs[0]))
         
         # 6. local mat CSE
+
         local_mat_exprs = []
         for i in range(num_nodes_per_wedge):
             for j in range(num_nodes_per_wedge):
+                
                 local_mat_ij = sp.symbols(f"w{w}_local_mat_{i}_{j}")
                
+                # compute upper triangular part
                 grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
                 grad_j = J_invT_cse_replaced * grad_shape_vec(j, qp_data[qi])
                 tmp = absdet * qw_data[qi] * grad_i.transpose() * grad_j
                 local_mat_exprs.append(tmp[0])
-       
+
+        
         local_mat_replacements, local_mat_reduced_exprs = sp.cse(exprs=local_mat_exprs,symbols=numbered_symbols(prefix=f"w{w}_tmpcse_local_mat_"))
         kernel += local_mat_replacements
         local_matrix = sp.Matrix(num_nodes_per_wedge, num_nodes_per_wedge, local_mat_reduced_exprs)
-        dst_wedge_rhss = local_matrix * srcs[w]
+
+        local_mat_replaced_assignments,  local_mat_replaced = replace_matrix(local_matrix, f"w{w}_local_mat_replaced")
+        kernel += local_mat_replaced_assignments
+        #print(local_mat_replaced)
+        #for i in range(num_nodes_per_wedge):
+        #    for j in range(0,i):
+        #        kernel.append((local_mat_replaced[i, j], local_mat_replaced[j, i]))
+                         
+     
+
+        print(srcs[w])
+        #print(local_mat_replaced)
+        dst_wedge_rhss = local_mat_replaced * sp.Matrix(srcs[w])
         dsts_wedge = [sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)]
         for dst, dst_rhs in zip(dsts_wedge, dst_wedge_rhss):
             kernel.append((dst, dst_rhs))
