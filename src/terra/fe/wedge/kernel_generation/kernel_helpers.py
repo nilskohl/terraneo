@@ -16,7 +16,7 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
    
     # lateral_grid(local_subdomain_id, x_cell+i, y_cell+j, d)
     lateral_grid = [[[[
-        f"lateral_grid({local_subdomain_id},{i},{j},{d})"
+        f"lateral_grid({local_subdomain_id},{x_cell} + {i},{y_cell} + {j},{d})"
         for d in range(dim)
     ] for j in range(2)] for i in range(2)]]
 

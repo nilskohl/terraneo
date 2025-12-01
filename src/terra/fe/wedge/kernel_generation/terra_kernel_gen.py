@@ -75,14 +75,14 @@ for qi in range(num_qps):
         absdet = sp.symbols("absdet") 
         kernel.append((absdet, J_absdet_reduced_exprs[0]))
         
-        # local mat CSE
+        # 6. local mat CSE
         local_mat_exprs = []
         for i in range(num_nodes_per_wedge):
             for j in range(num_nodes_per_wedge):
                 local_mat_ij = sp.symbols(f"w{w}_local_mat_{i}_{j}")
                
-                grad_i = J_invT_cse * grad_shape_vec(i, qp_data[qi])
-                grad_j = J_invT_cse * grad_shape_vec(j, qp_data[qi])
+                grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
+                grad_j = J_invT_cse_replaced * grad_shape_vec(j, qp_data[qi])
                 tmp = absdet * qw_data[qi] * grad_i.transpose() * grad_j
                 local_mat_exprs.append(tmp[0])
        
