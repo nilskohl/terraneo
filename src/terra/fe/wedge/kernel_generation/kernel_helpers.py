@@ -142,7 +142,7 @@ def print_atomic_add_local_wedge_scalar_coefficients(local_subdomain_id, x_cell,
         return f"dst_({local_subdomain_id}, {x_cell + dx}, {y_cell + dy}, {r_cell + dr})"
 
     def L(w, i):
-        return f"dsts_{w}_{i}"
+        return f"dsts_w{w}_{i}"
 
     # atomic add statements (global index, RHS expression)
     ops = [
