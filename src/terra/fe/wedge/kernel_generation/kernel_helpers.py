@@ -18,7 +18,7 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
         [
             [
                 [
-                    f"lateral_grid({local_subdomain_id},{x_cell} + {i},{y_cell} + {j},{d})"
+                    f"grid_({local_subdomain_id},{x_cell} + {i},{y_cell} + {j},{d})"
                     for d in range(dim)
                 ]
                 for j in range(2)
@@ -77,7 +77,9 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
 def make_rad_assignments(local_subdomain_id, r_cell):
     assignments = []
     rads = [sp.symbols(f"r_{i}") for i in range(2)]
-    rads_array_accesses = [f"radii_(local_subdomain_id, r_cell)" for i in range(2)]
+    rads_array_accesses = [
+        f"radii_(local_subdomain_id, r_cell + {i})" for i in range(2)
+    ]
     for i in range(2):
         assignments.append((rads[i], rads_array_accesses[i]))
     return rads, assignments
@@ -145,7 +147,7 @@ def make_extract_local_wedge_scalar_assignments(
     return src_symbols, assigns
 
 
-def print_atomic_add_local_wedge_scalar_coefficients(
+def make_atomic_add_local_wedge_scalar_coefficients(
     local_subdomain_id, x_cell, y_cell, r_cell, dsts
 ):
     lines = []
@@ -181,8 +183,6 @@ def make_boundary_handling(matrix_name):
     return f"""
         if ( treat_boundary_ )
         {{
-            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
-            {{
                 if ( r_cell == 0 )
                 {{
                     
@@ -198,7 +198,19 @@ def make_boundary_handling(matrix_name):
                         chr(10).join([f"{matrix_name}_{i}_{j} = 0.0;" for i in range(6) for j in range(6) if (i != j and (i >= 3 or j >= 3 ))])
                     }
                 }}
-            }}
+        }}
+        """
+
+
+def make_diagonal_handling(matrix_name):
+    return f"""
+        if ( diagonal_ )
+        {{
+                {{
+                 {
+                        chr(10).join([f"{matrix_name}_{i}_{j} = 0.0;" for i in range(6) for j in range(6) if (i != j)])
+                    }
+                }}
         }}
         """
 

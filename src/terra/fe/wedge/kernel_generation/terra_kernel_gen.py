@@ -45,7 +45,7 @@ srcs, src_assignments = make_extract_local_wedge_scalar_assignments(
 # make_hex_assignments(local_subdomain_id, x_cell, y_cell, r_cell)
 kernel += wedge_assignments
 kernel += rad_assignments
-kernel += qp_assignments
+#kernel += qp_assignments
 kernel += src_assignments
 
 qp_data = quad_points_1x1
@@ -90,7 +90,7 @@ for qi in range(num_qps):
             exprs=J_abs_det, symbols=numbered_symbols(prefix=f"w{w}_tmpcse_absdet_")
         )
         kernel += J_absdet_replacements
-        absdet = sp.symbols("absdet")
+        absdet = sp.symbols(f"w{w}_absdet")
         kernel.append((absdet, J_absdet_reduced_exprs[0]))
 
         # 6. local mat CSE
@@ -116,8 +116,10 @@ for qi in range(num_qps):
             num_nodes_per_wedge, num_nodes_per_wedge, local_mat_reduced_exprs
         )
 
+        matrix_name = f"w{w}_local_mat_replaced"
+
         local_mat_replaced_assignments, local_mat_replaced = replace_matrix(
-            local_matrix, f"w{w}_local_mat_replaced"
+            local_matrix, matrix_name
         )
         kernel += local_mat_replaced_assignments
         # print(local_mat_replaced)
@@ -126,7 +128,8 @@ for qi in range(num_qps):
         #        kernel.append((local_mat_replaced[i, j], local_mat_replaced[j, i]))
 
         # print(local_mat_replaced)
-        kernel.append(make_boundary_handling(f"w{w}_local_mat_replaced"))
+        kernel.append(make_boundary_handling(matrix_name))
+        kernel.append(make_diagonal_handling(matrix_name))
 
         dst_wedge_rhss = local_mat_replaced * sp.Matrix(srcs[w])
         dsts_wedge = [sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)]
@@ -134,7 +137,7 @@ for qi in range(num_qps):
             kernel.append((dst, dst_rhs))
         dsts += [dsts_wedge]
 
-kernel += print_atomic_add_local_wedge_scalar_coefficients(
+kernel += make_atomic_add_local_wedge_scalar_coefficients(
     local_subdomain_id, x_cell, y_cell, r_cell, dsts
 )
 
