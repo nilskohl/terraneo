@@ -83,23 +83,7 @@ kernel.append(
         ),
     )
 )
-kernel.append(
-    (
-        postloop,
-        sp.Piecewise(
-            (
-                1,
-                sp.Eq(diagonal, True)
-                | (
-                    sp.Eq(treat_boundary, True)
-                    & (sp.Eq(r_cell + 1, max_rad) | sp.Eq(r_cell, 0))
-                ),
-            ),
-            (0, True),
-        ),
-    )
-)
-cse_ignore_list = []
+
 for qi in range(num_qps):
     for w in range(num_wedges_per_hex_cell):
         ### Jacobian
@@ -137,10 +121,7 @@ for qi in range(num_qps):
         absdet = sp.symbols(f"w{w}_absdet")
         kernel.append((absdet, J_absdet_reduced_exprs[0]))
 
-        # 6. assemble src/trial gradient (sum over rows in local matrix)
-        matrix_name = f"w{w}_local_mat_replaced"
-        local_mat_exprs = []
-        
+        # 6. assemble src/trial gradient (sum over rows in local matrix)   
         srcs_w = sp.Matrix(srcs[w])
         grad_u_symbols = sp.Matrix(
             sp.symbols(f"w{w}_grad_u_0 w{w}_grad_u_1 w{w}_grad_u_2")
@@ -202,10 +183,8 @@ for qi in range(num_qps):
                 )
             )
             grad_u_diag = srcs_w[i] * grad_i
-
             for gu, gu_symbol in zip(grad_u_diag, grad_u_diag_symbols):
                 kernel.append((gu_symbol, gu))
-
             res = absdet * qw_data[qi] * grad_i.transpose() * grad_u_diag_symbols
             cond = sp.symbols(f"w{w}_it{i}_cond_l2", integer=True)
             kernel.append(
