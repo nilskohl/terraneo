@@ -162,7 +162,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     const auto coords_shell = terra::grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domain );
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarType >( domain );
 
-    using DivKGrad = fe::wedge::operators::shell::DivKGrad< ScalarType >;
+    using DivKGrad = fe::wedge::operators::shell::DivKGrad< ScalarType, decltype(dummy_lambda) >;
 
     DivKGrad A( domain, coords_shell, coords_radii, k.grid_data(), true, false );
     DivKGrad A_neumann( domain, coords_shell, coords_radii, k.grid_data(), false, false );

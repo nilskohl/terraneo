@@ -163,24 +163,7 @@ class Laplace
                     grad_phy[k] = J_inv_transposed * grad_shape( k, quad_point );
                 }
 
-                if ( diagonal_ )
-                {
-                    diagonal( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
-                }
-                else if ( treat_boundary_ && at_bot_boundary )
-                {
-                    // Bottom boundary dirichlet
-                    dirichlet_bot( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
-                }
-                else if ( treat_boundary_ && at_top_boundary )
-                {
-                    // Top boundary dirichlet
-                    dirichlet_top( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
-                }
-                else
-                {
-                    neumann( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
-                }
+                 neumann( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy, r_cell );
             }
         }
 
@@ -203,7 +186,8 @@ class Laplace
         const int                          wedge,
         const ScalarType                   quad_weight,
         const ScalarType                   abs_det,
-        const dense::Vec< ScalarType, 3 >* grad_phy ) const
+        const dense::Vec< ScalarType, 3 >* grad_phy,
+    const int r_cell ) const
     {
         constexpr int offset_x[2][6] = { { 0, 1, 0, 0, 1, 0 }, { 1, 0, 1, 1, 0, 1 } };
         constexpr int offset_y[2][6] = { { 0, 0, 1, 0, 0, 1 }, { 1, 1, 0, 1, 1, 0 } };
@@ -212,17 +196,57 @@ class Laplace
         // 3. Compute ∇u at this quadrature point.
         dense::Vec< ScalarType, 3 > grad_u;
         grad_u.fill( 0.0 );
-        for ( int j = 0; j < num_nodes_per_wedge; j++ )
+        const bool at_cmb        = r_cell == 0;
+        const bool at_surface    = r_cell + 1 == radii_.extent( 1 ) - 1;
+        int        cmb_shift     = 0;
+        int        surface_shift = 0;
+
+        // Compute ∇u at this quadrature point.
+        if ( !diagonal_ )
         {
-            grad_u = grad_u +
-                     src_local_hex[4 * offset_r[wedge][j] + 2 * offset_y[wedge][j] + offset_x[wedge][j]] * grad_phy[j];
+            if ( treat_boundary_ && at_cmb )
+            {
+                // at the core-mantle boundary, we exclude dofs that are lower-indexed than the dof on the boundary
+                cmb_shift = 3;
+            }
+            else if ( treat_boundary_ && at_surface )
+            {
+                // at the surface boundary, we exclude dofs that are higher-indexed than the dof on the boundary
+                surface_shift = 3;
+            }
+
+            // accumulate the element-local gradient/divergence of the trial function (loop over columns of local matrix/local dofs)
+            // by dot of trial vec and src dofs
+            for ( int i = 0 + cmb_shift; i < num_nodes_per_wedge - surface_shift; i++ )
+            {
+                grad_u = grad_u +
+                          grad_phy[i] * src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]];
+            }
+
+            // Add the test function contributions.
+            // for each row of the local matrix (test-functions):
+            // multiply trial part (fully assembled for the current element from loop above) with test part corresponding to the current row/dof
+            // += due to contributions from other elements
+            for ( int j = 0 + cmb_shift; j < num_nodes_per_wedge - surface_shift; j++ )
+            {
+                dst_local_hex[4 * offset_r[wedge][j] + 2 * offset_y[wedge][j] + offset_x[wedge][j]] +=
+                    abs_det * quad_weight * ( grad_phy[j] ).dot( grad_u );
+                // for the div, we just extract the component from the gradient vector
+            }
         }
 
-        // 4. Add the test function contributions.
-        for ( int i = 0; i < num_nodes_per_wedge; i++ )
+        // Dirichlet DoFs are only to be eliminated on diagonal blocks of epsilon
+        if ( diagonal_ || ( ( treat_boundary_ && ( at_cmb || at_surface ) ) ) )
         {
-            dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
-                quad_weight * grad_phy[i].dot( grad_u ) * abs_det;
+            // for the diagonal elements at the boundary, we switch the shifts
+            for ( int i = 0 + surface_shift; i < num_nodes_per_wedge - cmb_shift; i++ )
+            {
+                const auto grad_u_diag =
+                     grad_phy[i] * src_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]];
+
+                dst_local_hex[4 * offset_r[wedge][i] + 2 * offset_y[wedge][i] + offset_x[wedge][i]] +=
+                     abs_det * quad_weight * ( grad_phy[i] ).dot( grad_u_diag );
+            }
         }
     }
 

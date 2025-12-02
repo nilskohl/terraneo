@@ -45,7 +45,7 @@ srcs, src_assignments = make_extract_local_wedge_scalar_assignments(
 # make_hex_assignments(local_subdomain_id, x_cell, y_cell, r_cell)
 kernel += wedge_assignments
 kernel += rad_assignments
-#kernel += qp_assignments
+# kernel += qp_assignments
 kernel += src_assignments
 
 qp_data = quad_points_1x1
@@ -56,6 +56,50 @@ num_nodes_per_wedge_surface = 3
 num_nodes_per_wedge = 6
 dim = 3
 dsts = []
+cmb_shift, surface_shift = sp.symbols("cmb_shift surface_shift", integer=True)
+
+max_rad, treat_boundary, diagonal, postloop = sp.symbols(
+    " max_rad treat_boundary_ diagonal_ postloop", integer=True
+)
+kernel.append(
+    (
+        cmb_shift,
+        sp.Piecewise(
+            (3, sp.Eq(diagonal, False) & treat_boundary & sp.Eq(r_cell, 0)),
+            (0, True),
+        ),
+    )
+)
+kernel.append((max_rad, "radii_.extent( 1 ) - 1"))
+kernel.append(
+    (
+        surface_shift,
+        sp.Piecewise(
+            (
+                3,
+                sp.Eq(diagonal, False) & treat_boundary & sp.Eq(r_cell + 1, max_rad),
+            ),
+            (0, True),
+        ),
+    )
+)
+kernel.append(
+    (
+        postloop,
+        sp.Piecewise(
+            (
+                1,
+                sp.Eq(diagonal, True)
+                | (
+                    sp.Eq(treat_boundary, True)
+                    & (sp.Eq(r_cell + 1, max_rad) | sp.Eq(r_cell, 0))
+                ),
+            ),
+            (0, True),
+        ),
+    )
+)
+cse_ignore_list = []
 for qi in range(num_qps):
     for w in range(num_wedges_per_hex_cell):
         ### Jacobian
@@ -93,49 +137,111 @@ for qi in range(num_qps):
         absdet = sp.symbols(f"w{w}_absdet")
         kernel.append((absdet, J_absdet_reduced_exprs[0]))
 
-        # 6. local mat CSE
-
-        local_mat_exprs = []
-        for i in range(num_nodes_per_wedge):
-            for j in range(num_nodes_per_wedge):
-
-                local_mat_ij = sp.symbols(f"w{w}_local_mat_{i}_{j}")
-
-                # compute upper triangular part
-                grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
-                grad_j = J_invT_cse_replaced * grad_shape_vec(j, qp_data[qi])
-                tmp = absdet * qw_data[qi] * grad_i.transpose() * grad_j
-                local_mat_exprs.append(tmp[0])
-
-        local_mat_replacements, local_mat_reduced_exprs = sp.cse(
-            exprs=local_mat_exprs,
-            symbols=numbered_symbols(prefix=f"w{w}_tmpcse_local_mat_"),
-        )
-        kernel += local_mat_replacements
-        local_matrix = sp.Matrix(
-            num_nodes_per_wedge, num_nodes_per_wedge, local_mat_reduced_exprs
-        )
-
+        # 6. assemble src/trial gradient (sum over rows in local matrix)
         matrix_name = f"w{w}_local_mat_replaced"
-
-        local_mat_replaced_assignments, local_mat_replaced = replace_matrix(
-            local_matrix, matrix_name
+        local_mat_exprs = []
+        
+        srcs_w = sp.Matrix(srcs[w])
+        grad_u_symbols = sp.Matrix(
+            sp.symbols(f"w{w}_grad_u_0 w{w}_grad_u_1 w{w}_grad_u_2")
         )
-        kernel += local_mat_replaced_assignments
-        # print(local_mat_replaced)
-        # for i in range(num_nodes_per_wedge):
-        #    for j in range(0,i):
-        #        kernel.append((local_mat_replaced[i, j], local_mat_replaced[j, i]))
+        grad_u = sp.Matrix.zeros(3, 1)
+        for j in range(num_nodes_per_wedge):
+            grad_j = J_invT_cse_replaced * grad_shape_vec(j, qp_data[qi])
+            cond = sp.symbols(f"w{w}_it{j}_cond_l0", integer=True)
+            kernel.append(
+                (
+                    cond,
+                    sp.Piecewise(
+                        (
+                            1,
+                            sp.Eq(diagonal, False)
+                            & (j >= (0 + cmb_shift))
+                            & (j < (num_nodes_per_wedge - surface_shift)),
+                        ),
+                        (0, True),
+                    ),
+                )
+            )
+            grad_u += srcs_w[j] * grad_j * cond
+        for gu, gu_symbol in zip(grad_u, grad_u_symbols):
+            kernel.append((gu_symbol, gu))
 
-        # print(local_mat_replaced)
-        kernel.append(make_boundary_handling(matrix_name))
-        kernel.append(make_diagonal_handling(matrix_name))
 
-        dst_wedge_rhss = local_mat_replaced * sp.Matrix(srcs[w])
-        dsts_wedge = [sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)]
-        for dst, dst_rhs in zip(dsts_wedge, dst_wedge_rhss):
-            kernel.append((dst, dst_rhs))
-        dsts += [dsts_wedge]
+        # pair src/trial gradient with test gradients
+        dsts_w_symbols = [
+            sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)
+        ]
+        dsts_w = sp.Matrix.zeros(num_nodes_per_wedge, 1)
+        for i in range(num_nodes_per_wedge):
+            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
+            res = absdet * qw_data[qi] * grad_i.transpose() * grad_u_symbols
+            cond = sp.symbols(f"w{w}_it{i}_cond_l1", integer=True)
+            kernel.append(
+                (
+                    cond,
+                    sp.Piecewise(
+                        (
+                            1,
+                            sp.Eq(diagonal, False)
+                            & (i >= (0 + cmb_shift))
+                            & (i < (num_nodes_per_wedge - surface_shift)),
+                        ),
+                        (0, True),
+                    ),
+                )
+            )
+            dsts_w[i] += res[0] * cond
+
+        # post loop for bcs or diagonal kernel
+        for i in range(num_nodes_per_wedge):
+            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
+            grad_u_diag_symbols = sp.Matrix(
+                sp.symbols(
+                    f"w{w}_it{i}_grad_u_diag_0 w{w}_it{i}_grad_u_diag_1 w{w}_it{i}_grad_u_diag_2"
+                )
+            )
+            grad_u_diag = srcs_w[i] * grad_i
+
+            for gu, gu_symbol in zip(grad_u_diag, grad_u_diag_symbols):
+                kernel.append((gu_symbol, gu))
+
+            res = absdet * qw_data[qi] * grad_i.transpose() * grad_u_diag_symbols
+            cond = sp.symbols(f"w{w}_it{i}_cond_l2", integer=True)
+            kernel.append(
+                (
+                    cond,
+                    sp.Piecewise(
+                        (
+                            1,
+                            (
+                                sp.Eq(diagonal, True)
+                                | (
+                                    sp.Eq(treat_boundary, True)
+                                    & (sp.Eq(r_cell + 1, max_rad) | sp.Eq(r_cell, 0))
+                                )
+                            )
+                            & (
+                                (i >= (0 + surface_shift))
+                                & (i < (num_nodes_per_wedge - cmb_shift))
+                            ),
+                        ),
+                        (0, True),
+                    ),
+                )
+            )
+            dsts_w[i] += res[0] * cond
+
+        # final cse
+        dst_replacements, dst_reduced_exprs = sp.cse(
+            exprs=dsts_w,
+            symbols=numbered_symbols(prefix=f"w{w}_tmpcse_dst_", ignore=[Pow]),
+        )
+        kernel += dst_replacements
+        for i, dw in enumerate(dsts_w_symbols):
+            kernel.append((dw, dst_reduced_exprs[0][i]))
+
+        dsts += [dsts_w_symbols]
 
 kernel += make_atomic_add_local_wedge_scalar_coefficients(
     local_subdomain_id, x_cell, y_cell, r_cell, dsts
@@ -143,6 +249,8 @@ kernel += make_atomic_add_local_wedge_scalar_coefficients(
 
 # Finally: print code
 cpp_code = "\n// Kernel body:\n"
+
+
 for stmt in kernel:
     # print(var_name)
     # print(expr)
@@ -150,10 +258,18 @@ for stmt in kernel:
         cpp_code += stmt
     else:
         var_name, expr = stmt
+
+        # print(expr)
+        def get_type(sym):
+            if var_name.is_integer:
+                return "int"
+            else:
+                return "double"
+
         if isinstance(expr, str):
-            cpp_code += f"double {var_name} = {expr};\n"
+            cpp_code += f"{  get_type(var_name) } {var_name} = {expr};\n"
         else:
-            cpp_code += f"double {var_name} = {ccode(expr)};\n"
+            cpp_code += f"{  get_type(var_name) } {var_name} = {ccode(expr)};\n"
 
 with open("Laplace_kernel", "w", encoding="utf-8") as f:
     f.write(cpp_code)
