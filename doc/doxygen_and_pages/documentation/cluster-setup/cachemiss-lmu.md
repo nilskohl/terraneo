@@ -4,7 +4,7 @@
 $ module load mpi.ompi
 $ module load nvidia-hpc
 
-$ mkdir terraneox-build
+$ mkdir terraneo-build
 
 $ ll
 terraneo/               # <== the cloned source code

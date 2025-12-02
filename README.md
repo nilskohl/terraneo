@@ -2,10 +2,10 @@
 
 Extreme-scale mantle convection code for CPU and GPU systems. Originating from the [TerraNeo project](https://terraneo.fau.de).
 
-* 📖 [Documentation](framework/framework.md)
-* 💻 [Cluster setup](cluster-setup/cluster-setup.md)
+* 📖 [Documentation](doc/doxygen_and_pages/documentation/framework/framework.md)
+* 💻 [Cluster setup](doc/doxygen_and_pages/documentation/cluster-setup/cluster-setup.md)
 
-> ❗️The code is early in development, so it is not yet ready for production. But feel free to try it out!
+> ❗️The code is early in development, and thus not yet ready for production. But feel free to try it out!
 
 ## Quickstart
 
