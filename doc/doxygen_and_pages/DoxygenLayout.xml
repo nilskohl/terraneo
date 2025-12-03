@@ -11,6 +11,14 @@
      <tab type="pages" visible="yes" title="" intro=""/>
      -->
 
+    <tab type="user" url="@ref compiling-and-running" visible="yes" title="Compiling and Running"/>
+
+    <tab type="usergroup" url="@ref cluster-setup" visible="yes" title="Cluster Setup" >
+      <tab type="user" url="@ref cachemiss-lmu" visible="yes" title="Cachemiss @ LMU Geocomputing" intro=""/>
+      <tab type="user" url="@ref helma-nhr-fau" visible="yes" title="Helma @ NHR@FAU" intro=""/>
+      <tab type="user" url="@ref supermuc-ng-phase-2" visible="yes" title="SuperMUC-NG Phase 2" intro=""/>
+    </tab>
+
     <tab type="usergroup" url="@ref framework-documentation" visible="yes" title="Framework Documentation" >
       <tab type="user" url="@ref model-pde" visible="yes" title="Model and PDE" intro=""/>
       <tab type="user" url="@ref grid-subdomains" visible="yes" title="Grids" intro=""/>
@@ -24,11 +32,7 @@
       <tab type="user" url="@ref input-output" visible="yes" title="Input-Output" intro=""/>
     </tab>
 
-    <tab type="usergroup" url="@ref cluster-setup" visible="yes" title="Cluster Setup" >
-      <tab type="user" url="@ref cachemiss-lmu" visible="yes" title="Cachemiss @ LMU Geocomputing" intro=""/>
-      <tab type="user" url="@ref helma-nhr-fau" visible="yes" title="Helma @ NHR@FAU" intro=""/>
-      <tab type="user" url="@ref supermuc-ng-phase-2" visible="yes" title="SuperMUC-NG Phase 2" intro=""/>
-    </tab>
+    <tab type="user" url="@ref contributing" visible="yes" title="Contributing"/>
 
     <tab type="topics" visible="yes" title="" intro=""/>
     <tab type="modules" visible="yes" title="" intro="">

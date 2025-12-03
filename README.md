@@ -2,8 +2,10 @@
 
 Extreme-scale mantle convection code for CPU and GPU systems. Originating from the [TerraNeo project](https://terraneo.fau.de).
 
-* 📖 [Documentation](doc/doxygen_and_pages/documentation/framework/framework.md)
+* 🏃‍♀️ [Compiling and running](doc/doxygen_and_pages/documentation/compiling-and-running/compiling-and-running.md)
 * 💻 [Cluster setup](doc/doxygen_and_pages/documentation/cluster-setup/cluster-setup.md)
+* 📖 [Documentation](doc/doxygen_and_pages/documentation/framework/framework.md)
+* 🔨 [Contribute](doc/doxygen_and_pages/documentation/contributing/contributing.md)
 
 > ❗️The code is early in development, and thus not yet ready for production. But feel free to try it out!
 
@@ -18,8 +20,6 @@ cd apps/mantlecirculation
 make
 ./mantlecirculation -h
 ```
-
-For more details, refer to the [documentation](framework/framework.md).
 
 ## Features
 

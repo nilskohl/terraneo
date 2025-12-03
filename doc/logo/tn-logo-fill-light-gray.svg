@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Vectornator (http://vectornator.io/) -->
+
+<svg
+   height="100%"
+   stroke-miterlimit="10"
+   style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;"
+   version="1.1"
+   viewBox="0 0 283.5 283.5"
+   width="100%"
+   xml:space="preserve"
+   id="svg19"
+   sodipodi:docname="TN-logo-white copy.svg"
+   inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:vectornator="http://vectornator.io"><sodipodi:namedview
+   id="namedview19"
+   pagecolor="#ffffff"
+   bordercolor="#000000"
+   borderopacity="0.25"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0.0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   inkscape:zoom="2.899327"
+   inkscape:cx="137.44569"
+   inkscape:cy="191.9411"
+   inkscape:window-width="1200"
+   inkscape:window-height="1186"
+   inkscape:window-x="1179"
+   inkscape:window-y="90"
+   inkscape:window-maximized="0"
+   inkscape:current-layer="svg19" />
+<defs
+   id="defs1"><linearGradient
+     id="linearGradient10"
+     inkscape:collect="always"><stop
+       style="stop-color:#77a4d2;stop-opacity:1;"
+       offset="0"
+       id="stop9" /><stop
+       style="stop-color:#79c5cb;stop-opacity:1;"
+       offset="0.5"
+       id="stop11" /><stop
+       style="stop-color:#d6e1bf;stop-opacity:1;"
+       offset="1"
+       id="stop10" /></linearGradient><linearGradient
+     id="linearGradient6"
+     inkscape:collect="always"><stop
+       style="stop-color:#000000;stop-opacity:1;"
+       offset="0"
+       id="stop7" /><stop
+       style="stop-color:#000000;stop-opacity:0;"
+       offset="1"
+       id="stop8" /></linearGradient><linearGradient
+     inkscape:collect="always"
+     xlink:href="#linearGradient6"
+     id="linearGradient8"
+     x1="28.2938"
+     y1="141.7499"
+     x2="255.206"
+     y2="141.7499"
+     gradientUnits="userSpaceOnUse" /><linearGradient
+     inkscape:collect="always"
+     xlink:href="#linearGradient10"
+     id="linearGradient9"
+     gradientUnits="userSpaceOnUse"
+     x1="28.2938"
+     y1="141.7499"
+     x2="255.206"
+     y2="141.7499" /></defs>
+<clipPath
+   id="ArtboardFrame">
+<rect
+   height="283.5"
+   width="283.5"
+   x="0"
+   y="0"
+   id="rect1" />
+</clipPath>
+<g
+   clip-path="url(#ArtboardFrame)"
+   id="Layer-1"
+   vectornator:layerName="Layer 1"
+   visibility="hidden"
+   style="display:inline">
+<path
+   d="m 302.351,284.716 c 0,-62.629 50.771,-113.4 113.4,-113.4 46.629,0 86.685,28.143 104.108,68.371 5.978,13.803 9.292,29.029 9.292,45.029 0,62.629 -50.771,113.4 -113.4,113.4 -62.629,0 -113.4,-50.771 -113.4,-113.4 z"
+   fill="#ffffff"
+   fill-opacity="0"
+   fill-rule="nonzero"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path1" />
+<path
+   d="M 301.003,284.716 H 530.499"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path2" />
+<path
+   d="M 334.612,203.576 496.89,365.855"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path3" />
+<path
+   d="M 334.612,365.855 496.89,203.576"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path4" />
+<path
+   d="M 415.751,169.968 V 399.464"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path5" />
+<path
+   d="m 357.657,288.448 c 0,-31.315 25.386,-56.7 56.7,-56.7 31.315,0 56.7,25.385 56.7,56.7 0,31.315 -25.385,56.7 -56.7,56.7 -31.314,0 -56.7,-25.385 -56.7,-56.7 z"
+   fill="#ffffff"
+   fill-rule="nonzero"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path6" />
+<path
+   d="m 415.751,173.072 c 0,0 -24.922,7.115 -35.771,30.28 -10.849,23.165 -4.146,42.501 -4.146,42.501"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path7" />
+<path
+   d="m 495.44,205.262 c 0,0 -22.653,-12.592 -46.705,-3.883 -24.051,8.709 -32.984,27.122 -32.984,27.122"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path8" />
+<path
+   d="m 529.394,284.716 c 0,0 -7.114,-24.922 -30.279,-35.771 -23.166,-10.85 -42.502,-4.146 -42.502,-4.146"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path9" />
+<path
+   d="m 495.554,364.405 c 0,0 12.592,-22.653 3.883,-46.705 -8.708,-24.052 -27.121,-32.984 -27.121,-32.984"
+   fill="none"
+   opacity="1"
+   stroke="#000000"
+   stroke-linecap="butt"
+   stroke-linejoin="round"
+   stroke-width="8.12932"
+   id="path10" />
+</g>
+
+<g
+   id="Layer-4"
+   vectornator:layerName="Layer 4"
+   style="display:inline" />
+<g
+   id="Layer-5"
+   vectornator:layerName="Layer 5"
+   style="display:inline;fill:url(#linearGradient8);fill-opacity:1">
+
+
+
+<g
+   id="g8"
+   style="fill:url(#linearGradient9)"><path
+     id="path16"
+     style="mix-blend-mode:normal;fill:#dddddd;fill-opacity:1"
+     d="M 141.75 28.34375 C 79.1209 28.34375 28.34375 79.1209 28.34375 141.75 C 28.34375 204.379 79.1209 255.15625 141.75 255.15625 L 141.75 212.625 L 141.75 170.09375 C 126.093 170.09375 113.40625 157.407 113.40625 141.75 C 113.40625 140.77144 113.45599 139.80455 113.55273 138.85156 C 115.00391 124.55676 127.07156 113.40625 141.75 113.40625 L 141.75 70.875 L 141.75 28.34375 z M 155.9375 29.34375 L 155.9375 57.96875 C 196.1445 64.73495 226.8125 99.6211 226.8125 141.75 C 226.8125 183.879 196.1445 218.76525 155.9375 225.53125 L 155.9375 254.15625 C 211.8535 247.15825 255.15625 199.562 255.15625 141.75 C 255.15625 83.9382 211.8535 36.34165 155.9375 29.34375 z M 155.9375 72.3125 L 155.9375 117.34375 C 164.3655 122.25675 170.09375 131.29 170.09375 141.75 C 170.09375 152.21 164.3655 161.24325 155.9375 166.15625 L 155.9375 211.1875 C 188.2785 204.6125 212.625 176.032 212.625 141.75 C 212.625 107.468 188.2785 78.8865 155.9375 72.3125 z " /></g>
+</g>
+
+</svg>

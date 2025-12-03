@@ -1,0 +1,106 @@
+# Contributing {#contributing}
+
+> TL;DR: We are employing a simple fork workflow with a dev branch.
+
+First of all: thanks for contributing.
+
+Here's a short guide on how to get started.
+
+**Some tips**:
+- Don’t worry about mistakes. We can help fix them.
+- Small pull requests are easier to review than large ones.
+- You can draft a PR early to get feedback.
+
+If unsure, follow the steps below.
+For more details, you can, for instance, check out the 
+[Atlassian guide](https://www.atlassian.com/git/tutorials/comparing-workflows/forking-workflow) for more details.
+
+#### 1. Fork the repository
+
+At the top right of the GitHub page click:
+```
+Fork → Create fork
+```
+This makes your own copy of the project.
+
+#### 2. Clone your fork
+
+Open a terminal:
+```
+git clone https://github.com/<your-username>/terraneo.git
+cd terraneo
+```
+
+#### 3. Set the original repo as “upstream” (one-time setup)
+
+This lets you pull updates from the main project:
+```
+git remote add upstream https://github.com/mantleconvection/terraneo.git
+```
+You only do this once.
+
+#### 4. Always start from the latest dev branch
+
+Before creating new work:
+```
+git fetch upstream
+git checkout dev
+git pull upstream dev
+```
+
+#### 5. Create a new branch for your change
+
+Never work directly on dev.
+```
+git checkout -b feature/my-change
+```
+
+Pick any name that describes your change
+(e.g., bugfix/mpi-deadlock, feature/some-forcing-term, docs/improving-fem-documentation).
+
+#### 6. Make your changes
+
+Make the edits you want.
+
+\note Please adhere to the coding style of the project and format with `clang-format` (the project ships a `.clang-format` file).
+
+Then save your work:
+```
+git add .
+git commit -m "Describe your change."
+```
+Keep commit messages simple and clear and so that others can directly see what you have changed.
+
+#### 7. Update your branch before pushing (important!)
+
+Make sure your branch has the latest updates from the project:
+```
+git fetch upstream
+git pull upstream dev
+```
+
+If it asks about conflicts, fix them if you can.
+If you’re unsure, ask a maintainer. We’re happy to help.
+
+#### 8. Push your branch to your fork
+```
+git push origin feature/my-change
+```
+
+#### 9. Open a Pull Request (PR)
+
+Go to your fork on GitHub.
+GitHub will show a “Compare & pull request” button.
+
+Make sure the PR target is:
+```
+base: dev   ←   compare: feature/my-change
+```
+
+In your PR description:
+- explain what you changed
+- mention related issues (if any)
+
+That’s it!
+
+A maintainer will review the PR and merge it into dev.

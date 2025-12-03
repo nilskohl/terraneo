@@ -6,5 +6,5 @@ Please contribute! If you are installing on a machine that is not listed here, p
 
 * [Cachemiss @ LMU Geocomputing](cachemiss-lmu.md)
 * [Helma @ NHR@FAU](helma-nhr-fau.md)
-* [SuperMUC-NG Phase 2](supermuc-ng-phase-2.md)  
+* [SuperMUC-NG Phase 2 @ LRZ](supermuc-ng-phase-2.md)  
 

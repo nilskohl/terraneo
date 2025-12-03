@@ -1,4 +1,4 @@
-# SuperMUC NG Phase 2 {#supermuc-ng-phase-2}
+# SuperMUC NG Phase 2 @ LRZ {#supermuc-ng-phase-2}
 
 For login information, inspect the [operation documentation of SuperMUC-NG Phase 2](https://doku.lrz.de/pilot-operation-supermuc-ng-phase-2-403079197.html).
 
