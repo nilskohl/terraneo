@@ -8,7 +8,7 @@ def make_float_symbol(name):
     return sp.symbols(name, real=True, finite=True)
 
 
-def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cell):
+def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cellz):
     num_wedges_per_hex_cell = 2
     num_nodes_per_wedge_surface = 3
     dim = 3

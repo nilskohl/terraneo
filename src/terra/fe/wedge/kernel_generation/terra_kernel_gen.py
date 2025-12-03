@@ -56,8 +56,9 @@ num_nodes_per_wedge_surface = 3
 num_nodes_per_wedge = 6
 dim = 3
 dsts = []
-cmb_shift, surface_shift = sp.symbols("cmb_shift surface_shift", integer=True)
 
+# Produce tenary statements for BCs and diagonal kernels
+cmb_shift, surface_shift = sp.symbols("cmb_shift surface_shift", integer=True)
 max_rad, treat_boundary, diagonal, postloop = sp.symbols(
     " max_rad treat_boundary_ diagonal_ postloop", integer=True
 )
@@ -83,25 +84,96 @@ kernel.append(
         ),
     )
 )
+conditionals = {"trial": [], "test": [], "diag_bc": []}
+
+for i in range(num_nodes_per_wedge):
+    cl0 = sp.symbols(f"trial_it{i}_cond", integer=True)
+    cl1 = sp.symbols(f"test_it{i}_cond", integer=True)
+    cl2 = sp.symbols(f"diag_bc_it{i}_cond", integer=True)
+
+    conditionals["trial"].append(cl0)
+    conditionals["test"].append(cl1)
+    conditionals["diag_bc"].append(cl2)
+    kernel.append(
+        (
+            cl0,
+            sp.Piecewise(
+                (
+                    1,
+                    sp.Eq(diagonal, False)
+                    & (i >= (0 + cmb_shift))
+                    & (i < (num_nodes_per_wedge - surface_shift)),
+                ),
+                (0, True),
+            ),
+        )
+    )
+    kernel.append(
+        (
+            cl1,
+            sp.Piecewise(
+                (
+                    1,
+                    sp.Eq(diagonal, False)
+                    & (i >= (0 + cmb_shift))
+                    & (i < (num_nodes_per_wedge - surface_shift)),
+                ),
+                (0, True),
+            ),
+        )
+    )
+    kernel.append(
+        (
+            cl2,
+            sp.Piecewise(
+                (
+                    1,
+                    (
+                        sp.Eq(diagonal, True)
+                        | (
+                            sp.Eq(treat_boundary, True)
+                            & (sp.Eq(r_cell + 1, max_rad) | sp.Eq(r_cell, 0))
+                        )
+                    )
+                    & (
+                        (i >= (0 + surface_shift))
+                        & (i < (num_nodes_per_wedge - cmb_shift))
+                    ),
+                ),
+                (0, True),
+            ),
+        )
+    )
 
 for qi in range(num_qps):
     for w in range(num_wedges_per_hex_cell):
         ### Jacobian
         J = jac_from_array(wedge[w], rads[0], rads[1], qp_data[qi])
 
-        # 1. first CSE
+        # CSE on jacobian
         J_cse_assignments, J_cse_exprs = flattened_cse(J, f"w{w}_tmpcse_J_")
         kernel += J_cse_assignments
 
-        # 2. replace entries with tmp symbols to speed up inversion
+        # replace Jacobian entries with tmp symbols to speed up inversion
         J_cse = sp.Matrix(3, 3, J_cse_exprs)
         J_cse_replaced_assignments, J_cse_replaced = replace_matrix(J_cse, f"w{w}_J")
         kernel += J_cse_replaced_assignments
 
-        # 3. invert
-        J_invT = J_cse_replaced.inv().transpose()
+        # compute abs determinant + CSE
+        J_det = J_cse_replaced.det()
+        J_det_replacements, J_det_reduced_exprs = sp.cse(
+            exprs=J_det, symbols=numbered_symbols(prefix=f"w{w}_tmpcse_det_")
+        )
+        kernel += J_det_replacements
+        J_det_symbol = sp.symbols(f"w{w}_J_det")
+        kernel.append((J_det_symbol, J_det_reduced_exprs[0]))
+        J_abs_det = abs(J_det_symbol)
 
-        # 4. second CSE after inversion
+        # invert + transpose jacobian
+        J_inv = J_cse_replaced.adjugate() / J_det_symbol
+        J_invT = J_inv.transpose()
+
+        # second CSE after inversion
         J_invT_replacements, J_invT_reduced_exprs = flattened_cse(
             J_invT, f"w{w}_tmpcse_J_invT_"
         )
@@ -112,104 +184,59 @@ for qi in range(num_qps):
         )
         kernel += J_invT_cse_assignments
 
-        # 5. compute abs determinant + CSE
-        J_abs_det = abs(J_cse_replaced.det())
-        J_absdet_replacements, J_absdet_reduced_exprs = sp.cse(
-            exprs=J_abs_det, symbols=numbered_symbols(prefix=f"w{w}_tmpcse_absdet_")
+       
+        # precompute gradients + CSE
+        grad_is = []
+        grad_is_symbols = []
+        for i in range(num_nodes_per_wedge):
+            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
+            grad_i_symbol = sp.Matrix(
+                sp.symbols(
+                    f"w{w}_grad_i{i}_0 w{w}_grad_i{i}_1 w{w}_grad_i{i}_2"
+                )
+            )
+            grad_is.append(grad_i)
+            grad_is_symbols.append(grad_i_symbol)
+            
+        grad_i_replacements, grad_i_reduced_exprs = sp.cse(
+            exprs=grad_is,
+            symbols=numbered_symbols(prefix=f"w{w}_tmpcse_grad_i_"),
         )
-        kernel += J_absdet_replacements
-        absdet = sp.symbols(f"w{w}_absdet")
-        kernel.append((absdet, J_absdet_reduced_exprs[0]))
+        print(grad_i_reduced_exprs)
+        print(grad_is_symbols)
+        kernel += grad_i_replacements
+        for grad_i, grad_i_symbol in zip(grad_i_reduced_exprs, grad_is_symbols):
+            for gi, gis in zip(grad_i, grad_i_symbol):
+                kernel.append((gis, gi))
 
-        # 6. assemble src/trial gradient (sum over rows in local matrix)   
+        # assemble src/trial gradient (sum over rows in local matrix)
         srcs_w = sp.Matrix(srcs[w])
         grad_u_symbols = sp.Matrix(
             sp.symbols(f"w{w}_grad_u_0 w{w}_grad_u_1 w{w}_grad_u_2")
         )
         grad_u = sp.Matrix.zeros(3, 1)
+
         for j in range(num_nodes_per_wedge):
-            grad_j = J_invT_cse_replaced * grad_shape_vec(j, qp_data[qi])
-            cond = sp.symbols(f"w{w}_it{j}_cond_l0", integer=True)
-            kernel.append(
-                (
-                    cond,
-                    sp.Piecewise(
-                        (
-                            1,
-                            sp.Eq(diagonal, False)
-                            & (j >= (0 + cmb_shift))
-                            & (j < (num_nodes_per_wedge - surface_shift)),
-                        ),
-                        (0, True),
-                    ),
-                )
-            )
-            grad_u += srcs_w[j] * grad_j * cond
+            grad_u += srcs_w[j] * grad_is_symbols[j] *  conditionals["trial"][j]
         for gu, gu_symbol in zip(grad_u, grad_u_symbols):
             kernel.append((gu_symbol, gu))
-
 
         # pair src/trial gradient with test gradients
         dsts_w_symbols = [
             sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)
         ]
         dsts_w = sp.Matrix.zeros(num_nodes_per_wedge, 1)
+            
+            
         for i in range(num_nodes_per_wedge):
-            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
-            res = absdet * qw_data[qi] * grad_i.transpose() * grad_u_symbols
-            cond = sp.symbols(f"w{w}_it{i}_cond_l1", integer=True)
-            kernel.append(
-                (
-                    cond,
-                    sp.Piecewise(
-                        (
-                            1,
-                            sp.Eq(diagonal, False)
-                            & (i >= (0 + cmb_shift))
-                            & (i < (num_nodes_per_wedge - surface_shift)),
-                        ),
-                        (0, True),
-                    ),
-                )
-            )
-            dsts_w[i] += res[0] * cond
+            res = J_abs_det * qw_data[qi] * grad_is_symbols[i].transpose() * grad_u_symbols
+            dsts_w[i] += res[0] *  conditionals["test"][i]
 
         # post loop for bcs or diagonal kernel
         for i in range(num_nodes_per_wedge):
-            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
-            grad_u_diag_symbols = sp.Matrix(
-                sp.symbols(
-                    f"w{w}_it{i}_grad_u_diag_0 w{w}_it{i}_grad_u_diag_1 w{w}_it{i}_grad_u_diag_2"
-                )
-            )
-            grad_u_diag = srcs_w[i] * grad_i
-            for gu, gu_symbol in zip(grad_u_diag, grad_u_diag_symbols):
-                kernel.append((gu_symbol, gu))
-            res = absdet * qw_data[qi] * grad_i.transpose() * grad_u_diag_symbols
-            cond = sp.symbols(f"w{w}_it{i}_cond_l2", integer=True)
-            kernel.append(
-                (
-                    cond,
-                    sp.Piecewise(
-                        (
-                            1,
-                            (
-                                sp.Eq(diagonal, True)
-                                | (
-                                    sp.Eq(treat_boundary, True)
-                                    & (sp.Eq(r_cell + 1, max_rad) | sp.Eq(r_cell, 0))
-                                )
-                            )
-                            & (
-                                (i >= (0 + surface_shift))
-                                & (i < (num_nodes_per_wedge - cmb_shift))
-                            ),
-                        ),
-                        (0, True),
-                    ),
-                )
-            )
-            dsts_w[i] += res[0] * cond
+            grad_u_diag = srcs_w[i] * grad_is_symbols[i]
+            res = J_abs_det * qw_data[qi] * grad_i.transpose() * grad_u_diag
+            dsts_w[i] += res[0] * conditionals["diag_bc"][i]
 
         # final cse
         dst_replacements, dst_reduced_exprs = sp.cse(
