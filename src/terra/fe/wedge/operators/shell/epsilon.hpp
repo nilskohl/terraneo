@@ -24,8 +24,9 @@ class Epsilon
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 > grid_;
-    grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 >    grid_;
+    grid::Grid2DDataScalar< ScalarT >    radii_;
+    grid::Grid4DDataScalar< ScalarType > k_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -38,7 +39,6 @@ class Epsilon
 
     grid::Grid4DDataVec< ScalarType, VecDim > src_;
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
-    grid::Grid4DDataScalar< ScalarType >      k_;
 
   public:
     Epsilon(
@@ -399,7 +399,7 @@ class Epsilon
             }
         }
     }
-    
+
     KOKKOS_INLINE_FUNCTION void diagonal(
         ScalarType                      src_local_hex[8],
         ScalarType                      dst_local_hex[8],
