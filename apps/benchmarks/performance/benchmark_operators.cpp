@@ -84,7 +84,7 @@ struct BenchmarkData
 struct Parameters
 {
     int min_level  = 1;
-    int max_level  = 6;
+    int max_level  = 8;
     int executions = 5;
 };
 
