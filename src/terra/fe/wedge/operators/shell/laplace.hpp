@@ -114,13 +114,13 @@ class Laplace
         const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
 
         // Quadrature points.
-        constexpr auto num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
+        constexpr auto num_quad_points = quadrature::quad_felippa_3x2_num_quad_points;
 
         dense::Vec< ScalarT, 3 > quad_points[num_quad_points];
         ScalarT                  quad_weights[num_quad_points];
 
-        quadrature::quad_felippa_1x1_quad_points( quad_points );
-        quadrature::quad_felippa_1x1_quad_weights( quad_weights );
+        quadrature::quad_felippa_3x2_quad_points( quad_points );
+        quadrature::quad_felippa_3x2_quad_weights( quad_weights );
 
         // Compute the local element matrix.
 

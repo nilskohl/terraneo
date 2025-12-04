@@ -36,26 +36,25 @@ quad, wedge, lat, wedge_assignments = make_wedge_surface_physical_coord_assignme
     local_subdomain_id, x_cell, y_cell
 )
 rads, rad_assignments = make_rad_assignments(local_subdomain_id, r_cell)
-num_qps, qps, qws, qp_assignments = make_quad_assignments(
-    quad_points_1x1, quad_weights_1x1
-)
+
 srcs, src_assignments = make_extract_local_wedge_scalar_assignments(
     local_subdomain_id, x_cell, y_cell, r_cell
 )
 # make_hex_assignments(local_subdomain_id, x_cell, y_cell, r_cell)
 kernel += wedge_assignments
 kernel += rad_assignments
-# kernel += qp_assignments
 kernel += src_assignments
 
-qp_data = quad_points_1x1
-qw_data = quad_weights_1x1
+qp_data = quad_points_3x2
+qw_data = quad_weights_3x2
+num_qps = 6
 
 num_wedges_per_hex_cell = 2
 num_nodes_per_wedge_surface = 3
 num_nodes_per_wedge = 6
 dim = 3
 dsts = []
+
 
 # Produce tenary statements for BCs and diagonal kernels
 cmb_shift, surface_shift = sp.symbols("cmb_shift surface_shift", integer=True)
@@ -145,27 +144,32 @@ for i in range(num_nodes_per_wedge):
         )
     )
 
-for qi in range(num_qps):
-    for w in range(num_wedges_per_hex_cell):
+for w in range(num_wedges_per_hex_cell):
+   
+    dsts_w = sp.Matrix.zeros(num_nodes_per_wedge, 1)
+
+    for q in range(num_qps):
+        dsts_qw = sp.Matrix.zeros(num_nodes_per_wedge, 1)
+
         ### Jacobian
-        J = jac_from_array(wedge[w], rads[0], rads[1], qp_data[qi])
+        J = jac_from_array(wedge[w], rads[0], rads[1], qp_data[q])
 
         # CSE on jacobian
-        J_cse_assignments, J_cse_exprs = flattened_cse(J, f"w{w}_tmpcse_J_")
+        J_cse_assignments, J_cse_exprs = flattened_cse(J, f"w{w}_q{q}_tmpcse_J_")
         kernel += J_cse_assignments
 
         # replace Jacobian entries with tmp symbols to speed up inversion
         J_cse = sp.Matrix(3, 3, J_cse_exprs)
-        J_cse_replaced_assignments, J_cse_replaced = replace_matrix(J_cse, f"w{w}_J")
+        J_cse_replaced_assignments, J_cse_replaced = replace_matrix(J_cse, f"w{w}_q{q}_J")
         kernel += J_cse_replaced_assignments
 
         # compute abs determinant + CSE
         J_det = J_cse_replaced.det()
         J_det_replacements, J_det_reduced_exprs = sp.cse(
-            exprs=J_det, symbols=numbered_symbols(prefix=f"w{w}_tmpcse_det_")
+            exprs=J_det, symbols=numbered_symbols(prefix=f"w{w}_q{q}_tmpcse_det_")
         )
         kernel += J_det_replacements
-        J_det_symbol = sp.symbols(f"w{w}_J_det")
+        J_det_symbol = sp.symbols(f"w{w}_q{q}_J_det")
         kernel.append((J_det_symbol, J_det_reduced_exprs[0]))
         J_abs_det = abs(J_det_symbol)
 
@@ -175,12 +179,12 @@ for qi in range(num_qps):
 
         # second CSE after inversion
         J_invT_replacements, J_invT_reduced_exprs = flattened_cse(
-            J_invT, f"w{w}_tmpcse_J_invT_"
+            J_invT, f"w{w}_q{q}_tmpcse_J_invT_"
         )
         kernel += J_invT_replacements
         J_invT_cse = sp.Matrix(3, 3, J_invT_reduced_exprs)
         J_invT_cse_assignments, J_invT_cse_replaced = replace_matrix(
-            J_invT_cse, f"w{w}_J_invT_cse"
+            J_invT_cse, f"w{w}_q{q}_J_invT_cse"
         )
         kernel += J_invT_cse_assignments
 
@@ -189,10 +193,10 @@ for qi in range(num_qps):
         grad_is = []
         grad_is_symbols = []
         for i in range(num_nodes_per_wedge):
-            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[qi])
+            grad_i = J_invT_cse_replaced * grad_shape_vec(i, qp_data[q])
             grad_i_symbol = sp.Matrix(
                 sp.symbols(
-                    f"w{w}_grad_i{i}_0 w{w}_grad_i{i}_1 w{w}_grad_i{i}_2"
+                    f"w{w}_q{q}_grad_i{i}_0 w{w}_q{q}_grad_i{i}_1 w{w}_q{q}_grad_i{i}_2"
                 )
             )
             grad_is.append(grad_i)
@@ -200,10 +204,8 @@ for qi in range(num_qps):
             
         grad_i_replacements, grad_i_reduced_exprs = sp.cse(
             exprs=grad_is,
-            symbols=numbered_symbols(prefix=f"w{w}_tmpcse_grad_i_"),
+            symbols=numbered_symbols(prefix=f"w{w}_q{q}_tmpcse_grad_i_"),
         )
-        print(grad_i_reduced_exprs)
-        print(grad_is_symbols)
         kernel += grad_i_replacements
         for grad_i, grad_i_symbol in zip(grad_i_reduced_exprs, grad_is_symbols):
             for gi, gis in zip(grad_i, grad_i_symbol):
@@ -212,42 +214,42 @@ for qi in range(num_qps):
         # assemble src/trial gradient (sum over rows in local matrix)
         srcs_w = sp.Matrix(srcs[w])
         grad_u_symbols = sp.Matrix(
-            sp.symbols(f"w{w}_grad_u_0 w{w}_grad_u_1 w{w}_grad_u_2")
+            sp.symbols(f"w{w}_q{q}_grad_u_0 w{w}_q{q}_grad_u_1 w{w}_q{q}_grad_u_2")
         )
         grad_u = sp.Matrix.zeros(3, 1)
 
         for j in range(num_nodes_per_wedge):
-            grad_u += srcs_w[j] * grad_is_symbols[j] *  conditionals["trial"][j]
+            grad_u += srcs_w[j] * grad_is_symbols[j] * conditionals["trial"][j]
         for gu, gu_symbol in zip(grad_u, grad_u_symbols):
             kernel.append((gu_symbol, gu))
-
-        # pair src/trial gradient with test gradients
-        dsts_w_symbols = [
-            sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)
-        ]
-        dsts_w = sp.Matrix.zeros(num_nodes_per_wedge, 1)
-            
             
         for i in range(num_nodes_per_wedge):
-            res = J_abs_det * qw_data[qi] * grad_is_symbols[i].transpose() * grad_u_symbols
-            dsts_w[i] += res[0] *  conditionals["test"][i]
+            res = J_abs_det * qw_data[q] * grad_is_symbols[i].transpose() * grad_u_symbols  * conditionals["test"][i]
+            dsts_qw[i] += res[0] 
 
         # post loop for bcs or diagonal kernel
         for i in range(num_nodes_per_wedge):
-            grad_u_diag = srcs_w[i] * grad_is_symbols[i]
-            res = J_abs_det * qw_data[qi] * grad_i.transpose() * grad_u_diag
-            dsts_w[i] += res[0] * conditionals["diag_bc"][i]
+            grad_u_diag = srcs_w[i] * grad_is_symbols[i] * conditionals["diag_bc"][i]
+            res = J_abs_det * qw_data[q] * grad_i.transpose() * grad_u_diag
+            dsts_qw[i] += res[0] 
 
         # final cse
         dst_replacements, dst_reduced_exprs = sp.cse(
-            exprs=dsts_w,
-            symbols=numbered_symbols(prefix=f"w{w}_tmpcse_dst_", ignore=[Pow]),
+            exprs=dsts_qw,
+            symbols=numbered_symbols(prefix=f"w{w}_q{q}_tmpcse_dst_", ignore=[Pow]),
         )
         kernel += dst_replacements
-        for i, dw in enumerate(dsts_w_symbols):
-            kernel.append((dw, dst_reduced_exprs[0][i]))
+        for i in range(num_nodes_per_wedge):
+            dsts_w[i] += dsts_qw[i]
 
-        dsts += [dsts_w_symbols]
+        
+   
+    dsts_w_symbols = [
+        sp.symbols(f"dst_{w}_{i}") for i in range(num_nodes_per_wedge)
+    ]
+    for i, dw in enumerate(dsts_w_symbols):
+        kernel.append((dw, dsts_w[i]))
+    dsts += [dsts_w_symbols]
 
 kernel += make_atomic_add_local_wedge_scalar_coefficients(
     local_subdomain_id, x_cell, y_cell, r_cell, dsts

@@ -39,7 +39,7 @@ class LaplaceSimple
 
     bool treat_boundary_;
     bool diagonal_;
-    bool single_quadpoint_ = true;
+    bool single_quadpoint_ = false;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;

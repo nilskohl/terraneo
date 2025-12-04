@@ -474,7 +474,6 @@ void unit_sphere_single_shell_subdomain_coords(
 class SubdomainInfo
 {
   public:
-
     /// @brief Creates invalid ID.
     SubdomainInfo()
     : diamond_id_( -1 )
@@ -2518,6 +2517,17 @@ inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
           distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
           distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
           distributed_domain.domain_info().subdomain_num_nodes_radially() - 1 } );
+}
+
+inline Kokkos::RangePolicy<>
+    local_domain_md_range_policy_cells_linearized( const DistributedDomain& distributed_domain )
+{
+    return Kokkos::RangePolicy<>(
+        0,
+        static_cast< long long >( distributed_domain.subdomains().size() ) *
+            ( distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1 ) *
+            ( distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1 ) *
+            ( distributed_domain.domain_info().subdomain_num_nodes_radially() - 1 ) );
 }
 
 /// @brief Returns an initialized grid with the coordinates of all subdomains' nodes projected to the unit sphere.

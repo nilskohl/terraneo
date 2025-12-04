@@ -8,7 +8,7 @@ def make_float_symbol(name):
     return sp.symbols(name, real=True, finite=True)
 
 
-def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cellz):
+def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cell):
     num_wedges_per_hex_cell = 2
     num_nodes_per_wedge_surface = 3
     dim = 3
@@ -225,12 +225,12 @@ quad_points_3x2 = [
     [0.1666666666666667, 0.1666666666666667, 0.5773502691896257],
 ]
 quad_weights_3x2 = [
-    [0.1666666666666667],
-    [0.1666666666666667],
-    [0.1666666666666667],
-    [0.1666666666666667],
-    [0.1666666666666667],
-    [0.1666666666666667],
+    0.1666666666666667,
+    0.1666666666666667,
+    0.1666666666666667,
+    0.1666666666666667,
+    0.1666666666666667,
+    0.1666666666666667,
 ]
 quad_points_1x1 = [[1.0 / 3.0, 1.0 / 3.0, 0.0]]
 quad_weights_1x1 = [1.0]
