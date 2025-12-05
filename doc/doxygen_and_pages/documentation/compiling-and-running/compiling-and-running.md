@@ -11,7 +11,7 @@ git clone https://github.com/mantleconvection/terraneo
 ```
 
 However, if you want to modify the code, you should fork the repository and clone your fork.
-Have a look at the [contributing guidelines](../contributing/contributing.md) for more information.
+Have a look at the [contributing guidelines](#contributing) for more information.
 
 ## Configuring with CMake
 
@@ -32,7 +32,7 @@ Without any additional arguments, Kokkos will be configured to compile for CPU s
 To compile for GPU systems, you need to pass flags like `-DKokkos_ENABLE_CUDA=ON` (for NVIDIA systems) to CMake.
 
 \note Have a look at the hints for configuring on various systems in the 
-[cluster setup recipes](../cluster-setup/cluster-setup.md).
+[cluster setup recipes](#cluster-setup).
 
 ## Building
 

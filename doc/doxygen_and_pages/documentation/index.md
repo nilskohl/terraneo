@@ -1,24 +1,3 @@
-
-Extreme-scale, performance-portable mantle convection code. Originating from the [TerraNeo](https://terraneo.fau.de) project.
-
-* 📖 [Documentation](framework/framework.md)
-* 💻 [Cluster setup](cluster-setup/cluster-setup.md)
-
-\note This code is still in the alpha phase. Feel free to try it out, but expect bugs and missing features.
-
-### Main features (possibly not completely implemented at the moment)
-
-* Runs in massively parallel settings on CPU and GPU systems (via [Kokkos](https://github.com/kokkos/kokkos) and MPI)
-* Spherical wedge finite-elements
-* Stable discretization of the generalized, compressible Stokes equations (Q1-iso-Q2 / Q1)
-* Advection-Diffusion discretization using SUPG
-* Plate boundary conditions
-* Fully matrix-free
-* Krylov methods and geometric multigrid preconditioners (using GCA coarse grid operators)
-* Memory efficient unified visualization and checkpoint format (using XDMF)
-* Tools (input and output of radial profiles, spherical harmonics)
-* Written in modern C++20
-
 ### Bugs
 
 - [ ] random value interpolation is not correctly working since values at overlapping nodes are not equal without proper 
