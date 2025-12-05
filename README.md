@@ -2,12 +2,17 @@
 
 Extreme-scale mantle convection code for CPU and GPU systems. Originating from the [TerraNeo project](https://terraneo.fau.de).
 
-* 🏃‍♀️ [Compiling and running](doc/doxygen_and_pages/documentation/compiling-and-running/compiling-and-running.md)
-* 💻 [Cluster setup](doc/doxygen_and_pages/documentation/cluster-setup/cluster-setup.md)
-* 📖 [Documentation](doc/doxygen_and_pages/documentation/framework/framework.md)
-* 🔨 [Contribute](doc/doxygen_and_pages/documentation/contributing/contributing.md)
-
 > ❗️The code is early in development, and thus not yet ready for production. But feel free to try it out!
+
+## Documentation
+
+📜 Check out the [documentation](https://mantleconvection.github.io/terraneo/) pages or jump directly to one of the 
+following sections:
+
+* 🏃‍♀️ [Compiling and running](https://mantleconvection.github.io/terraneo/compiling-and-running.html)
+* 💻 [Cluster setup](https://mantleconvection.github.io/terraneo/cluster-setup.html)
+* 📖 [Framework documentation](https://mantleconvection.github.io/terraneo/framework-documentation.html)
+* 🔨 [How to contribute](https://mantleconvection.github.io/terraneo/contributing.html)
 
 ## Quickstart
 
