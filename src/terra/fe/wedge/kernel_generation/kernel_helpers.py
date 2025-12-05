@@ -24,29 +24,22 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
     num_nodes_per_wedge_surface = 3
     dim = 3
 
-    # lateral_grid(local_subdomain_id, x_cell+i, y_cell+j, d)
     lateral_grid = [
         [
             [
-                [
-                    FunctionCall(
-                        "src_", [local_subdomain_id, x_cell + i, y_cell + j, d]
-                    )
-                    for d in range(dim)
-                ]
-                for j in range(2)
+                FunctionCall("grid_", [local_subdomain_id, x_cell + i, y_cell + j, d])
+                for d in range(dim)
             ]
-            for i in range(2)
+            for j in range(2)
         ]
+        for i in range(2)
     ]
 
     # quad_surface_coords
     quad_surface_coords = [
         [
             [
-                sp.symbols(
-                    f"quad_surface_coords_{i}_{j}_{d}", real=True
-                )
+                sp.symbols(f"quad_surface_coords_{i}_{j}_{d}", real=True)
                 for d in range(dim)
             ]
             for j in range(2)
@@ -58,9 +51,7 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
     wedge_surf_phy_coords = [
         [
             [
-                sp.symbols(
-                    f"wedge_surf_phy_coords_{w}_{n}_{d}", real=True
-                )
+                sp.symbols(f"wedge_surf_phy_coords_{w}_{n}_{d}", real=True)
                 for d in range(dim)
             ]
             for n in range(num_nodes_per_wedge_surface)
@@ -69,13 +60,20 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
     ]
 
     assignments = []
+    array_declarations = "\n"
+    array_declarations += f"double wedge_surf_phy_coords[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];"
+    array_declarations += f"\ndouble quad_surface_coords[{2}][{2}][{dim}];\n"
+    wedge_surf_phy_coords_symbol = Pointer("wedge_surf_phy_coords")
+    quad_surface_coords_symbol = Pointer("quad_surface_coords")
 
     # Populate quad surface coordinates
     for i in range(2):
         for j in range(2):
             for d in range(dim):
                 assignments.append(
-                    Variable.deduced(quad_surface_coords[i][j][d]).as_Declaration(value= lateral_grid[0][i][j][d])
+                    Assignment(
+                        quad_surface_coords_symbol[i, j, d], lateral_grid[i][j][d]
+                    )
                 )
     # Mapping from C++ wedge logic
     mapping = [
@@ -90,13 +88,16 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
     for w, n, qi, qj in mapping:
         for d in range(3):
             assignments.append(
-                Variable.deduced(wedge_surf_phy_coords[w][n][d]).as_Declaration(value= quad_surface_coords[qi][qj][d])
+                Assignment(
+                    wedge_surf_phy_coords_symbol[w, n, d],
+                    quad_surface_coords_symbol[qi, qj, d],
+                )
             )
 
     return (
-        quad_surface_coords,
-        wedge_surf_phy_coords,
-        lateral_grid,
+        quad_surface_coords_symbol,
+        wedge_surf_phy_coords_symbol,
+        array_declarations,
         CodeBlock(*assignments),
     )
 
@@ -106,7 +107,11 @@ def make_rad_assignments(local_subdomain_id, r_cell):
     rads = [sp.symbols(f"r_{i}", real=True) for i in range(2)]
 
     for i in range(2):
-        Variable.deduced(rads[i]).as_Declaration(value= FunctionCall("radii_", [r_cell + i]))
+        assignments.append(
+            Variable.deduced(rads[i]).as_Declaration(
+                value=FunctionCall("radii_", [local_subdomain_id, r_cell + i])
+            )
+        )
     return rads, CodeBlock(*assignments)
 
 
@@ -122,54 +127,41 @@ def make_extract_local_wedge_scalar_assignments(
             "src_", [local_subdomain_id, x_cell + dx, y_cell + dy, r_cell + dr]
         )
 
+    assigns = []
+    array_declaration = f"\ndouble src_local_hex[2][{6}];\n"
+    src_symbol = Pointer("src_local_hex")
+
     # Output stores
     def L(w, i):
-        return sp.symbols(f"src_{w}_{i}", real=True)
-
-    assigns = []
-    src_symbols = []
+        return src_symbol[w, i]
 
     # ---- wedge 0 ----
     assigns += [
-        Declaration(Variable.deduced(L(0, 0))),
         Assignment(L(0, 0), G(0, 0, 0)),
-        Declaration(Variable.deduced(L(0, 1))),
         Assignment(L(0, 1), G(1, 0, 0)),
-        Declaration(Variable.deduced(L(0, 2))),
         Assignment(L(0, 2), G(0, 1, 0)),
-        Declaration(Variable.deduced(L(0, 3))),
         Assignment(L(0, 3), G(0, 0, 1)),
-        Declaration(Variable.deduced(L(0, 4))),
         Assignment(L(0, 4), G(1, 0, 1)),
-        Declaration(Variable.deduced(L(0, 5))),
         Assignment(L(0, 5), G(0, 1, 1)),
     ]
-    src_symbols += [[L(0, i) for i in range(6)]]
 
     # ---- wedge 1 ----
     assigns += [
-        Declaration(Variable.deduced(L(1, 0))),
         Assignment(L(1, 0), G(1, 1, 0)),
-        Declaration(Variable.deduced(L(1, 1))),
         Assignment(L(1, 1), G(0, 1, 0)),
-        Declaration(Variable.deduced(L(1, 2))),
         Assignment(L(1, 2), G(1, 0, 0)),
-        Declaration(Variable.deduced(L(1, 3))),
         Assignment(L(1, 3), G(1, 1, 1)),
-        Declaration(Variable.deduced(L(1, 4))),
         Assignment(L(1, 4), G(0, 1, 1)),
-        Declaration(Variable.deduced(L(1, 5))),
         Assignment(L(1, 5), G(1, 0, 1)),
     ]
-    src_symbols += [[L(1, i) for i in range(6)]]
 
-    return src_symbols, CodeBlock(*assigns)
+    return src_symbol, array_declaration, CodeBlock(*assigns)
 
 
 def make_atomic_add_local_wedge_scalar_coefficients(
     local_subdomain_id, x_cell, y_cell, r_cell, dsts
 ):
-    lines = []
+    lines = "\n"
 
     def A(dx, dy, dr):
         return (
@@ -177,7 +169,7 @@ def make_atomic_add_local_wedge_scalar_coefficients(
         )
 
     def L(w, i):
-        return dsts[w][i]
+        return f"dst_array[{w}][{i}]"
 
     # atomic add statements (global index, RHS expression)
     ops = [
@@ -193,7 +185,7 @@ def make_atomic_add_local_wedge_scalar_coefficients(
 
     for (dx, dy, dr), rhs in ops:
         g = A(dx, dy, dr)
-        lines.append(f"Kokkos::atomic_add(&{g}, {rhs});\n")
+        lines += f"Kokkos::atomic_add(&{g}, {rhs});\n"
 
     return lines
 
