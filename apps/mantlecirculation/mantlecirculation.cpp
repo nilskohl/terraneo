@@ -5,7 +5,6 @@
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv_stokes.hpp"
-#include "fe/wedge/operators/shell/galerkin_coarsening_linear.hpp"
 #include "fe/wedge/operators/shell/kmass.hpp"
 #include "fe/wedge/operators/shell/mass.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
@@ -23,6 +22,7 @@
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/diagonal_solver.hpp"
 #include "linalg/solvers/fgmres.hpp"
+#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -55,6 +55,7 @@ using linalg::VectorQ1Vec;
 using util::logroot;
 using util::Ok;
 using util::Result;
+using linalg::solvers::TwoGridGCA;
 
 struct InitialConditionInterpolator
 {
@@ -287,6 +288,22 @@ Result<> run( const Parameters& prm )
         viscosity_interpolator.interpolate( eta[level].grid_data() );
     }
 
+    // determine AGCA elements
+    VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], ownership_mask_data[0] );
+    int gca = 1;
+    if ( gca == 2 )
+    {
+        linalg::assign( GCAElements, 0 );
+        std::cout << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
+        terra::linalg::solvers::GCAElementsCollector< ScalarType >(
+            domains[velocity_level], eta[velocity_level].grid_data(), velocity_level, GCAElements.grid_data() );
+    }
+    else if ( gca == 1 )
+    {
+        std::cout << "GCA on all elements " << std::endl;
+        assign( GCAElements, 1 );
+    }
+
     // Set up tmp vecs for FGMRES
 
     std::vector< VectorQ1IsoQ2Q1< ScalarType > > stokes_tmp_fgmres;
@@ -391,20 +408,31 @@ Result<> run( const Parameters& prm )
     {
         A_c.emplace_back(
             domains[level], coords_shell[level], coords_radii[level], eta[level].grid_data(), true, false );
-        A_c.back().allocate_local_matrix_memory();
+        if ( gca == 2 )
+        {
+            A_c.back().set_stored_matrix_mode(
+                linalg::OperatorStoredMatrixMode::Selective, level, GCAElements.grid_data() );
+        }
+        else if ( gca == 1 )
+        {
+            A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
+        }
         P.emplace_back( linalg::OperatorApplyMode::Add );
         R.emplace_back( domains[level] );
     }
 
     // GCA
-    if ( true )
+    if ( gca > 0 )
     {
         for ( int level = num_levels - 2; level >= 0; level-- )
         {
             logroot << "Assembling GCA on level " << level << std::endl;
 
-            fe::wedge::operators::shell::TwoGridGCA< ScalarType, Viscous >(
-                ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1], A_c[level] );
+            TwoGridGCA< ScalarType, Viscous >(
+                ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1],
+                A_c[level],
+                level,
+                GCAElements.grid_data() );
         }
     }
 
