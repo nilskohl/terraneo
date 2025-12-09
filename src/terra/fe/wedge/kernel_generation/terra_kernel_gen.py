@@ -236,7 +236,6 @@ quadloop_body.append(
 
 
 # Jacobian
-quadloop_body += [Comment("Computation + Inversion of the Jacobian")]
 J = jac_from_array(
     [
         [wedge_surf_phy_coords_symbol[w_symbol, j, d] for d in range(dim)]
@@ -247,36 +246,39 @@ J = jac_from_array(
     qp,
 )
 # CSE on jacobian
+jac_exprs = []
 J_cse_assignments, J_cse_exprs = flattened_cse(J, f"tmpcse_J_")
-quadloop_exprs += J_cse_assignments
+jac_exprs += J_cse_assignments
 # replace Jacobian entries with tmp symbols to speed up inversion
 J_cse = sp.Matrix(3, 3, J_cse_exprs)
 J_cse_replaced_assignments, J_cse_replaced = replace_matrix(J_cse, f"J")
-quadloop_exprs += J_cse_replaced_assignments
+jac_exprs += J_cse_replaced_assignments
 # compute abs determinant + CSE
 J_det = J_cse_replaced.det()
 J_det_replacements, J_det_reduced_exprs = sp.cse(
     exprs=J_det, symbols=numbered_symbols(prefix=f"tmpcse_det_", real=True)
 )
-quadloop_exprs += J_det_replacements
+jac_exprs += J_det_replacements
 J_det_symbol = sp.symbols(f"J_det", real=True)
-quadloop_exprs.append((J_det_symbol, J_det_reduced_exprs[0]))
+jac_exprs.append((J_det_symbol, J_det_reduced_exprs[0]))
 J_abs_det = abs(J_det_symbol)
 # invert + transpose jacobian
 J_inv = J_cse_replaced.adjugate() / J_det_symbol
 J_invT = J_inv.transpose()
 # second CSE after inversion
 J_invT_replacements, J_invT_reduced_exprs = flattened_cse(J_invT, f"tmpcse_J_invT_")
-quadloop_exprs += J_invT_replacements
+jac_exprs += J_invT_replacements
 J_invT_cse = sp.Matrix(3, 3, J_invT_reduced_exprs)
 J_invT_cse_assignments, J_invT_cse_replaced = replace_matrix(J_invT_cse, f"J_invT_cse")
-quadloop_exprs += J_invT_cse_assignments
+jac_exprs += J_invT_cse_assignments
+quadloop_body += [Comment("Computation + Inversion of the Jacobian")] + make_ast_from_exprs(jac_exprs)
 
 # precompute gradients + CSE
+grad_exprs = []
 scalar_grad_is = []
 scalar_grad_name = "scalar_grad"
 scalar_grad = IndexedBase(scalar_grad_name, shape=(num_nodes_per_wedge, dim), real=True)
-quadloop_exprs.append(
+grad_exprs.append(
     f"\ndouble {scalar_grad_name}[{num_nodes_per_wedge}][{dim}] = {{0}}"
 )
 for i in range(num_nodes_per_wedge):
@@ -285,14 +287,15 @@ scalar_grad_i_replacements, scalar_grad_i_reduced_exprs = sp.cse(
     exprs=scalar_grad_is,
     symbols=numbered_symbols(prefix=f"tmpcse_grad_i_", real=True),
 )
-quadloop_exprs += scalar_grad_i_replacements
+grad_exprs += scalar_grad_i_replacements
 for i, grad_i_expr in enumerate(scalar_grad_i_reduced_exprs):
     for d, gie in enumerate(grad_i_expr):
-        quadloop_exprs.append((scalar_grad[i, d], gie))
+        grad_exprs.append((scalar_grad[i, d], gie))
 
 # up to here, we are component-invariant, and can already transform
 # the symbolic computation to actual AST nodes and add it to the quadrature loop body
-quadloop_body += make_ast_from_exprs(quadloop_exprs)
+quadloop_body += [Comment("Computation of the gradient of the scalar shape functions belonging to each DoF.\n " \
+"In the Eps-component-loops, we insert the gradient at the entry of the vectorial gradient matrix corresponding to the Eps-component.")] + make_ast_from_exprs(grad_exprs)
 
 # from now on, statements go into the component/dimensions loops
 dimloop_j_body = []
@@ -503,6 +506,7 @@ kernel_code += (
         CodeBlock(
             *[
                 Variable.deduced(w_symbol).as_Declaration(value=0),
+                Comment("Apply local matrix for both wedges and accumulated for all quadrature points."),
                 For(
                     w_symbol,
                     range(0, 2),
@@ -517,10 +521,14 @@ kernel_code += (
                                 String(f"\ndouble {grad_u}[3][3] = {{0}}"),
                                 Variable.deduced(div_u).as_Declaration(value=0.0),
                                 Variable.deduced(g_symbol).as_Declaration(),
+                                Comment("In the following, we exploit the outer-product-structure both in \nthe components of the Epsilon operators and in the local DoFs."),
+                                Comment("Loop to assemble the trial gradient."),
                                 For(dimj_symbol, range(0, dim), *[dimloop_j_body]),
                                 Variable.deduced(dimi_symbol).as_Declaration(),
+                                Comment("Loop to pair the assembled trial gradient with the test gradients."),
                                 For(dimi_symbol, range(0, dim), *[dimloop_i_body]),
                                 Variable.deduced(dim_diagBC_symbol).as_Declaration(),
+                                Comment("Loop to apply BCs or only the diagonal of the operator."),
                                 For(
                                     dim_diagBC_symbol,
                                     range(0, dim),

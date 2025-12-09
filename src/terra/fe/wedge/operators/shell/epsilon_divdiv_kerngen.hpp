@@ -369,6 +369,7 @@ class EpsilonDivDivKerngen
             int surface_shift = ( ( treat_boundary_ && diagonal_ == false && max_rad == r_cell + 1 ) ? ( 3 ) : ( 0 ) );
             double dst_array[3][2][6] = { 0 };
             int    w                  = 0;
+            /* Apply local matrix for both wedges and accumulated for all quadrature points. */;
             for ( w = 0; w < 2; w += 1 )
             {
                 int q = 0;
@@ -416,6 +417,9 @@ class EpsilonDivDivKerngen
                     double J_invT_cse_2_0  = tmpcse_J_invT_0 * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
                     double J_invT_cse_2_1  = tmpcse_J_invT_0 * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
                     double J_invT_cse_2_2  = tmpcse_J_invT_0 * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
+                    /* Computation of the gradient of the scalar shape functions belonging to each DoF.
+      In the Eps-component-loops, we insert the gradient at the entry of the vectorial gradient matrix corresponding to the Eps-component. */
+                    ;
 
                     double scalar_grad[6][3] = { 0 };
                     double tmpcse_grad_i_0   = ( 1.0 / 2.0 ) * qp_array[q][2];
@@ -462,6 +466,10 @@ class EpsilonDivDivKerngen
                     double grad_u[3][3] = { 0 };
                     double div_u        = 0.0;
                     int    node_idx;
+                    /* In the following, we exploit the outer-product-structure both in 
+      the components of the Epsilon operators and in the local DoFs. */
+                    ;
+                    /* Loop to assemble the trial gradient. */;
                     for ( dimj = 0; dimj < 3; dimj += 1 )
                     {
                         if ( diagonal_ == false )
@@ -492,6 +500,7 @@ class EpsilonDivDivKerngen
                         };
                     };
                     int dimi;
+                    /* Loop to pair the assembled trial gradient with the test gradients. */;
                     for ( dimi = 0; dimi < 3; dimi += 1 )
                     {
                         if ( diagonal_ == false )
@@ -523,6 +532,7 @@ class EpsilonDivDivKerngen
                         };
                     };
                     int dim_diagBC;
+                    /* Loop to apply BCs or only the diagonal of the operator. */;
                     for ( dim_diagBC = 0; dim_diagBC < 3; dim_diagBC += 1 )
                     {
                         if ( diagonal_ || treat_boundary_ && ( r_cell == 0 || r_cell + 1 == max_rad ) )
