@@ -125,9 +125,9 @@ kernel_code += ccode(k_assignments, contract=False)
 
 
 # quadrature data initialization
-qp_data = quad_points_3x2
-qw_data = quad_weights_3x2
-num_qps = 6
+qp_data = quad_points_1x1
+qw_data = quad_weights_1x1
+num_qps = 1
 dim = 3
 # have to do string injection here because sympy
 qp_array_name = "qp_array"
@@ -294,8 +294,9 @@ for i, grad_i_expr in enumerate(scalar_grad_i_reduced_exprs):
 
 # up to here, we are component-invariant, and can already transform
 # the symbolic computation to actual AST nodes and add it to the quadrature loop body
-quadloop_body += [Comment("Computation of the gradient of the scalar shape functions belonging to each DoF.\n " \
-"In the Eps-component-loops, we insert the gradient at the entry of the vectorial gradient matrix corresponding to the Eps-component.")] + make_ast_from_exprs(grad_exprs)
+quadloop_body += [Comment("Computation of the gradient of the scalar shape functions belonging to each DoF.\n " 
+                        "In the Eps-component-loops, we insert the gradient at the entry of the\n " \
+                        "vectorial gradient matrix corresponding to the Eps-component.")] + make_ast_from_exprs(grad_exprs)
 
 # from now on, statements go into the component/dimensions loops
 dimloop_j_body = []

@@ -212,14 +212,14 @@ struct KInterpolator
         const double value                   = 2 + Kokkos::sin( coords( 2 ) );
         data_( local_subdomain_id, x, y, r ) = value;
         //data_( local_subdomain_id, x, y, r ) = value;
-        if ( coords.norm() > 0.75 )
+        /*if ( coords.norm() > 0.75 )
         {
             data_( local_subdomain_id, x, y, r ) = kmax_;
         }
         else
         {
             data_( local_subdomain_id, x, y, r ) = 1;
-        }
+        }*/
     }
 };
 
@@ -688,15 +688,15 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 4;
+    const int max_level = 5;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
     double prev_l2_error_pre = 1.0;
 
-    std::vector< int > kmaxs = { 1, 10, 100, 1000, 10000 };
+    std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 0, 1, 2 }; //, 1 };
+    std::vector< int > gcas = { 1 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
@@ -711,7 +711,7 @@ int main( int argc, char** argv )
             terra::util::Table::Row cycles;
             for ( int kmax : kmaxs )
             {
-                for ( int level = max_level; level <= max_level; ++level )
+                for ( int level = 2; level <= max_level; ++level )
                 {
                     std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
                     std::cout << "level = " << level << std::endl;
