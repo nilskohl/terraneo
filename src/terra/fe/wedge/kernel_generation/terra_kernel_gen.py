@@ -214,7 +214,9 @@ qp = [qp_array[q_symbol, d] for d in range(dim)]
 qw = qw_array[q_symbol]
 
 # wedge, dimi, dimj counter
-w_symbol, dimi_symbol, dimj_symbol = sp.symbols("w dimi dimj", integer=True)
+w_symbol, dimi_symbol, dimj_symbol, dim_diagBC_symbol = sp.symbols(
+    "w dimi dimj dim_diagBC", integer=True
+)
 
 # evaluate coefficient
 k_eval_symbol = sp.symbols("k_eval", real=True)
@@ -225,14 +227,16 @@ k_eval_replacements, k_eval_reduced_exprs = sp.cse(
     exprs=k_eval, symbols=numbered_symbols(prefix=f"tmpcse_k_eval_", real=True)
 )
 
-quadloop_body += [Comment("Coefficient evaluation on current wedge w")] + make_ast_from_exprs(k_eval_replacements)
+quadloop_body += [
+    Comment("Coefficient evaluation on current wedge w")
+] + make_ast_from_exprs(k_eval_replacements)
 quadloop_body.append(
     Variable.deduced(k_eval_symbol).as_Declaration(value=k_eval_reduced_exprs[0])
 )
 
 
 # Jacobian
-quadloop_body += [Comment("Computation + Inversion of the Jacobian")] 
+quadloop_body += [Comment("Computation + Inversion of the Jacobian")]
 J = jac_from_array(
     [
         [wedge_surf_phy_coords_symbol[w_symbol, j, d] for d in range(dim)]
@@ -290,9 +294,11 @@ for i, grad_i_expr in enumerate(scalar_grad_i_reduced_exprs):
 # the symbolic computation to actual AST nodes and add it to the quadrature loop body
 quadloop_body += make_ast_from_exprs(quadloop_exprs)
 
-# from now on, statements go into the component/dimensions loop
-dimloop_body = []
-dimloop_exprs = []
+# from now on, statements go into the component/dimensions loops
+dimloop_j_body = []
+dimloop_j_exprs = []
+dimloop_i_body = []
+dimloop_i_exprs = []
 
 # setup gradients of vectorial basis functions (which are 3x3 matrices)
 # assemble src/trial gradient (sum over rows in local matrix)
@@ -399,7 +405,7 @@ pairing_loop_exprs += (
 boundary_loop_exprs = []
 boundary_loop_exprs.append(f"\ndouble {E_test_name}[3][3] = {{0}}")
 boundary_loop_exprs += create_col_assigns(
-    E_test, dimj_symbol, [scalar_grad[g_symbol, d] for d in range(dim)]
+    E_test, dim_diagBC_symbol, [scalar_grad[g_symbol, d] for d in range(dim)]
 )
 grad_u_diag_name = "grad_u_diag"
 grad_u_diag = IndexedBase(grad_u_diag_name, shape=(3, 3), real=True)
@@ -409,7 +415,7 @@ grad_u_diag_matrix = Matrix(3, 3, symm_grad_i_reduced_exprs[0]).multiply_element
         3,
         3,
         [
-            src_symbol[dimj_symbol, w_symbol, g_symbol]
+            src_symbol[dim_diagBC_symbol, w_symbol, g_symbol]
             for i in range(dim)
             for j in range(dim)
         ],
@@ -425,9 +431,9 @@ diag_pairing_replacements, diag_pairing_reduced_exprs = sp.cse(
             2 * double_contract(symm_grad_i_reduced_matrix, grad_u_diag_matrix)
             - 2.0
             / 3.0
-            * E_test[dimi_symbol, dimi_symbol]
-            * E_test[dimj_symbol, dimj_symbol]
-            * src_symbol[dimj_symbol, w_symbol, g_symbol]
+            * E_test[dim_diagBC_symbol, dim_diagBC_symbol]
+            * E_test[dim_diagBC_symbol, dim_diagBC_symbol]
+            * src_symbol[dim_diagBC_symbol, w_symbol, g_symbol]
         )
     ],
     symbols=numbered_symbols(prefix=f"tmpcse_pairing_", real=True),
@@ -442,34 +448,43 @@ boundary_loop_exprs += (
     + diag_pairing_replacements
     + [
         (
-            dst_symbol[dimi_symbol, w_symbol, g_symbol],
-            dst_symbol[dimi_symbol, w_symbol, g_symbol] + diag_pairing_reduced_exprs[0],
+            dst_symbol[dim_diagBC_symbol, w_symbol, g_symbol],
+            dst_symbol[dim_diagBC_symbol, w_symbol, g_symbol]
+            + diag_pairing_reduced_exprs[0],
         )
     ]
 )
 
 # append all loop bodies
-dimloop_body += [
+dimloop_j_body += [
     Conditional(
         Eq(diagonal, False),
         [
-            String(f"\ndouble {grad_u}[3][3] = {{0}}"),
-            Variable.deduced(div_u).as_Declaration(value=0.0),
-            Variable.deduced(g_symbol).as_Declaration(),
             For(
                 g_symbol,
                 [0 + cmb_shift, num_nodes_per_wedge - surface_shift, 1],
                 make_ast_from_exprs(u_grad_loop_exprs),
             ),
+        ],
+    )
+]
+
+dimloop_i_body += [
+    Conditional(
+        Eq(diagonal, False),
+        [
             For(
                 g_symbol,
                 [0 + cmb_shift, num_nodes_per_wedge - surface_shift, 1],
                 make_ast_from_exprs(pairing_loop_exprs),
             ),
         ],
-    ),
+    )
+]
+
+dimloop_diagBC_body = [
     Conditional(
-        Eq(dimi_symbol, dimj_symbol) & (diagonal | (treat_boundary & (sp.Eq(r_cell, 0) | sp.Eq(r_cell + 1, max_rad)))),
+        (diagonal | (treat_boundary & (sp.Eq(r_cell, 0) | sp.Eq(r_cell + 1, max_rad)))),
         [
             Variable.deduced(g_symbol).as_Declaration(),
             For(
@@ -498,16 +513,18 @@ kernel_code += (
                             range(0, num_qps),
                             [
                                 *quadloop_body,
-                                Variable.deduced(dimi_symbol).as_Declaration(),
                                 Variable.deduced(dimj_symbol).as_Declaration(),
+                                String(f"\ndouble {grad_u}[3][3] = {{0}}"),
+                                Variable.deduced(div_u).as_Declaration(value=0.0),
+                                Variable.deduced(g_symbol).as_Declaration(),
+                                For(dimj_symbol, range(0, dim), *[dimloop_j_body]),
+                                Variable.deduced(dimi_symbol).as_Declaration(),
+                                For(dimi_symbol, range(0, dim), *[dimloop_i_body]),
+                                Variable.deduced(dim_diagBC_symbol).as_Declaration(),
                                 For(
-                                    dimi_symbol,
+                                    dim_diagBC_symbol,
                                     range(0, dim),
-                                    [
-                                        For(
-                                            dimj_symbol, range(0, dim), *[dimloop_body]
-                                        ),
-                                    ],
+                                    *[dimloop_diagBC_body],
                                 ),
                             ],
                         ),
