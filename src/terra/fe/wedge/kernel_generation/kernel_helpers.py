@@ -12,6 +12,7 @@ from sympy.codegen.ast import (
     integer,
     float64,
     FunctionCall,
+    String
 )
 
 
@@ -61,10 +62,16 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
 
     assignments = []
     array_declarations = "\n"
-    array_declarations += f"double wedge_surf_phy_coords[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];"
-    array_declarations += f"\ndouble quad_surface_coords[{2}][{2}][{dim}];\n"
-    wedge_surf_phy_coords_symbol = Pointer("wedge_surf_phy_coords")
-    quad_surface_coords_symbol = Pointer("quad_surface_coords")
+    wedge_name = "wedge_surf_phy_coords"
+    quad_name = "quad_surface_coords"
+    array_declarations += f"double {wedge_name}[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];"
+    array_declarations += f"\ndouble {quad_name}[{2}][{2}][{dim}];\n"
+    wedge_surf_phy_coords_symbol = IndexedBase(
+        wedge_name,
+        shape=(num_wedges_per_hex_cell, num_nodes_per_wedge_surface, dim),
+        real=True,
+    )
+    quad_surface_coords_symbol = IndexedBase(quad_name, shape=(2, 2, dim))
 
     # Populate quad surface coordinates
     for i in range(2):
@@ -116,20 +123,20 @@ def make_rad_assignments(local_subdomain_id, r_cell):
 
 
 def make_extract_local_wedge_scalar_assignments(
-    local_subdomain_id, x_cell, y_cell, r_cell
+    local_subdomain_id, x_cell, y_cell, r_cell, global_array
 ):
-    # Indices (treated as integer parameters)
-    rads = [sp.symbols(f"r_{i}", real=True) for i in range(2)]
 
     # Input loads
     def G(dx, dy, dr):
         return FunctionCall(
-            "src_", [local_subdomain_id, x_cell + dx, y_cell + dy, r_cell + dr]
+            global_array + "_",
+            [local_subdomain_id, x_cell + dx, y_cell + dy, r_cell + dr],
         )
 
     assigns = []
-    array_declaration = f"\ndouble src_local_hex[2][{6}];\n"
-    src_symbol = Pointer("src_local_hex")
+    name = f"{global_array}_local_hex"
+    array_declaration = f"\ndouble {name}[2][{6}];\n"
+    src_symbol = IndexedBase(name, shape=(2, 6), real=True)
 
     # Output stores
     def L(w, i):
@@ -156,6 +163,56 @@ def make_extract_local_wedge_scalar_assignments(
     ]
 
     return src_symbol, array_declaration, CodeBlock(*assigns)
+
+
+def make_extract_local_wedge_vector_assignments(
+    local_subdomain_id, x_cell, y_cell, r_cell, global_array
+):
+
+    # Input loads
+    def G(dx, dy, dr, dim):
+        return FunctionCall(
+            global_array + "_",
+            [local_subdomain_id, x_cell + dx, y_cell + dy, r_cell + dr, dim],
+        )
+
+    assigns = []
+    name = f"{global_array}_local_hex"
+    array_declaration = f"\ndouble {name}[3][2][{6}];\n"
+    src_symbol = IndexedBase(name, shape=(3, 2, 6), real=True)
+
+    # Output stores
+    def L(d, w, i):
+        return src_symbol[d, w, i]
+
+    # ---- wedge 0 ----
+    dim = symbols("dim", integer=True)
+    assigns += [
+        Assignment(L(dim, 0, 0), G(0, 0, 0, dim)),
+        Assignment(L(dim, 0, 1), G(1, 0, 0, dim)),
+        Assignment(L(dim, 0, 2), G(0, 1, 0, dim)),
+        Assignment(L(dim, 0, 3), G(0, 0, 1, dim)),
+        Assignment(L(dim, 0, 4), G(1, 0, 1, dim)),
+        Assignment(L(dim, 0, 5), G(0, 1, 1, dim)),
+    ]
+
+    # ---- wedge 1 ----
+    assigns += [
+        Assignment(L(dim, 1, 0), G(1, 1, 0, dim)),
+        Assignment(L(dim, 1, 1), G(0, 1, 0, dim)),
+        Assignment(L(dim, 1, 2), G(1, 0, 0, dim)),
+        Assignment(L(dim, 1, 3), G(1, 1, 1, dim)),
+        Assignment(L(dim, 1, 4), G(0, 1, 1, dim)),
+        Assignment(L(dim, 1, 5), G(1, 0, 1, dim)),
+    ]
+
+    return (
+        src_symbol,
+        array_declaration,
+        CodeBlock(
+            *[Variable.deduced(dim).as_Declaration(), For(dim, range(0, 3), assigns)]
+        ),
+    )
 
 
 def make_atomic_add_local_wedge_scalar_coefficients(
@@ -188,6 +245,39 @@ def make_atomic_add_local_wedge_scalar_coefficients(
         lines += f"Kokkos::atomic_add(&{g}, {rhs});\n"
 
     return lines
+
+
+def make_atomic_add_local_wedge_vector_coefficients(
+    local_subdomain_id, x_cell, y_cell, r_cell, dsts
+):
+
+    def A(dx, dy, dr, dim):
+        return f"dst_({local_subdomain_id}, {x_cell + dx}, {y_cell + dy}, {r_cell + dr}, {dim})"
+
+    def L(dim, w, i):
+        return f"dst_array[{dim}][{w}][{i}]"
+
+    dim = symbols("dim_add", integer=True)
+    # atomic add statements (global index, RHS expression)
+    ops = [
+        ((0, 0, 0), f"{L(dim, 0,0)}"),
+        ((1, 0, 0), f"{L(dim, 0,1)} + {L(dim, 1,2)}"),
+        ((0, 1, 0), f"{L(dim, 0,2)} + {L(dim, 1,1)}"),
+        ((0, 0, 1), f"{L(dim, 0,3)}"),
+        ((1, 0, 1), f"{L(dim, 0,4)} + {L(dim, 1,5)}"),
+        ((0, 1, 1), f"{L(dim, 0,5)} + {L(dim, 1,4)}"),
+        ((1, 1, 0), f"{L(dim, 1,0)}"),
+        ((1, 1, 1), f"{L(dim, 1,3)}"),
+    ]
+
+    adds = []
+    for (dx, dy, dr), rhs in ops:
+        g = A(dx, dy, dr, dim.name)
+        adds.append(String(f"Kokkos::atomic_add(&{g}, {rhs})"))
+
+    return CodeBlock(
+        *[Variable.deduced(dim).as_Declaration(), For(dim, range(0, 3), adds)]
+    )
 
 
 def make_boundary_handling(matrix_name):

@@ -4,6 +4,7 @@
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/epsilon.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
+#include "fe/wedge/operators/shell/epsilon_divdiv_kerngen.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -245,7 +246,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
         KInterpolator( subdomain_shell_coords, subdomain_radii, k.grid_data() ) );
 
     Kokkos::fence();
-    using Epsilon = fe::wedge::operators::shell::EpsilonDivDiv< ScalarType, 3 >;
+    using Epsilon = fe::wedge::operators::shell::EpsilonDivDivKerngen< ScalarType, 3 >;
 
     Epsilon A( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), true, false );
     Epsilon A_neumann( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), false, false );
@@ -313,7 +314,7 @@ int main( int argc, char** argv )
 
     double prev_l2_error = 1.0;
 
-    for ( int level = 0; level < 6; ++level )
+    for ( int level = 1; level < 6; ++level )
     {
         Kokkos::Timer timer;
         timer.reset();

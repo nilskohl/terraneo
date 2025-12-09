@@ -285,10 +285,12 @@ def forward_map_lat(p1_phy, p2_phy, p3_phy, xi, eta):
     """
     xi = sp.sympify(xi)
     eta = sp.sympify(eta)
+
     p1 = sp.Matrix(p1_phy)
     p2 = sp.Matrix(p2_phy)
     p3 = sp.Matrix(p3_phy)
-    return (1 - xi - eta) * p1 + xi * p2 + eta * p3
+
+    return (1 - xi - eta) * p1 + sp.Matrix([xi, xi, xi]).multiply_elementwise(p2) + sp.Matrix([eta, eta, eta]).multiply_elementwise(p3)
 
 def grad_forward_map_lat_xi(p1_phy, p2_phy, p3_phy):
     p1 = sp.Matrix(p1_phy)
@@ -347,9 +349,7 @@ def symmetric_grad(J_inv_transposed, quad_point, dof, dim):
     # build E: 3x3 zeros with gs placed in column 'dim'
     E = sp.zeros(3, 3)
     # place column
-    if not (0 <= int(dim) <= 2):
-        raise ValueError("dim must be 0, 1 or 2")
     for i in range(3):
-        E[i, int(dim)] = gs[i]
+        E[i, dim] = gs[i]
     grad = Jt * E
     return (grad + grad.T) * sp.Rational(1, 2)
