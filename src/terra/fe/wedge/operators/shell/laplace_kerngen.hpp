@@ -205,340 +205,405 @@ class LaplaceKerngen
         // Kernel body:
         // Kernel body:
 
-double wedge_surf_phy_coords[2][3][3];
-double quad_surface_coords[2][2][3];
-quad_surface_coords[0][0][0] = grid_(local_subdomain_id, x_cell, y_cell, 0);
-quad_surface_coords[0][0][1] = grid_(local_subdomain_id, x_cell, y_cell, 1);
-quad_surface_coords[0][0][2] = grid_(local_subdomain_id, x_cell, y_cell, 2);
-quad_surface_coords[0][1][0] = grid_(local_subdomain_id, x_cell, y_cell + 1, 0);
-quad_surface_coords[0][1][1] = grid_(local_subdomain_id, x_cell, y_cell + 1, 1);
-quad_surface_coords[0][1][2] = grid_(local_subdomain_id, x_cell, y_cell + 1, 2);
-quad_surface_coords[1][0][0] = grid_(local_subdomain_id, x_cell + 1, y_cell, 0);
-quad_surface_coords[1][0][1] = grid_(local_subdomain_id, x_cell + 1, y_cell, 1);
-quad_surface_coords[1][0][2] = grid_(local_subdomain_id, x_cell + 1, y_cell, 2);
-quad_surface_coords[1][1][0] = grid_(local_subdomain_id, x_cell + 1, y_cell + 1, 0);
-quad_surface_coords[1][1][1] = grid_(local_subdomain_id, x_cell + 1, y_cell + 1, 1);
-quad_surface_coords[1][1][2] = grid_(local_subdomain_id, x_cell + 1, y_cell + 1, 2);
-wedge_surf_phy_coords[0][0][0] = quad_surface_coords[0][0][0];
-wedge_surf_phy_coords[0][0][1] = quad_surface_coords[0][0][1];
-wedge_surf_phy_coords[0][0][2] = quad_surface_coords[0][0][2];
-wedge_surf_phy_coords[0][1][0] = quad_surface_coords[1][0][0];
-wedge_surf_phy_coords[0][1][1] = quad_surface_coords[1][0][1];
-wedge_surf_phy_coords[0][1][2] = quad_surface_coords[1][0][2];
-wedge_surf_phy_coords[0][2][0] = quad_surface_coords[0][1][0];
-wedge_surf_phy_coords[0][2][1] = quad_surface_coords[0][1][1];
-wedge_surf_phy_coords[0][2][2] = quad_surface_coords[0][1][2];
-wedge_surf_phy_coords[1][0][0] = quad_surface_coords[1][1][0];
-wedge_surf_phy_coords[1][0][1] = quad_surface_coords[1][1][1];
-wedge_surf_phy_coords[1][0][2] = quad_surface_coords[1][1][2];
-wedge_surf_phy_coords[1][1][0] = quad_surface_coords[0][1][0];
-wedge_surf_phy_coords[1][1][1] = quad_surface_coords[0][1][1];
-wedge_surf_phy_coords[1][1][2] = quad_surface_coords[0][1][2];
-wedge_surf_phy_coords[1][2][0] = quad_surface_coords[1][0][0];
-wedge_surf_phy_coords[1][2][1] = quad_surface_coords[1][0][1];
-wedge_surf_phy_coords[1][2][2] = quad_surface_coords[1][0][2];
-double r_0 = radii_(local_subdomain_id, r_cell);
-double r_1 = radii_(local_subdomain_id, r_cell + 1);
-double src_local_hex[2][6];
-src_local_hex[0][0] = src_(local_subdomain_id, x_cell, y_cell, r_cell);
-src_local_hex[0][1] = src_(local_subdomain_id, x_cell + 1, y_cell, r_cell);
-src_local_hex[0][2] = src_(local_subdomain_id, x_cell, y_cell + 1, r_cell);
-src_local_hex[0][3] = src_(local_subdomain_id, x_cell, y_cell, r_cell + 1);
-src_local_hex[0][4] = src_(local_subdomain_id, x_cell + 1, y_cell, r_cell + 1);
-src_local_hex[0][5] = src_(local_subdomain_id, x_cell, y_cell + 1, r_cell + 1);
-src_local_hex[1][0] = src_(local_subdomain_id, x_cell + 1, y_cell + 1, r_cell);
-src_local_hex[1][1] = src_(local_subdomain_id, x_cell, y_cell + 1, r_cell);
-src_local_hex[1][2] = src_(local_subdomain_id, x_cell + 1, y_cell, r_cell);
-src_local_hex[1][3] = src_(local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1);
-src_local_hex[1][4] = src_(local_subdomain_id, x_cell, y_cell + 1, r_cell + 1);
-src_local_hex[1][5] = src_(local_subdomain_id, x_cell + 1, y_cell, r_cell + 1);
-double qp_array[6][3];
-double qw_array[6];
-qp_array[0][0] = 0.66666666666666663;
-qp_array[1][0] = 0.16666666666666671;
-qp_array[2][0] = 0.16666666666666671;
-qp_array[3][0] = 0.66666666666666663;
-qp_array[4][0] = 0.16666666666666671;
-qp_array[5][0] = 0.16666666666666671;
-qp_array[0][1] = 0.16666666666666671;
-qp_array[1][1] = 0.66666666666666663;
-qp_array[2][1] = 0.16666666666666671;
-qp_array[3][1] = 0.16666666666666671;
-qp_array[4][1] = 0.66666666666666663;
-qp_array[5][1] = 0.16666666666666671;
-qp_array[0][2] = -0.57735026918962573;
-qp_array[1][2] = -0.57735026918962573;
-qp_array[2][2] = -0.57735026918962573;
-qp_array[3][2] = 0.57735026918962573;
-qp_array[4][2] = 0.57735026918962573;
-qp_array[5][2] = 0.57735026918962573;
-qw_array[0] = 0.16666666666666671;
-qw_array[1] = 0.16666666666666671;
-qw_array[2] = 0.16666666666666671;
-qw_array[3] = 0.16666666666666671;
-qw_array[4] = 0.16666666666666671;
-qw_array[5] = 0.16666666666666671;
-int cmb_shift = ((treat_boundary_ && diagonal_ == false && r_cell == 0) ? (
-   3
-)
-: (
-   0
-));
-int max_rad = -1 + radii_.extent(1);
-int surface_shift = ((treat_boundary_ && diagonal_ == false && max_rad == r_cell + 1) ? (
-   3
-)
-: (
-   0
-));
-int trial_it0_cond;
-if (diagonal_ == false && cmb_shift <= 0 && surface_shift < 6) {
-   trial_it0_cond = 1;
-}
-else {
-   trial_it0_cond = 0;
-};
-int test_it0_cond;
-if (diagonal_ == false && cmb_shift <= 0 && surface_shift < 6) {
-   test_it0_cond = 1;
-}
-else {
-   test_it0_cond = 0;
-};
-int diag_bc_it0_cond;
-if (surface_shift <= 0 && (treat_boundary_ == true && (max_rad == r_cell + 1 || r_cell == 0) || diagonal_ == true) && cmb_shift < 6) {
-   diag_bc_it0_cond = 1;
-}
-else {
-   diag_bc_it0_cond = 0;
-};
-int trial_it1_cond;
-if (diagonal_ == false && cmb_shift <= 1 && surface_shift < 5) {
-   trial_it1_cond = 1;
-}
-else {
-   trial_it1_cond = 0;
-};
-int test_it1_cond;
-if (diagonal_ == false && cmb_shift <= 1 && surface_shift < 5) {
-   test_it1_cond = 1;
-}
-else {
-   test_it1_cond = 0;
-};
-int diag_bc_it1_cond;
-if (surface_shift <= 1 && (treat_boundary_ == true && (max_rad == r_cell + 1 || r_cell == 0) || diagonal_ == true) && cmb_shift < 5) {
-   diag_bc_it1_cond = 1;
-}
-else {
-   diag_bc_it1_cond = 0;
-};
-int trial_it2_cond;
-if (diagonal_ == false && cmb_shift <= 2 && surface_shift < 4) {
-   trial_it2_cond = 1;
-}
-else {
-   trial_it2_cond = 0;
-};
-int test_it2_cond;
-if (diagonal_ == false && cmb_shift <= 2 && surface_shift < 4) {
-   test_it2_cond = 1;
-}
-else {
-   test_it2_cond = 0;
-};
-int diag_bc_it2_cond;
-if (surface_shift <= 2 && (treat_boundary_ == true && (max_rad == r_cell + 1 || r_cell == 0) || diagonal_ == true) && cmb_shift < 4) {
-   diag_bc_it2_cond = 1;
-}
-else {
-   diag_bc_it2_cond = 0;
-};
-int trial_it3_cond;
-if (diagonal_ == false && cmb_shift <= 3 && surface_shift < 3) {
-   trial_it3_cond = 1;
-}
-else {
-   trial_it3_cond = 0;
-};
-int test_it3_cond;
-if (diagonal_ == false && cmb_shift <= 3 && surface_shift < 3) {
-   test_it3_cond = 1;
-}
-else {
-   test_it3_cond = 0;
-};
-int diag_bc_it3_cond;
-if (surface_shift <= 3 && (treat_boundary_ == true && (max_rad == r_cell + 1 || r_cell == 0) || diagonal_ == true) && cmb_shift < 3) {
-   diag_bc_it3_cond = 1;
-}
-else {
-   diag_bc_it3_cond = 0;
-};
-int trial_it4_cond;
-if (diagonal_ == false && cmb_shift <= 4 && surface_shift < 2) {
-   trial_it4_cond = 1;
-}
-else {
-   trial_it4_cond = 0;
-};
-int test_it4_cond;
-if (diagonal_ == false && cmb_shift <= 4 && surface_shift < 2) {
-   test_it4_cond = 1;
-}
-else {
-   test_it4_cond = 0;
-};
-int diag_bc_it4_cond;
-if (surface_shift <= 4 && (treat_boundary_ == true && (max_rad == r_cell + 1 || r_cell == 0) || diagonal_ == true) && cmb_shift < 2) {
-   diag_bc_it4_cond = 1;
-}
-else {
-   diag_bc_it4_cond = 0;
-};
-int trial_it5_cond;
-if (diagonal_ == false && cmb_shift <= 5 && surface_shift < 1) {
-   trial_it5_cond = 1;
-}
-else {
-   trial_it5_cond = 0;
-};
-int test_it5_cond;
-if (diagonal_ == false && cmb_shift <= 5 && surface_shift < 1) {
-   test_it5_cond = 1;
-}
-else {
-   test_it5_cond = 0;
-};
-int diag_bc_it5_cond;
-if (surface_shift <= 5 && (treat_boundary_ == true && (max_rad == r_cell + 1 || r_cell == 0) || diagonal_ == true) && cmb_shift < 1) {
-   diag_bc_it5_cond = 1;
-}
-else {
-   diag_bc_it5_cond = 0;
-};
-double dst_array[2][6];
+        double wedge_surf_phy_coords[2][3][3];
+        double quad_surface_coords[2][2][3];
+        quad_surface_coords[0][0][0]   = grid_( local_subdomain_id, x_cell, y_cell, 0 );
+        quad_surface_coords[0][0][1]   = grid_( local_subdomain_id, x_cell, y_cell, 1 );
+        quad_surface_coords[0][0][2]   = grid_( local_subdomain_id, x_cell, y_cell, 2 );
+        quad_surface_coords[0][1][0]   = grid_( local_subdomain_id, x_cell, y_cell + 1, 0 );
+        quad_surface_coords[0][1][1]   = grid_( local_subdomain_id, x_cell, y_cell + 1, 1 );
+        quad_surface_coords[0][1][2]   = grid_( local_subdomain_id, x_cell, y_cell + 1, 2 );
+        quad_surface_coords[1][0][0]   = grid_( local_subdomain_id, x_cell + 1, y_cell, 0 );
+        quad_surface_coords[1][0][1]   = grid_( local_subdomain_id, x_cell + 1, y_cell, 1 );
+        quad_surface_coords[1][0][2]   = grid_( local_subdomain_id, x_cell + 1, y_cell, 2 );
+        quad_surface_coords[1][1][0]   = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 0 );
+        quad_surface_coords[1][1][1]   = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 1 );
+        quad_surface_coords[1][1][2]   = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 2 );
+        wedge_surf_phy_coords[0][0][0] = quad_surface_coords[0][0][0];
+        wedge_surf_phy_coords[0][0][1] = quad_surface_coords[0][0][1];
+        wedge_surf_phy_coords[0][0][2] = quad_surface_coords[0][0][2];
+        wedge_surf_phy_coords[0][1][0] = quad_surface_coords[1][0][0];
+        wedge_surf_phy_coords[0][1][1] = quad_surface_coords[1][0][1];
+        wedge_surf_phy_coords[0][1][2] = quad_surface_coords[1][0][2];
+        wedge_surf_phy_coords[0][2][0] = quad_surface_coords[0][1][0];
+        wedge_surf_phy_coords[0][2][1] = quad_surface_coords[0][1][1];
+        wedge_surf_phy_coords[0][2][2] = quad_surface_coords[0][1][2];
+        wedge_surf_phy_coords[1][0][0] = quad_surface_coords[1][1][0];
+        wedge_surf_phy_coords[1][0][1] = quad_surface_coords[1][1][1];
+        wedge_surf_phy_coords[1][0][2] = quad_surface_coords[1][1][2];
+        wedge_surf_phy_coords[1][1][0] = quad_surface_coords[0][1][0];
+        wedge_surf_phy_coords[1][1][1] = quad_surface_coords[0][1][1];
+        wedge_surf_phy_coords[1][1][2] = quad_surface_coords[0][1][2];
+        wedge_surf_phy_coords[1][2][0] = quad_surface_coords[1][0][0];
+        wedge_surf_phy_coords[1][2][1] = quad_surface_coords[1][0][1];
+        wedge_surf_phy_coords[1][2][2] = quad_surface_coords[1][0][2];
+        double r_0                     = radii_( local_subdomain_id, r_cell );
+        double r_1                     = radii_( local_subdomain_id, r_cell + 1 );
+        double src_local_hex[2][6];
+        src_local_hex[0][0] = src_( local_subdomain_id, x_cell, y_cell, r_cell );
+        src_local_hex[0][1] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell );
+        src_local_hex[0][2] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell );
+        src_local_hex[0][3] = src_( local_subdomain_id, x_cell, y_cell, r_cell + 1 );
+        src_local_hex[0][4] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 );
+        src_local_hex[0][5] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1 );
+        src_local_hex[1][0] = src_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell );
+        src_local_hex[1][1] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell );
+        src_local_hex[1][2] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell );
+        src_local_hex[1][3] = src_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1 );
+        src_local_hex[1][4] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1 );
+        src_local_hex[1][5] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 );
+        double qp_array[6][3];
+        double qw_array[6];
+        qp_array[0][0]    = 0.66666666666666663;
+        qp_array[1][0]    = 0.16666666666666671;
+        qp_array[2][0]    = 0.16666666666666671;
+        qp_array[3][0]    = 0.66666666666666663;
+        qp_array[4][0]    = 0.16666666666666671;
+        qp_array[5][0]    = 0.16666666666666671;
+        qp_array[0][1]    = 0.16666666666666671;
+        qp_array[1][1]    = 0.66666666666666663;
+        qp_array[2][1]    = 0.16666666666666671;
+        qp_array[3][1]    = 0.16666666666666671;
+        qp_array[4][1]    = 0.66666666666666663;
+        qp_array[5][1]    = 0.16666666666666671;
+        qp_array[0][2]    = -0.57735026918962573;
+        qp_array[1][2]    = -0.57735026918962573;
+        qp_array[2][2]    = -0.57735026918962573;
+        qp_array[3][2]    = 0.57735026918962573;
+        qp_array[4][2]    = 0.57735026918962573;
+        qp_array[5][2]    = 0.57735026918962573;
+        qw_array[0]       = 0.16666666666666671;
+        qw_array[1]       = 0.16666666666666671;
+        qw_array[2]       = 0.16666666666666671;
+        qw_array[3]       = 0.16666666666666671;
+        qw_array[4]       = 0.16666666666666671;
+        qw_array[5]       = 0.16666666666666671;
+        int cmb_shift     = ( ( treat_boundary_ && diagonal_ == false && r_cell == 0 ) ? ( 3 ) : ( 0 ) );
+        int max_rad       = radii_.extent( 1 ) - 1;
+        int surface_shift = ( ( treat_boundary_ && diagonal_ == false && max_rad == r_cell + 1 ) ? ( 3 ) : ( 0 ) );
+        int trial_it0_cond;
+        if ( diagonal_ == false && cmb_shift <= 0 && surface_shift < 6 )
+        {
+            trial_it0_cond = 1;
+        }
+        else
+        {
+            trial_it0_cond = 0;
+        };
+        int test_it0_cond;
+        if ( diagonal_ == false && cmb_shift <= 0 && surface_shift < 6 )
+        {
+            test_it0_cond = 1;
+        }
+        else
+        {
+            test_it0_cond = 0;
+        };
+        int diag_bc_it0_cond;
+        if ( surface_shift <= 0 &&
+             ( treat_boundary_ == true && ( max_rad == r_cell + 1 || r_cell == 0 ) || diagonal_ == true ) &&
+             cmb_shift < 6 )
+        {
+            diag_bc_it0_cond = 1;
+        }
+        else
+        {
+            diag_bc_it0_cond = 0;
+        };
+        int trial_it1_cond;
+        if ( diagonal_ == false && cmb_shift <= 1 && surface_shift < 5 )
+        {
+            trial_it1_cond = 1;
+        }
+        else
+        {
+            trial_it1_cond = 0;
+        };
+        int test_it1_cond;
+        if ( diagonal_ == false && cmb_shift <= 1 && surface_shift < 5 )
+        {
+            test_it1_cond = 1;
+        }
+        else
+        {
+            test_it1_cond = 0;
+        };
+        int diag_bc_it1_cond;
+        if ( surface_shift <= 1 &&
+             ( treat_boundary_ == true && ( max_rad == r_cell + 1 || r_cell == 0 ) || diagonal_ == true ) &&
+             cmb_shift < 5 )
+        {
+            diag_bc_it1_cond = 1;
+        }
+        else
+        {
+            diag_bc_it1_cond = 0;
+        };
+        int trial_it2_cond;
+        if ( diagonal_ == false && cmb_shift <= 2 && surface_shift < 4 )
+        {
+            trial_it2_cond = 1;
+        }
+        else
+        {
+            trial_it2_cond = 0;
+        };
+        int test_it2_cond;
+        if ( diagonal_ == false && cmb_shift <= 2 && surface_shift < 4 )
+        {
+            test_it2_cond = 1;
+        }
+        else
+        {
+            test_it2_cond = 0;
+        };
+        int diag_bc_it2_cond;
+        if ( surface_shift <= 2 &&
+             ( treat_boundary_ == true && ( max_rad == r_cell + 1 || r_cell == 0 ) || diagonal_ == true ) &&
+             cmb_shift < 4 )
+        {
+            diag_bc_it2_cond = 1;
+        }
+        else
+        {
+            diag_bc_it2_cond = 0;
+        };
+        int trial_it3_cond;
+        if ( diagonal_ == false && cmb_shift <= 3 && surface_shift < 3 )
+        {
+            trial_it3_cond = 1;
+        }
+        else
+        {
+            trial_it3_cond = 0;
+        };
+        int test_it3_cond;
+        if ( diagonal_ == false && cmb_shift <= 3 && surface_shift < 3 )
+        {
+            test_it3_cond = 1;
+        }
+        else
+        {
+            test_it3_cond = 0;
+        };
+        int diag_bc_it3_cond;
+        if ( surface_shift <= 3 &&
+             ( treat_boundary_ == true && ( max_rad == r_cell + 1 || r_cell == 0 ) || diagonal_ == true ) &&
+             cmb_shift < 3 )
+        {
+            diag_bc_it3_cond = 1;
+        }
+        else
+        {
+            diag_bc_it3_cond = 0;
+        };
+        int trial_it4_cond;
+        if ( diagonal_ == false && cmb_shift <= 4 && surface_shift < 2 )
+        {
+            trial_it4_cond = 1;
+        }
+        else
+        {
+            trial_it4_cond = 0;
+        };
+        int test_it4_cond;
+        if ( diagonal_ == false && cmb_shift <= 4 && surface_shift < 2 )
+        {
+            test_it4_cond = 1;
+        }
+        else
+        {
+            test_it4_cond = 0;
+        };
+        int diag_bc_it4_cond;
+        if ( surface_shift <= 4 &&
+             ( treat_boundary_ == true && ( max_rad == r_cell + 1 || r_cell == 0 ) || diagonal_ == true ) &&
+             cmb_shift < 2 )
+        {
+            diag_bc_it4_cond = 1;
+        }
+        else
+        {
+            diag_bc_it4_cond = 0;
+        };
+        int trial_it5_cond;
+        if ( diagonal_ == false && cmb_shift <= 5 && surface_shift < 1 )
+        {
+            trial_it5_cond = 1;
+        }
+        else
+        {
+            trial_it5_cond = 0;
+        };
+        int test_it5_cond;
+        if ( diagonal_ == false && cmb_shift <= 5 && surface_shift < 1 )
+        {
+            test_it5_cond = 1;
+        }
+        else
+        {
+            test_it5_cond = 0;
+        };
+        int diag_bc_it5_cond;
+        if ( surface_shift <= 5 &&
+             ( treat_boundary_ == true && ( max_rad == r_cell + 1 || r_cell == 0 ) || diagonal_ == true ) &&
+             cmb_shift < 1 )
+        {
+            diag_bc_it5_cond = 1;
+        }
+        else
+        {
+            diag_bc_it5_cond = 0;
+        };
+        double dst_array[2][6];
 
-dst_array[0][0] = 0.0;
-dst_array[0][1] = 0.0;
-dst_array[0][2] = 0.0;
-dst_array[0][3] = 0.0;
-dst_array[0][4] = 0.0;
-dst_array[0][5] = 0.0;
-dst_array[1][0] = 0.0;
-dst_array[1][1] = 0.0;
-dst_array[1][2] = 0.0;
-dst_array[1][3] = 0.0;
-dst_array[1][4] = 0.0;
-dst_array[1][5] = 0.0;
-int w = 0;
-for (w = 0; w < 2; w += 1) {
-   int q = 0;
-   for (q = 0; q < 6; q += 1) {
-      double qp_0 = qp_array[q][0];
-      double qp_1 = qp_array[q][1];
-      double qp_2 = qp_array[q][2];
-      double qw = qw_array[q];
-      double wedge_tmp_symbols_0_0 = wedge_surf_phy_coords[w][0][0];
-      double wedge_tmp_symbols_1_0 = wedge_surf_phy_coords[w][1][0];
-      double wedge_tmp_symbols_2_0 = wedge_surf_phy_coords[w][2][0];
-      double wedge_tmp_symbols_0_1 = wedge_surf_phy_coords[w][0][1];
-      double wedge_tmp_symbols_1_1 = wedge_surf_phy_coords[w][1][1];
-      double wedge_tmp_symbols_2_1 = wedge_surf_phy_coords[w][2][1];
-      double wedge_tmp_symbols_0_2 = wedge_surf_phy_coords[w][0][2];
-      double wedge_tmp_symbols_1_2 = wedge_surf_phy_coords[w][1][2];
-      double wedge_tmp_symbols_2_2 = wedge_surf_phy_coords[w][2][2];
-      double tmpcse_J_0 = -1.0/2.0*r_0 + (1.0/2.0)*r_1;
-      double tmpcse_J_1 = r_0 + tmpcse_J_0*(qp_2 + 1);
-      double tmpcse_J_2 = -qp_0 - qp_1 + 1;
-      double J_0_0 = tmpcse_J_1*(-wedge_tmp_symbols_0_0 + wedge_tmp_symbols_1_0);
-      double J_0_1 = tmpcse_J_1*(-wedge_tmp_symbols_0_0 + wedge_tmp_symbols_2_0);
-      double J_0_2 = tmpcse_J_0*(qp_0*wedge_tmp_symbols_1_0 + qp_1*wedge_tmp_symbols_2_0 + tmpcse_J_2*wedge_tmp_symbols_0_0);
-      double J_1_0 = tmpcse_J_1*(-wedge_tmp_symbols_0_1 + wedge_tmp_symbols_1_1);
-      double J_1_1 = tmpcse_J_1*(-wedge_tmp_symbols_0_1 + wedge_tmp_symbols_2_1);
-      double J_1_2 = tmpcse_J_0*(qp_0*wedge_tmp_symbols_1_1 + qp_1*wedge_tmp_symbols_2_1 + tmpcse_J_2*wedge_tmp_symbols_0_1);
-      double J_2_0 = tmpcse_J_1*(-wedge_tmp_symbols_0_2 + wedge_tmp_symbols_1_2);
-      double J_2_1 = tmpcse_J_1*(-wedge_tmp_symbols_0_2 + wedge_tmp_symbols_2_2);
-      double J_2_2 = tmpcse_J_0*(qp_0*wedge_tmp_symbols_1_2 + qp_1*wedge_tmp_symbols_2_2 + tmpcse_J_2*wedge_tmp_symbols_0_2);
-      double J_det = J_0_0*J_1_1*J_2_2 - J_0_0*J_1_2*J_2_1 - J_0_1*J_1_0*J_2_2 + J_0_1*J_1_2*J_2_0 + J_0_2*J_1_0*J_2_1 - J_0_2*J_1_1*J_2_0;
-      double tmpcse_J_invT_0 = 1.0/J_det;
-      double J_invT_cse_0_0 = tmpcse_J_invT_0*(J_1_1*J_2_2 - J_1_2*J_2_1);
-      double J_invT_cse_0_1 = tmpcse_J_invT_0*(-J_1_0*J_2_2 + J_1_2*J_2_0);
-      double J_invT_cse_0_2 = tmpcse_J_invT_0*(J_1_0*J_2_1 - J_1_1*J_2_0);
-      double J_invT_cse_1_0 = tmpcse_J_invT_0*(-J_0_1*J_2_2 + J_0_2*J_2_1);
-      double J_invT_cse_1_1 = tmpcse_J_invT_0*(J_0_0*J_2_2 - J_0_2*J_2_0);
-      double J_invT_cse_1_2 = tmpcse_J_invT_0*(-J_0_0*J_2_1 + J_0_1*J_2_0);
-      double J_invT_cse_2_0 = tmpcse_J_invT_0*(J_0_1*J_1_2 - J_0_2*J_1_1);
-      double J_invT_cse_2_1 = tmpcse_J_invT_0*(-J_0_0*J_1_2 + J_0_2*J_1_0);
-      double J_invT_cse_2_2 = tmpcse_J_invT_0*(J_0_0*J_1_1 - J_0_1*J_1_0);
-      double tmpcse_grad_i_0 = (1.0/2.0)*qp_2;
-      double tmpcse_grad_i_1 = tmpcse_grad_i_0 - 1.0/2.0;
-      double tmpcse_grad_i_2 = (1.0/2.0)*qp_0;
-      double tmpcse_grad_i_3 = (1.0/2.0)*qp_1;
-      double tmpcse_grad_i_4 = tmpcse_grad_i_2 + tmpcse_grad_i_3 - 1.0/2.0;
-      double tmpcse_grad_i_5 = J_invT_cse_0_2*tmpcse_grad_i_2;
-      double tmpcse_grad_i_6 = -tmpcse_grad_i_1;
-      double tmpcse_grad_i_7 = J_invT_cse_1_2*tmpcse_grad_i_2;
-      double tmpcse_grad_i_8 = J_invT_cse_2_2*tmpcse_grad_i_2;
-      double tmpcse_grad_i_9 = J_invT_cse_0_2*tmpcse_grad_i_3;
-      double tmpcse_grad_i_10 = J_invT_cse_1_2*tmpcse_grad_i_3;
-      double tmpcse_grad_i_11 = J_invT_cse_2_2*tmpcse_grad_i_3;
-      double tmpcse_grad_i_12 = tmpcse_grad_i_0 + 1.0/2.0;
-      double tmpcse_grad_i_13 = -tmpcse_grad_i_12;
-      double tmpcse_grad_i_14 = -tmpcse_grad_i_4;
-      double grad_i0_0 = J_invT_cse_0_0*tmpcse_grad_i_1 + J_invT_cse_0_1*tmpcse_grad_i_1 + J_invT_cse_0_2*tmpcse_grad_i_4;
-      double grad_i0_1 = J_invT_cse_1_0*tmpcse_grad_i_1 + J_invT_cse_1_1*tmpcse_grad_i_1 + J_invT_cse_1_2*tmpcse_grad_i_4;
-      double grad_i0_2 = J_invT_cse_2_0*tmpcse_grad_i_1 + J_invT_cse_2_1*tmpcse_grad_i_1 + J_invT_cse_2_2*tmpcse_grad_i_4;
-      double grad_i1_0 = J_invT_cse_0_0*tmpcse_grad_i_6 - tmpcse_grad_i_5;
-      double grad_i1_1 = J_invT_cse_1_0*tmpcse_grad_i_6 - tmpcse_grad_i_7;
-      double grad_i1_2 = J_invT_cse_2_0*tmpcse_grad_i_6 - tmpcse_grad_i_8;
-      double grad_i2_0 = J_invT_cse_0_1*tmpcse_grad_i_6 - tmpcse_grad_i_9;
-      double grad_i2_1 = J_invT_cse_1_1*tmpcse_grad_i_6 - tmpcse_grad_i_10;
-      double grad_i2_2 = J_invT_cse_2_1*tmpcse_grad_i_6 - tmpcse_grad_i_11;
-      double grad_i3_0 = J_invT_cse_0_0*tmpcse_grad_i_13 + J_invT_cse_0_1*tmpcse_grad_i_13 + J_invT_cse_0_2*tmpcse_grad_i_14;
-      double grad_i3_1 = J_invT_cse_1_0*tmpcse_grad_i_13 + J_invT_cse_1_1*tmpcse_grad_i_13 + J_invT_cse_1_2*tmpcse_grad_i_14;
-      double grad_i3_2 = J_invT_cse_2_0*tmpcse_grad_i_13 + J_invT_cse_2_1*tmpcse_grad_i_13 + J_invT_cse_2_2*tmpcse_grad_i_14;
-      double grad_i4_0 = J_invT_cse_0_0*tmpcse_grad_i_12 + tmpcse_grad_i_5;
-      double grad_i4_1 = J_invT_cse_1_0*tmpcse_grad_i_12 + tmpcse_grad_i_7;
-      double grad_i4_2 = J_invT_cse_2_0*tmpcse_grad_i_12 + tmpcse_grad_i_8;
-      double grad_i5_0 = J_invT_cse_0_1*tmpcse_grad_i_12 + tmpcse_grad_i_9;
-      double grad_i5_1 = J_invT_cse_1_1*tmpcse_grad_i_12 + tmpcse_grad_i_10;
-      double grad_i5_2 = J_invT_cse_2_1*tmpcse_grad_i_12 + tmpcse_grad_i_11;
-      double src_tmp_symbols_0 = src_local_hex[w][0];
-      double src_tmp_symbols_1 = src_local_hex[w][1];
-      double src_tmp_symbols_2 = src_local_hex[w][2];
-      double src_tmp_symbols_3 = src_local_hex[w][3];
-      double src_tmp_symbols_4 = src_local_hex[w][4];
-      double src_tmp_symbols_5 = src_local_hex[w][5];
-      double grad_u_0 = grad_i0_0*src_tmp_symbols_0 + grad_i1_0*src_tmp_symbols_1 + grad_i2_0*src_tmp_symbols_2 + grad_i3_0*src_tmp_symbols_3 + grad_i4_0*src_tmp_symbols_4 + grad_i5_0*src_tmp_symbols_5;
-      double grad_u_1 = grad_i0_1*src_tmp_symbols_0 + grad_i1_1*src_tmp_symbols_1 + grad_i2_1*src_tmp_symbols_2 + grad_i3_1*src_tmp_symbols_3 + grad_i4_1*src_tmp_symbols_4 + grad_i5_1*src_tmp_symbols_5;
-      double grad_u_2 = grad_i0_2*src_tmp_symbols_0 + grad_i1_2*src_tmp_symbols_1 + grad_i2_2*src_tmp_symbols_2 + grad_i3_2*src_tmp_symbols_3 + grad_i4_2*src_tmp_symbols_4 + grad_i5_2*src_tmp_symbols_5;
-      double tmpcse_dst_0 = qw*fabs(J_det);
-      double tmpcse_dst_1 = grad_u_0*tmpcse_dst_0;
-      double tmpcse_dst_2 = grad_u_1*tmpcse_dst_0;
-      double tmpcse_dst_3 = grad_u_2*tmpcse_dst_0;
-      double tmpcse_dst_4 = src_tmp_symbols_5*tmpcse_dst_0;
-      double tmpcse_dst_5 = tmpcse_dst_4*(J_invT_cse_0_1*tmpcse_grad_i_12 + tmpcse_grad_i_9);
-      double tmpcse_dst_6 = tmpcse_dst_4*(J_invT_cse_1_1*tmpcse_grad_i_12 + tmpcse_grad_i_10);
-      double tmpcse_dst_7 = tmpcse_dst_4*(J_invT_cse_2_1*tmpcse_grad_i_12 + tmpcse_grad_i_11);
-      dst_array[w][0] += grad_i0_0*tmpcse_dst_1 + grad_i0_0*tmpcse_dst_5 + grad_i0_1*tmpcse_dst_2 + grad_i0_1*tmpcse_dst_6 + grad_i0_2*tmpcse_dst_3 + grad_i0_2*tmpcse_dst_7;
-      dst_array[w][1] += grad_i1_0*tmpcse_dst_1 + grad_i1_0*tmpcse_dst_5 + grad_i1_1*tmpcse_dst_2 + grad_i1_1*tmpcse_dst_6 + grad_i1_2*tmpcse_dst_3 + grad_i1_2*tmpcse_dst_7;
-      dst_array[w][2] += grad_i2_0*tmpcse_dst_1 + grad_i2_0*tmpcse_dst_5 + grad_i2_1*tmpcse_dst_2 + grad_i2_1*tmpcse_dst_6 + grad_i2_2*tmpcse_dst_3 + grad_i2_2*tmpcse_dst_7;
-      dst_array[w][3] += grad_i3_0*tmpcse_dst_1 + grad_i3_0*tmpcse_dst_5 + grad_i3_1*tmpcse_dst_2 + grad_i3_1*tmpcse_dst_6 + grad_i3_2*tmpcse_dst_3 + grad_i3_2*tmpcse_dst_7;
-      dst_array[w][4] += grad_i4_0*tmpcse_dst_1 + grad_i4_0*tmpcse_dst_5 + grad_i4_1*tmpcse_dst_2 + grad_i4_1*tmpcse_dst_6 + grad_i4_2*tmpcse_dst_3 + grad_i4_2*tmpcse_dst_7;
-      dst_array[w][5] += grad_i5_0*tmpcse_dst_1 + grad_i5_0*tmpcse_dst_5 + grad_i5_1*tmpcse_dst_2 + grad_i5_1*tmpcse_dst_6 + grad_i5_2*tmpcse_dst_3 + grad_i5_2*tmpcse_dst_7;
-   };
-};
+        dst_array[0][0] = 0.0;
+        dst_array[0][1] = 0.0;
+        dst_array[0][2] = 0.0;
+        dst_array[0][3] = 0.0;
+        dst_array[0][4] = 0.0;
+        dst_array[0][5] = 0.0;
+        dst_array[1][0] = 0.0;
+        dst_array[1][1] = 0.0;
+        dst_array[1][2] = 0.0;
+        dst_array[1][3] = 0.0;
+        dst_array[1][4] = 0.0;
+        dst_array[1][5] = 0.0;
+        int w           = 0;
+        for ( w = 0; w < 2; w += 1 )
+        {
+            int q = 0;
+            for ( q = 0; q < 6; q += 1 )
+            {
+                double qp_0                  = qp_array[q][0];
+                double qp_1                  = qp_array[q][1];
+                double qp_2                  = qp_array[q][2];
+                double qw                    = qw_array[q];
+                double wedge_tmp_symbols_0_0 = wedge_surf_phy_coords[w][0][0];
+                double wedge_tmp_symbols_1_0 = wedge_surf_phy_coords[w][1][0];
+                double wedge_tmp_symbols_2_0 = wedge_surf_phy_coords[w][2][0];
+                double wedge_tmp_symbols_0_1 = wedge_surf_phy_coords[w][0][1];
+                double wedge_tmp_symbols_1_1 = wedge_surf_phy_coords[w][1][1];
+                double wedge_tmp_symbols_2_1 = wedge_surf_phy_coords[w][2][1];
+                double wedge_tmp_symbols_0_2 = wedge_surf_phy_coords[w][0][2];
+                double wedge_tmp_symbols_1_2 = wedge_surf_phy_coords[w][1][2];
+                double wedge_tmp_symbols_2_2 = wedge_surf_phy_coords[w][2][2];
+                double tmpcse_J_0            = -1.0 / 2.0 * r_0 + ( 1.0 / 2.0 ) * r_1;
+                double tmpcse_J_1            = r_0 + tmpcse_J_0 * ( qp_2 + 1 );
+                double tmpcse_J_2            = -qp_0 - qp_1 + 1;
+                double J_0_0                 = tmpcse_J_1 * ( -wedge_tmp_symbols_0_0 + wedge_tmp_symbols_1_0 );
+                double J_0_1                 = tmpcse_J_1 * ( -wedge_tmp_symbols_0_0 + wedge_tmp_symbols_2_0 );
+                double J_0_2 = tmpcse_J_0 * ( qp_0 * wedge_tmp_symbols_1_0 + qp_1 * wedge_tmp_symbols_2_0 +
+                                              tmpcse_J_2 * wedge_tmp_symbols_0_0 );
+                double J_1_0 = tmpcse_J_1 * ( -wedge_tmp_symbols_0_1 + wedge_tmp_symbols_1_1 );
+                double J_1_1 = tmpcse_J_1 * ( -wedge_tmp_symbols_0_1 + wedge_tmp_symbols_2_1 );
+                double J_1_2 = tmpcse_J_0 * ( qp_0 * wedge_tmp_symbols_1_1 + qp_1 * wedge_tmp_symbols_2_1 +
+                                              tmpcse_J_2 * wedge_tmp_symbols_0_1 );
+                double J_2_0 = tmpcse_J_1 * ( -wedge_tmp_symbols_0_2 + wedge_tmp_symbols_1_2 );
+                double J_2_1 = tmpcse_J_1 * ( -wedge_tmp_symbols_0_2 + wedge_tmp_symbols_2_2 );
+                double J_2_2 = tmpcse_J_0 * ( qp_0 * wedge_tmp_symbols_1_2 + qp_1 * wedge_tmp_symbols_2_2 +
+                                              tmpcse_J_2 * wedge_tmp_symbols_0_2 );
+                double J_det = J_0_0 * J_1_1 * J_2_2 - J_0_0 * J_1_2 * J_2_1 - J_0_1 * J_1_0 * J_2_2 +
+                               J_0_1 * J_1_2 * J_2_0 + J_0_2 * J_1_0 * J_2_1 - J_0_2 * J_1_1 * J_2_0;
+                double tmpcse_J_invT_0  = 1.0 / J_det;
+                double J_invT_cse_0_0   = tmpcse_J_invT_0 * ( J_1_1 * J_2_2 - J_1_2 * J_2_1 );
+                double J_invT_cse_0_1   = tmpcse_J_invT_0 * ( -J_1_0 * J_2_2 + J_1_2 * J_2_0 );
+                double J_invT_cse_0_2   = tmpcse_J_invT_0 * ( J_1_0 * J_2_1 - J_1_1 * J_2_0 );
+                double J_invT_cse_1_0   = tmpcse_J_invT_0 * ( -J_0_1 * J_2_2 + J_0_2 * J_2_1 );
+                double J_invT_cse_1_1   = tmpcse_J_invT_0 * ( J_0_0 * J_2_2 - J_0_2 * J_2_0 );
+                double J_invT_cse_1_2   = tmpcse_J_invT_0 * ( -J_0_0 * J_2_1 + J_0_1 * J_2_0 );
+                double J_invT_cse_2_0   = tmpcse_J_invT_0 * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
+                double J_invT_cse_2_1   = tmpcse_J_invT_0 * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
+                double J_invT_cse_2_2   = tmpcse_J_invT_0 * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
+                double tmpcse_grad_i_0  = ( 1.0 / 2.0 ) * qp_2;
+                double tmpcse_grad_i_1  = tmpcse_grad_i_0 - 1.0 / 2.0;
+                double tmpcse_grad_i_2  = ( 1.0 / 2.0 ) * qp_0;
+                double tmpcse_grad_i_3  = ( 1.0 / 2.0 ) * qp_1;
+                double tmpcse_grad_i_4  = tmpcse_grad_i_2 + tmpcse_grad_i_3 - 1.0 / 2.0;
+                double tmpcse_grad_i_5  = J_invT_cse_0_2 * tmpcse_grad_i_2;
+                double tmpcse_grad_i_6  = -tmpcse_grad_i_1;
+                double tmpcse_grad_i_7  = J_invT_cse_1_2 * tmpcse_grad_i_2;
+                double tmpcse_grad_i_8  = J_invT_cse_2_2 * tmpcse_grad_i_2;
+                double tmpcse_grad_i_9  = J_invT_cse_0_2 * tmpcse_grad_i_3;
+                double tmpcse_grad_i_10 = J_invT_cse_1_2 * tmpcse_grad_i_3;
+                double tmpcse_grad_i_11 = J_invT_cse_2_2 * tmpcse_grad_i_3;
+                double tmpcse_grad_i_12 = tmpcse_grad_i_0 + 1.0 / 2.0;
+                double tmpcse_grad_i_13 = -tmpcse_grad_i_12;
+                double tmpcse_grad_i_14 = -tmpcse_grad_i_4;
+                double grad_i0_0        = J_invT_cse_0_0 * tmpcse_grad_i_1 + J_invT_cse_0_1 * tmpcse_grad_i_1 +
+                                   J_invT_cse_0_2 * tmpcse_grad_i_4;
+                double grad_i0_1 = J_invT_cse_1_0 * tmpcse_grad_i_1 + J_invT_cse_1_1 * tmpcse_grad_i_1 +
+                                   J_invT_cse_1_2 * tmpcse_grad_i_4;
+                double grad_i0_2 = J_invT_cse_2_0 * tmpcse_grad_i_1 + J_invT_cse_2_1 * tmpcse_grad_i_1 +
+                                   J_invT_cse_2_2 * tmpcse_grad_i_4;
+                double grad_i1_0 = J_invT_cse_0_0 * tmpcse_grad_i_6 - tmpcse_grad_i_5;
+                double grad_i1_1 = J_invT_cse_1_0 * tmpcse_grad_i_6 - tmpcse_grad_i_7;
+                double grad_i1_2 = J_invT_cse_2_0 * tmpcse_grad_i_6 - tmpcse_grad_i_8;
+                double grad_i2_0 = J_invT_cse_0_1 * tmpcse_grad_i_6 - tmpcse_grad_i_9;
+                double grad_i2_1 = J_invT_cse_1_1 * tmpcse_grad_i_6 - tmpcse_grad_i_10;
+                double grad_i2_2 = J_invT_cse_2_1 * tmpcse_grad_i_6 - tmpcse_grad_i_11;
+                double grad_i3_0 = J_invT_cse_0_0 * tmpcse_grad_i_13 + J_invT_cse_0_1 * tmpcse_grad_i_13 +
+                                   J_invT_cse_0_2 * tmpcse_grad_i_14;
+                double grad_i3_1 = J_invT_cse_1_0 * tmpcse_grad_i_13 + J_invT_cse_1_1 * tmpcse_grad_i_13 +
+                                   J_invT_cse_1_2 * tmpcse_grad_i_14;
+                double grad_i3_2 = J_invT_cse_2_0 * tmpcse_grad_i_13 + J_invT_cse_2_1 * tmpcse_grad_i_13 +
+                                   J_invT_cse_2_2 * tmpcse_grad_i_14;
+                double grad_i4_0         = J_invT_cse_0_0 * tmpcse_grad_i_12 + tmpcse_grad_i_5;
+                double grad_i4_1         = J_invT_cse_1_0 * tmpcse_grad_i_12 + tmpcse_grad_i_7;
+                double grad_i4_2         = J_invT_cse_2_0 * tmpcse_grad_i_12 + tmpcse_grad_i_8;
+                double grad_i5_0         = J_invT_cse_0_1 * tmpcse_grad_i_12 + tmpcse_grad_i_9;
+                double grad_i5_1         = J_invT_cse_1_1 * tmpcse_grad_i_12 + tmpcse_grad_i_10;
+                double grad_i5_2         = J_invT_cse_2_1 * tmpcse_grad_i_12 + tmpcse_grad_i_11;
+                double src_tmp_symbols_0 = src_local_hex[w][0];
+                double src_tmp_symbols_1 = src_local_hex[w][1];
+                double src_tmp_symbols_2 = src_local_hex[w][2];
+                double src_tmp_symbols_3 = src_local_hex[w][3];
+                double src_tmp_symbols_4 = src_local_hex[w][4];
+                double src_tmp_symbols_5 = src_local_hex[w][5];
+                double grad_u_0          = grad_i0_0 * src_tmp_symbols_0 + grad_i1_0 * src_tmp_symbols_1 +
+                                  grad_i2_0 * src_tmp_symbols_2 + grad_i3_0 * src_tmp_symbols_3 +
+                                  grad_i4_0 * src_tmp_symbols_4 + grad_i5_0 * src_tmp_symbols_5;
+                double grad_u_1 = grad_i0_1 * src_tmp_symbols_0 + grad_i1_1 * src_tmp_symbols_1 +
+                                  grad_i2_1 * src_tmp_symbols_2 + grad_i3_1 * src_tmp_symbols_3 +
+                                  grad_i4_1 * src_tmp_symbols_4 + grad_i5_1 * src_tmp_symbols_5;
+                double grad_u_2 = grad_i0_2 * src_tmp_symbols_0 + grad_i1_2 * src_tmp_symbols_1 +
+                                  grad_i2_2 * src_tmp_symbols_2 + grad_i3_2 * src_tmp_symbols_3 +
+                                  grad_i4_2 * src_tmp_symbols_4 + grad_i5_2 * src_tmp_symbols_5;
+                double tmpcse_dst_0 = qw * fabs( J_det );
+                double tmpcse_dst_1 = grad_u_0 * tmpcse_dst_0;
+                double tmpcse_dst_2 = grad_u_1 * tmpcse_dst_0;
+                double tmpcse_dst_3 = grad_u_2 * tmpcse_dst_0;
+                double tmpcse_dst_4 = src_tmp_symbols_5 * tmpcse_dst_0;
+                double tmpcse_dst_5 = tmpcse_dst_4 * ( J_invT_cse_0_1 * tmpcse_grad_i_12 + tmpcse_grad_i_9 );
+                double tmpcse_dst_6 = tmpcse_dst_4 * ( J_invT_cse_1_1 * tmpcse_grad_i_12 + tmpcse_grad_i_10 );
+                double tmpcse_dst_7 = tmpcse_dst_4 * ( J_invT_cse_2_1 * tmpcse_grad_i_12 + tmpcse_grad_i_11 );
+                dst_array[w][0] += grad_i0_0 * tmpcse_dst_1 + grad_i0_0 * tmpcse_dst_5 + grad_i0_1 * tmpcse_dst_2 +
+                                   grad_i0_1 * tmpcse_dst_6 + grad_i0_2 * tmpcse_dst_3 + grad_i0_2 * tmpcse_dst_7;
+                dst_array[w][1] += grad_i1_0 * tmpcse_dst_1 + grad_i1_0 * tmpcse_dst_5 + grad_i1_1 * tmpcse_dst_2 +
+                                   grad_i1_1 * tmpcse_dst_6 + grad_i1_2 * tmpcse_dst_3 + grad_i1_2 * tmpcse_dst_7;
+                dst_array[w][2] += grad_i2_0 * tmpcse_dst_1 + grad_i2_0 * tmpcse_dst_5 + grad_i2_1 * tmpcse_dst_2 +
+                                   grad_i2_1 * tmpcse_dst_6 + grad_i2_2 * tmpcse_dst_3 + grad_i2_2 * tmpcse_dst_7;
+                dst_array[w][3] += grad_i3_0 * tmpcse_dst_1 + grad_i3_0 * tmpcse_dst_5 + grad_i3_1 * tmpcse_dst_2 +
+                                   grad_i3_1 * tmpcse_dst_6 + grad_i3_2 * tmpcse_dst_3 + grad_i3_2 * tmpcse_dst_7;
+                dst_array[w][4] += grad_i4_0 * tmpcse_dst_1 + grad_i4_0 * tmpcse_dst_5 + grad_i4_1 * tmpcse_dst_2 +
+                                   grad_i4_1 * tmpcse_dst_6 + grad_i4_2 * tmpcse_dst_3 + grad_i4_2 * tmpcse_dst_7;
+                dst_array[w][5] += grad_i5_0 * tmpcse_dst_1 + grad_i5_0 * tmpcse_dst_5 + grad_i5_1 * tmpcse_dst_2 +
+                                   grad_i5_1 * tmpcse_dst_6 + grad_i5_2 * tmpcse_dst_3 + grad_i5_2 * tmpcse_dst_7;
+            };
+        };
 
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell, y_cell, r_cell), dst_array[0][0]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell + 1, y_cell, r_cell), dst_array[0][1] + dst_array[1][2]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell, y_cell + 1, r_cell), dst_array[0][2] + dst_array[1][1]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell, y_cell, r_cell + 1), dst_array[0][3]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell + 1, y_cell, r_cell + 1), dst_array[0][4] + dst_array[1][5]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell, y_cell + 1, r_cell + 1), dst_array[0][5] + dst_array[1][4]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell + 1, y_cell + 1, r_cell), dst_array[1][0]);
-Kokkos::atomic_add(&dst_(local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1), dst_array[1][3]);
-
+        Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell ), dst_array[0][0] );
+        Kokkos::atomic_add(
+            &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell ), dst_array[0][1] + dst_array[1][2] );
+        Kokkos::atomic_add(
+            &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell ), dst_array[0][2] + dst_array[1][1] );
+        Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), dst_array[0][3] );
+        Kokkos::atomic_add(
+            &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 ), dst_array[0][4] + dst_array[1][5] );
+        Kokkos::atomic_add(
+            &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1 ), dst_array[0][5] + dst_array[1][4] );
+        Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell ), dst_array[1][0] );
+        Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1 ), dst_array[1][3] );
     }
     // Kernel body:
 };

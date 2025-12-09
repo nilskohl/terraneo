@@ -4,6 +4,7 @@
 #include "communication/shell/communication.hpp"
 #include "divergence.hpp"
 #include "epsilon_divdiv.hpp"
+#include "epsilon_divdiv_kerngen.hpp"
 #include "gradient.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
@@ -21,7 +22,7 @@ class EpsDivDivStokes
     using DstVectorType = linalg::VectorQ1IsoQ2Q1< ScalarT, VecDim >;
     using ScalarType    = ScalarT;
 
-    using Block11Type = EpsilonDivDiv< ScalarType, VecDim >;
+    using Block11Type = EpsilonDivDivKerngen< ScalarType, VecDim >;
     using Block12Type = Gradient< ScalarType >;
     using Block21Type = Divergence< ScalarType >;
     using Block22Type = Zero< ScalarType >;
