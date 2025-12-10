@@ -69,7 +69,7 @@ struct TimeSteppingParameters
 struct IOParameters
 {
     std::string outdir    = "output";
-    bool        overwrite = true;
+    bool        overwrite = false;
 
     std::string xdmf_dir                = "xdmf";
     std::string radial_profiles_out_dir = "radial_profiles";
