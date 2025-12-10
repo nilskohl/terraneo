@@ -61,7 +61,7 @@ constexpr auto all_benchmark_types = {
     //   BenchmarkType::VectorLaplaceDouble,
     //   BenchmarkType::VectorLaplaceNeumannDouble,
     //   BenchmarkType::EpsDivDivFloat,
-       BenchmarkType::EpsDivDivDouble,
+   //    BenchmarkType::EpsDivDivDouble,
        BenchmarkType::EpsDivDivKerngenDouble,
     //   BenchmarkType::StokesDouble
 };

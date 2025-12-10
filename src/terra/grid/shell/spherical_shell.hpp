@@ -2508,6 +2508,16 @@ inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
           distributed_domain.domain_info().subdomain_num_nodes_radially() } );
 }
 
+inline Kokkos::MDRangePolicy< Kokkos::Rank< 3 > >
+    local_domain_md_range_policy_cells_lateral( const DistributedDomain& distributed_domain )
+{
+    return Kokkos::MDRangePolicy< Kokkos::Rank< 3 > >(
+        { 0, 0, 0 },
+        { static_cast< long long >( distributed_domain.subdomains().size() ),
+          distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+          distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1 } );
+}
+
 inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
     local_domain_md_range_policy_cells( const DistributedDomain& distributed_domain )
 {
