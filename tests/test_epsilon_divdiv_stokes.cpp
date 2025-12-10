@@ -223,6 +223,41 @@ struct KInterpolator
     }
 };
 
+
+struct KJumpingInterpolator
+{
+    Grid3DDataVec< double, 3 > grid_;
+    Grid2DDataScalar< double > radii_;
+    Grid4DDataScalar< double > data_;
+    double                     kmax_;
+
+    KJumpingInterpolator(
+        const Grid3DDataVec< double, 3 >& grid,
+        const Grid2DDataScalar< double >& radii,
+        const Grid4DDataScalar< double >& data,
+        const double                      kmax )
+    : grid_( grid )
+    , radii_( radii )
+    , data_( data )
+    , kmax_( kmax )
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
+    {
+        const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
+
+        if ( coords.norm() > 0.75 )
+        {
+            data_( local_subdomain_id, x, y, r ) = kmax_;
+        }
+        else
+        {
+            data_( local_subdomain_id, x, y, r ) = 1;
+        }
+    }
+};
+
 std::tuple< double, double, int >
     test( double kmax, int gca, int min_level, int max_level, const std::shared_ptr< util::Table >& table )
 {
@@ -331,16 +366,12 @@ std::tuple< double, double, int >
     if ( gca == 2 )
     {
         // gca on all elements for now
-        //linalg::assign( GCAElements, 1 );
-        linalg::assign( GCAElements, 0 );
+linalg::assign( GCAElements, 0 );
         std::cout << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
             domains[velocity_level], k.grid_data(), velocity_level, GCAElements.grid_data() );
 
-        //io::XDMFOutput xdmf_gcaelems(
-        //    "gca_elems", domains[0], subdomain_shell_coords[0], subdomain_radii[0] );
-        //xdmf_gcaelems.add( GCAElements.grid_data() );
-        //xdmf_gcaelems.write();
+        
     }
     else if ( gca == 1 )
     {

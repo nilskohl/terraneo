@@ -400,7 +400,7 @@ class EpsilonDivDivKerngen
             qp_array[0][2]    = 0.0;
             qw_array[0]       = 1.0;
             int cmb_shift     = ( ( treat_boundary_ && diagonal_ == false && r_cell == 0 ) ? ( 3 ) : ( 0 ) );
-            int max_rad       = -1 + radii_.extent( 1 );
+            int max_rad       = radii_.extent( 1 ) - 1;
             int surface_shift = ( ( treat_boundary_ && diagonal_ == false && max_rad == r_cell + 1 ) ? ( 3 ) : ( 0 ) );
             double dst_array[3][2][6] = { 0 };
             int    w                  = 0;

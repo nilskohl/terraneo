@@ -71,16 +71,6 @@ class LocalMatrixStorage
             KOKKOS_ASSERT( level_range.has_value() && GCAElements.has_value() );
             level_range_ = level_range.value();
             GCAElements_ = GCAElements.value();
-            // check level range and coarse-grid marked gca elements are consistent with fine-grid domain
-            /*  KOKKOS_ASSERT(
-                GCAElements_.extent( 1 ) * Kokkos::pow( 2, level_range_ - 1 ) ==
-                ( domain.domain_info().subdomain_num_nodes_per_side_laterally() ) );
-            KOKKOS_ASSERT(
-                GCAElements_.extent( 2 ) * Kokkos::pow( 2, level_range_ - 1 ) ==
-                ( domain.domain_info().subdomain_num_nodes_per_side_laterally() ) );
-            KOKKOS_ASSERT(
-                GCAElements_.extent( 3 ) * Kokkos::pow( 2, level_range_ - 1 ) ==
-                ( domain.domain_info().subdomain_num_nodes_radially() ) );*/
 
             // compute required capacity of map/selective storage
             int nGCAElements = kernels::common::dot_product( GCAElements_, GCAElements_ );

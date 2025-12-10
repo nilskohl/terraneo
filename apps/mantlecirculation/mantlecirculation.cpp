@@ -294,13 +294,13 @@ Result<> run( const Parameters& prm )
     if ( gca == 2 )
     {
         linalg::assign( GCAElements, 0 );
-        std::cout << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
+        logroot << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
             domains[velocity_level], eta[velocity_level].grid_data(), velocity_level, GCAElements.grid_data() );
     }
     else if ( gca == 1 )
     {
-        std::cout << "GCA on all elements " << std::endl;
+        logroot << "GCA on all elements " << std::endl;
         assign( GCAElements, 1 );
     }
 

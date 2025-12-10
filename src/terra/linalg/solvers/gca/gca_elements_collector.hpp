@@ -91,14 +91,7 @@ class GCAElementsCollector
                 int r_cell_coarsest = map_to_coarse_element( r_cell, level_range_ );
 
                 GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest ) = 1;
-                /*  GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest )         = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest + 1, r_cell_coarsest )         = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest )     = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest, r_cell_coarsest + 1 )         = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest, r_cell_coarsest + 1 )     = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest, y_cell_coarsest + 1, r_cell_coarsest + 1 )     = 1;
-                GCAElements_( local_subdomain_id, x_cell_coarsest + 1, y_cell_coarsest + 1, r_cell_coarsest + 1 ) = 1;*/
-            }
+           }
         }
     }
 };

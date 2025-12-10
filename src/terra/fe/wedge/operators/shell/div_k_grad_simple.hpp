@@ -36,6 +36,7 @@ class DivKGradSimple
 
     grid::Grid3DDataVec< ScalarT, 3 > grid_;
     grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid4DDataScalar< ScalarType > k_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -54,7 +55,6 @@ class DivKGradSimple
     dense::Vec< ScalarT, 3 > quad_points_1x1_[quadrature::quad_felippa_1x1_num_quad_points];
     ScalarT                  quad_weights_1x1_[quadrature::quad_felippa_1x1_num_quad_points];
 
-    grid::Grid4DDataScalar< ScalarType > k_;
 
   public:
     DivKGradSimple(

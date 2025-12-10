@@ -137,9 +137,6 @@ double test( int level, const std::shared_ptr< util::Table >& table )
 
     using Laplace = fe::wedge::operators::shell::LaplaceKerngen< ScalarType >;
 
-    //Laplace A( domain, coords_shell, coords_radii,boundary_mask_data, true, false );
-    //Laplace A_neumann( domain, coords_shell, coords_radii, boundary_mask_data,false, false );
-    //Laplace A_neumann_diag( domain, coords_shell, coords_radii, boundary_mask_data, false, true );
     Laplace A( domain, coords_shell, coords_radii, true, false );
     Laplace A_neumann( domain, coords_shell, coords_radii,false, false );
     Laplace A_neumann_diag( domain, coords_shell, coords_radii, false, true );

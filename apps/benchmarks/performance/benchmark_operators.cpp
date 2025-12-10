@@ -53,18 +53,17 @@ enum class BenchmarkType : int
 };
 
 constexpr auto all_benchmark_types = {
-    //    BenchmarkType::LaplaceFloat,
-    //BenchmarkType::LaplaceDouble,
-    //BenchmarkType::LaplaceSimpleDouble,
-    //BenchmarkType::LaplaceKerngenDouble,
-    //   BenchmarkType::VectorLaplaceFloat,
-    //   BenchmarkType::VectorLaplaceDouble,
-    //   BenchmarkType::VectorLaplaceNeumannDouble,
-    //   BenchmarkType::EpsDivDivFloat,
-       BenchmarkType::EpsDivDivDouble,
-       BenchmarkType::EpsDivDivKerngenDouble,
-    //   BenchmarkType::StokesDouble
-};
+    BenchmarkType::LaplaceFloat,
+    BenchmarkType::LaplaceDouble,
+    BenchmarkType::LaplaceSimpleDouble,
+    BenchmarkType::LaplaceKerngenDouble,
+    BenchmarkType::VectorLaplaceFloat,
+    BenchmarkType::VectorLaplaceDouble,
+    BenchmarkType::VectorLaplaceNeumannDouble,
+    BenchmarkType::EpsDivDivFloat,
+    BenchmarkType::EpsDivDivDouble,
+    BenchmarkType::EpsDivDivKerngenDouble,
+    BenchmarkType::StokesDouble };
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
     { BenchmarkType::LaplaceFloat, "Laplace (float)" },
@@ -89,7 +88,7 @@ struct BenchmarkData
 struct Parameters
 {
     int min_level  = 1;
-    int max_level  = 8;
+    int max_level  = 6;
     int executions = 5;
 };
 
@@ -191,8 +190,13 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
 
     double duration = 0.0;
     long   dofs     = 0;
-
-     if ( benchmark == BenchmarkType::LaplaceSimpleDouble )
+    if ( benchmark == BenchmarkType::LaplaceFloat )
+    {
+        LaplaceSimple< float > A( domain, coords_shell_float, coords_radii_float, true, false );
+        duration = measure_run_time( executions, A, src_scalar_float, dst_scalar_float );
+        dofs     = dofs_vec;
+    }
+    else if ( benchmark == BenchmarkType::LaplaceSimpleDouble )
     {
         LaplaceSimple< double > A( domain, coords_shell_double, coords_radii_double, true, false );
         util::Timer             t( "Laplace - double" );
@@ -202,7 +206,7 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     else if ( benchmark == BenchmarkType::LaplaceDouble )
     {
         Laplace< double > A( domain, coords_shell_double, coords_radii_double, boundary_mask_data, true, false );
-        util::Timer             t( "Laplace - double" );
+        util::Timer       t( "Laplace - double" );
         duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
         dofs     = dofs_scalar;
     }
@@ -245,10 +249,12 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
         util::Timer   t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
-    } else if ( benchmark == BenchmarkType::EpsDivDivKerngenDouble )
+    }
+    else if ( benchmark == BenchmarkType::EpsDivDivKerngenDouble )
     {
-        EpsilonDivDivKerngen A( domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
-        util::Timer   t( "EpsDivDiv - double" );
+        EpsilonDivDivKerngen A(
+            domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
+        util::Timer t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
     }
