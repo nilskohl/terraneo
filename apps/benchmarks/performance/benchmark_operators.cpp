@@ -4,7 +4,6 @@
 #include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv_kerngen.hpp"
 #include "fe/wedge/operators/shell/laplace.hpp"
-#include "fe/wedge/operators/shell/laplace_kerngen.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
@@ -24,7 +23,6 @@ using namespace terra;
 using fe::wedge::operators::shell::EpsilonDivDiv;
 using fe::wedge::operators::shell::EpsilonDivDivKerngen;
 using fe::wedge::operators::shell::Laplace;
-using fe::wedge::operators::shell::LaplaceKerngen;
 using fe::wedge::operators::shell::LaplaceSimple;
 using fe::wedge::operators::shell::Stokes;
 using fe::wedge::operators::shell::VectorLaplaceSimple;
@@ -42,7 +40,6 @@ enum class BenchmarkType : int
     LaplaceFloat,
     LaplaceDouble,
     LaplaceSimpleDouble,
-    LaplaceKerngenDouble,
     VectorLaplaceFloat,
     VectorLaplaceDouble,
     VectorLaplaceNeumannDouble,
@@ -56,7 +53,6 @@ constexpr auto all_benchmark_types = {
     BenchmarkType::LaplaceFloat,
     BenchmarkType::LaplaceDouble,
     BenchmarkType::LaplaceSimpleDouble,
-    BenchmarkType::LaplaceKerngenDouble,
     BenchmarkType::VectorLaplaceFloat,
     BenchmarkType::VectorLaplaceDouble,
     BenchmarkType::VectorLaplaceNeumannDouble,
@@ -69,7 +65,6 @@ const std::map< BenchmarkType, std::string > benchmark_description = {
     { BenchmarkType::LaplaceFloat, "Laplace (float)" },
     { BenchmarkType::LaplaceSimpleDouble, "LaplaceSimple (double)" },
     { BenchmarkType::LaplaceDouble, "Laplace (double)" },
-    { BenchmarkType::LaplaceKerngenDouble, "LaplaceKerngen (double)" },
     { BenchmarkType::VectorLaplaceFloat, "VectorLaplace (float)" },
     { BenchmarkType::VectorLaplaceDouble, "VectorLaplace (double)" },
     { BenchmarkType::VectorLaplaceNeumannDouble, "VectorLaplaceNeumann (double)" },
@@ -207,13 +202,6 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     {
         Laplace< double > A( domain, coords_shell_double, coords_radii_double, boundary_mask_data, true, false );
         util::Timer       t( "Laplace - double" );
-        duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
-        dofs     = dofs_scalar;
-    }
-    else if ( benchmark == BenchmarkType::LaplaceKerngenDouble )
-    {
-        LaplaceKerngen< double > A( domain, coords_shell_double, coords_radii_double, true, false );
-        util::Timer              t( "LaplaceKerngen - double" );
         duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
         dofs     = dofs_scalar;
     }

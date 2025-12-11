@@ -5,7 +5,6 @@ target_sources(terra
         identity.hpp
         laplace.hpp
         laplace_simple.hpp
-        laplace_kerngen.hpp
         mass.hpp
         prolongation_linear.hpp
         restriction_linear.hpp
