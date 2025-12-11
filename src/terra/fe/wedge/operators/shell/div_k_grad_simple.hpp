@@ -34,8 +34,8 @@ class DivKGradSimple
 
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 >    grid_;
-    grid::Grid2DDataScalar< ScalarT >    radii_;
+    grid::Grid3DDataVec< ScalarT, 3 > grid_;
+    grid::Grid2DDataScalar< ScalarT > radii_;
     grid::Grid4DDataScalar< ScalarType > k_;
 
     bool treat_boundary_;
@@ -54,6 +54,7 @@ class DivKGradSimple
     ScalarT                  quad_weights_3x2_[quadrature::quad_felippa_3x2_num_quad_points];
     dense::Vec< ScalarT, 3 > quad_points_1x1_[quadrature::quad_felippa_1x1_num_quad_points];
     ScalarT                  quad_weights_1x1_[quadrature::quad_felippa_1x1_num_quad_points];
+
 
   public:
     DivKGradSimple(
@@ -106,7 +107,7 @@ class DivKGradSimple
         const int x_cell,
         const int y_cell,
         const int r_cell,
-        const int wedge ) const
+        const int wedge )
     {
         assert( lmatrices_.data() != nullptr );
 
@@ -315,6 +316,5 @@ class DivKGradSimple
 
 static_assert( linalg::OperatorLike< DivKGradSimple< float > > );
 static_assert( linalg::OperatorLike< DivKGradSimple< double > > );
-static_assert( linalg::GCACapable< DivKGradSimple< double > > );
 
 } // namespace terra::fe::wedge::operators::shell

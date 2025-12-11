@@ -10,3 +10,5 @@ target_sources(terra
         pminres.hpp
         richardson.hpp
         solver.hpp)
+
+add_subdirectory(gca)

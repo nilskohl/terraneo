@@ -2,7 +2,9 @@
 #include <kernels/common/grid_operations.hpp>
 
 #include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
+#include "fe/wedge/operators/shell/epsilon_divdiv_kerngen.hpp"
 #include "fe/wedge/operators/shell/laplace.hpp"
+#include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "linalg/operator.hpp"
@@ -19,7 +21,9 @@
 using namespace terra;
 
 using fe::wedge::operators::shell::EpsilonDivDiv;
+using fe::wedge::operators::shell::EpsilonDivDivKerngen;
 using fe::wedge::operators::shell::Laplace;
+using fe::wedge::operators::shell::LaplaceSimple;
 using fe::wedge::operators::shell::Stokes;
 using fe::wedge::operators::shell::VectorLaplaceSimple;
 using linalg::apply;
@@ -35,32 +39,38 @@ enum class BenchmarkType : int
 {
     LaplaceFloat,
     LaplaceDouble,
+    LaplaceSimpleDouble,
     VectorLaplaceFloat,
     VectorLaplaceDouble,
     VectorLaplaceNeumannDouble,
     EpsDivDivFloat,
     EpsDivDivDouble,
+    EpsDivDivKerngenDouble,
     StokesDouble,
 };
 
 constexpr auto all_benchmark_types = {
     BenchmarkType::LaplaceFloat,
     BenchmarkType::LaplaceDouble,
+    BenchmarkType::LaplaceSimpleDouble,
     BenchmarkType::VectorLaplaceFloat,
     BenchmarkType::VectorLaplaceDouble,
     BenchmarkType::VectorLaplaceNeumannDouble,
     BenchmarkType::EpsDivDivFloat,
     BenchmarkType::EpsDivDivDouble,
+    BenchmarkType::EpsDivDivKerngenDouble,
     BenchmarkType::StokesDouble };
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
     { BenchmarkType::LaplaceFloat, "Laplace (float)" },
+    { BenchmarkType::LaplaceSimpleDouble, "LaplaceSimple (double)" },
     { BenchmarkType::LaplaceDouble, "Laplace (double)" },
     { BenchmarkType::VectorLaplaceFloat, "VectorLaplace (float)" },
     { BenchmarkType::VectorLaplaceDouble, "VectorLaplace (double)" },
     { BenchmarkType::VectorLaplaceNeumannDouble, "VectorLaplaceNeumann (double)" },
     { BenchmarkType::EpsDivDivFloat, "EpsDivDiv (float)" },
     { BenchmarkType::EpsDivDivDouble, "EpsDivDiv (double)" },
+    { BenchmarkType::EpsDivDivKerngenDouble, "EpsDivDivKerngen (double)" },
     { BenchmarkType::StokesDouble, "Stokes (double)" } };
 
 struct BenchmarkData
@@ -175,12 +185,17 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
 
     double duration = 0.0;
     long   dofs     = 0;
-
     if ( benchmark == BenchmarkType::LaplaceFloat )
     {
-        Laplace< float > A( domain, coords_shell_float, coords_radii_float, boundary_mask_data, true, false );
-        util::Timer      t( "Laplace - float" );
+        LaplaceSimple< float > A( domain, coords_shell_float, coords_radii_float, true, false );
         duration = measure_run_time( executions, A, src_scalar_float, dst_scalar_float );
+        dofs     = dofs_vec;
+    }
+    else if ( benchmark == BenchmarkType::LaplaceSimpleDouble )
+    {
+        LaplaceSimple< double > A( domain, coords_shell_double, coords_radii_double, true, false );
+        util::Timer             t( "Laplace - double" );
+        duration = measure_run_time( executions, A, src_scalar_double, dst_scalar_double );
         dofs     = dofs_scalar;
     }
     else if ( benchmark == BenchmarkType::LaplaceDouble )
@@ -220,6 +235,14 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     {
         EpsilonDivDiv A( domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
         util::Timer   t( "EpsDivDiv - double" );
+        duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
+        dofs     = dofs_vec;
+    }
+    else if ( benchmark == BenchmarkType::EpsDivDivKerngenDouble )
+    {
+        EpsilonDivDivKerngen A(
+            domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
+        util::Timer t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
     }

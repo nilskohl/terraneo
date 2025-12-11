@@ -17,10 +17,10 @@ target_sources(terra
         div_k_grad_simple.hpp
         epsilon.hpp
         epsilon_divdiv.hpp
+        epsilon_divdiv_kerngen.hpp
         epsilon_divdiv_simple.hpp
         epsilon_divdiv_stokes.hpp
         zero.hpp
-        galerkin_coarsening_linear.hpp
         kmass.hpp
         )
 

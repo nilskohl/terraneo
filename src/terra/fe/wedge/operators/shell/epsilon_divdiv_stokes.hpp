@@ -4,6 +4,7 @@
 #include "communication/shell/communication.hpp"
 #include "divergence.hpp"
 #include "epsilon_divdiv.hpp"
+#include "epsilon_divdiv_kerngen.hpp"
 #include "gradient.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
@@ -21,7 +22,7 @@ class EpsDivDivStokes
     using DstVectorType = linalg::VectorQ1IsoQ2Q1< ScalarT, VecDim >;
     using ScalarType    = ScalarT;
 
-    using Block11Type = EpsilonDivDiv< ScalarType, VecDim >;
+    using Block11Type = EpsilonDivDivKerngen< ScalarType, VecDim >;
     using Block12Type = Gradient< ScalarType >;
     using Block21Type = Divergence< ScalarType >;
     using Block22Type = Zero< ScalarType >;
@@ -40,10 +41,11 @@ class EpsDivDivStokes
         const grid::shell::DistributedDomain&       domain_coarse,
         const grid::Grid3DDataVec< ScalarType, 3 >& grid,
         const grid::Grid2DDataScalar< ScalarType >& radii,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
         const grid::Grid4DDataScalar< ScalarType >& k,
         bool                                        treat_boundary,
         bool                                        diagonal )
-    : A_( domain_fine, grid, radii, k, treat_boundary, diagonal )
+    : A_( domain_fine, grid, radii, mask, k, treat_boundary, diagonal )
     , B_T_( domain_fine, domain_coarse, grid, radii, treat_boundary )
     , B_( domain_fine, domain_coarse, grid, radii, treat_boundary )
     , diagonal_( diagonal )

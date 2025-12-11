@@ -2532,6 +2532,18 @@ inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
           distributed_domain.domain_info().subdomain_num_nodes_radially() } );
 }
 
+// loop only lateral dimensions of each subdomain. Used in the precomputation of lateral parts of the 
+// Jacobian (-> Oliver)
+inline Kokkos::MDRangePolicy< Kokkos::Rank< 3 > >
+    local_domain_md_range_policy_cells_lateral( const DistributedDomain& distributed_domain )
+{
+    return Kokkos::MDRangePolicy< Kokkos::Rank< 3 > >(
+        { 0, 0, 0 },
+        { static_cast< long long >( distributed_domain.subdomains().size() ),
+          distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
+          distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1 } );
+}
+
 inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
     local_domain_md_range_policy_cells( const DistributedDomain& distributed_domain )
 {
@@ -2541,6 +2553,19 @@ inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
           distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
           distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1,
           distributed_domain.domain_info().subdomain_num_nodes_radially() - 1 } );
+}
+
+// linearized Range instaed of MDRange to loop lateral and radial dimension,
+// potentially yields a performance advantage.
+inline Kokkos::RangePolicy<>
+    local_domain_md_range_policy_cells_linearized( const DistributedDomain& distributed_domain )
+{
+    return Kokkos::RangePolicy<>(
+        0,
+        static_cast< long long >( distributed_domain.subdomains().size() ) *
+            ( distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1 ) *
+            ( distributed_domain.domain_info().subdomain_num_nodes_per_side_laterally() - 1 ) *
+            ( distributed_domain.domain_info().subdomain_num_nodes_radially() - 1 ) );
 }
 
 /// @brief Returns an initialized grid with the coordinates of all subdomains' nodes projected to the unit sphere.

@@ -54,6 +54,18 @@ void set_constant( const grid::Grid4DDataVec< ScalarType, VecDim >& x, ScalarTyp
 }
 
 template < typename ScalarType >
+void set_constant( const grid::Grid5DDataScalar< ScalarType >& x, ScalarType value )
+{
+    Kokkos::parallel_for(
+        "set_constant (Grid5DDataScalar)",
+        Kokkos::MDRangePolicy(
+            { 0, 0, 0, 0, 0 }, { x.extent( 0 ), x.extent( 1 ), x.extent( 2 ), x.extent( 3 ), x.extent( 4 ) } ),
+        KOKKOS_LAMBDA( int subdomain, int i, int j, int k, int w ) { x( subdomain, i, j, k, w ) = value; } );
+
+    Kokkos::fence();
+}
+
+template < typename ScalarType >
 void scale( const grid::Grid4DDataScalar< ScalarType >& x, ScalarType value )
 {
     Kokkos::parallel_for(

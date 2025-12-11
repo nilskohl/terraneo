@@ -39,7 +39,7 @@ class LaplaceSimple
 
     bool treat_boundary_;
     bool diagonal_;
-    bool single_quadpoint_;
+    bool single_quadpoint_ = false;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
@@ -188,122 +188,124 @@ class LaplaceSimple
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
-        dense::Mat< ScalarT, 6, 6 > A[num_wedges_per_hex_cell] = {};
-        if ( !applyStoredLMatrices_ )
-        {
-            // Gather surface points for each wedge.
-            dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
-            wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
-
-            // Gather wedge radii.
-            const ScalarT r_1 = radii_( local_subdomain_id, r_cell );
-            const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
-
-            // Quadrature points.
-            int num_quad_points = single_quadpoint_ ? quadrature::quad_felippa_1x1_num_quad_points :
-                                                      quadrature::quad_felippa_3x2_num_quad_points;
-
-            // Compute the local element matrix.
-
-            for ( int q = 0; q < num_quad_points; q++ )
+            dense::Mat< ScalarT, 6, 6 > A[num_wedges_per_hex_cell] = {};
+            if ( !applyStoredLMatrices_ )
             {
-                const auto w  = single_quadpoint_ ? quad_weights_1x1_[q] : quad_weights_3x2_[q];
-                const auto qp = single_quadpoint_ ? quad_points_1x1_[q] : quad_points_3x2_[q];
+                // Gather surface points for each wedge.
+                dense::Vec< ScalarT, 3 > wedge_phy_surf[num_wedges_per_hex_cell][num_nodes_per_wedge_surface] = {};
+                wedge_surface_physical_coords( wedge_phy_surf, grid_, local_subdomain_id, x_cell, y_cell );
 
-                for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+                // Gather wedge radii.
+                const ScalarT r_1 = radii_( local_subdomain_id, r_cell );
+                const ScalarT r_2 = radii_( local_subdomain_id, r_cell + 1 );
+
+                // Quadrature points.
+                int num_quad_points = single_quadpoint_ ? quadrature::quad_felippa_1x1_num_quad_points :
+                                                          quadrature::quad_felippa_3x2_num_quad_points;
+
+                // Compute the local element matrix.
+
+                for ( int q = 0; q < num_quad_points; q++ )
                 {
-                    const auto J                = jac( wedge_phy_surf[wedge], r_1, r_2, qp );
-                    const auto det              = Kokkos::abs( J.det() );
-                    const auto J_inv_transposed = J.inv().transposed();
+                    const auto w  = single_quadpoint_ ? quad_weights_1x1_[q] : quad_weights_3x2_[q];
+                    const auto qp = single_quadpoint_ ? quad_points_1x1_[q] : quad_points_3x2_[q];
 
-                    for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                    for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
                     {
-                        const auto grad_i = grad_shape( i, qp );
+                        const auto J                = jac( wedge_phy_surf[wedge], r_1, r_2, qp );
+                        const auto det              = Kokkos::abs( J.det() );
+                        const auto J_inv_transposed = J.inv().transposed();
 
-                        for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                        for ( int i = 0; i < num_nodes_per_wedge; i++ )
                         {
-                            const auto grad_j = grad_shape( j, qp );
+                            const auto grad_i = grad_shape( i, qp );
 
-                            A[wedge]( i, j ) +=
-                                w * ( ( J_inv_transposed * grad_i ).dot( J_inv_transposed * grad_j ) * det );
-                        }
-                    }
-                }
-            }
-
-            if ( treat_boundary_ )
-            {
-                for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
-                {
-                    dense::Mat< ScalarT, 6, 6 > boundary_mask;
-                    boundary_mask.fill( 1.0 );
-                    if ( r_cell == 0 )
-                    {
-                        // Inner boundary (CMB).
-                        for ( int i = 0; i < 6; i++ )
-                        {
-                            for ( int j = 0; j < 6; j++ )
+                            for ( int j = 0; j < num_nodes_per_wedge; j++ )
                             {
-                                if ( i != j && ( i < 3 || j < 3 ) )
-                                {
-                                    boundary_mask( i, j ) = 0.0;
-                                }
+                                const auto grad_j = grad_shape( j, qp );
+
+                                A[wedge]( i, j ) +=
+                                    w * ( ( J_inv_transposed * grad_i ).dot( J_inv_transposed * grad_j ) * det );
                             }
                         }
                     }
+                }
 
-                    if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                if ( treat_boundary_ )
+                {
+                    for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
                     {
-                        // Outer boundary (surface).
-                        for ( int i = 0; i < 6; i++ )
+                        dense::Mat< ScalarT, 6, 6 > boundary_mask;
+                        boundary_mask.fill( 1.0 );
+                        if ( r_cell == 0 )
                         {
-                            for ( int j = 0; j < 6; j++ )
+                            // Inner boundary (CMB).
+                            for ( int i = 0; i < 6; i++ )
                             {
-                                if ( i != j && ( i >= 3 || j >= 3 ) )
+                                for ( int j = 0; j < 6; j++ )
                                 {
-                                    boundary_mask( i, j ) = 0.0;
+                                    if ( i != j && ( i < 3 || j < 3 ) )
+                                    {
+                                        boundary_mask( i, j ) = 0.0;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    A[wedge].hadamard_product( boundary_mask );
+                        if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                        {
+                            // Outer boundary (surface).
+                            for ( int i = 0; i < 6; i++ )
+                            {
+                                for ( int j = 0; j < 6; j++ )
+                                {
+                                    if ( i != j && ( i >= 3 || j >= 3 ) )
+                                    {
+                                        boundary_mask( i, j ) = 0.0;
+                                    }
+                                }
+                            }
+                        }
+
+                        A[wedge].hadamard_product( boundary_mask );
+                    }
                 }
             }
-        }
-        else
-        {
-            // load LMatrix for both local wedges
-            A[0] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
-            A[1] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
-        }
+            else
+            {
+                // load LMatrix for both local wedges
+                A[0] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                A[1] = lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+            }
 
-        if ( diagonal_ )
-        {
-            A[0] = A[0].diagonal();
-            A[1] = A[1].diagonal();
-        }
+            if ( diagonal_ )
+            {
+                A[0] = A[0].diagonal();
+                A[1] = A[1].diagonal();
+            }
 
-        if ( storeLMatrices_ )
-        {
-            // write local matrices to mem
-            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) = A[0];
-            lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) = A[1];
-        }
-        else
-        {
-            // apply local matrices to local DoFs
-            dense::Vec< ScalarT, 6 > src[num_wedges_per_hex_cell];
-            extract_local_wedge_scalar_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, src_ );
+            if ( storeLMatrices_ )
+            {
+                // write local matrices to mem
+                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) = A[0];
+                lmatrices_( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) = A[1];
+            }
+            else
+            {
+                // apply local matrices to local DoFs
+                dense::Vec< ScalarT, 6 > src[num_wedges_per_hex_cell];
+                extract_local_wedge_scalar_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, src_ );
 
-            dense::Vec< ScalarT, 6 > dst[num_wedges_per_hex_cell];
+                dense::Vec< ScalarT, 6 > dst[num_wedges_per_hex_cell];
 
-            dst[0] = A[0] * src[0];
-            dst[1] = A[1] * src[1];
+                dst[0] = A[0] * src[0];
+                dst[1] = A[1] * src[1];
 
-            atomically_add_local_wedge_scalar_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, dst );
-        }
+                atomically_add_local_wedge_scalar_coefficients( dst_, local_subdomain_id, x_cell, y_cell, r_cell, dst );
+            }
     }
+
+    // Kernel body:
 };
 
 static_assert( linalg::OperatorLike< LaplaceSimple< float > > );
