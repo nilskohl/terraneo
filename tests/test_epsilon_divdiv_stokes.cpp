@@ -223,7 +223,6 @@ struct KInterpolator
     }
 };
 
-
 struct KJumpingInterpolator
 {
     Grid3DDataVec< double, 3 > grid_;
@@ -366,17 +365,14 @@ std::tuple< double, double, int >
     if ( gca == 2 )
     {
         // gca on all elements for now
-linalg::assign( GCAElements, 0 );
+        linalg::assign( GCAElements, 0 );
         std::cout << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
             domains[velocity_level], k.grid_data(), velocity_level, GCAElements.grid_data() );
-
-        
     }
     else if ( gca == 1 )
     {
         std::cout << "GCA on all elements " << std::endl;
-
         assign( GCAElements, 1 );
     }
 
@@ -385,6 +381,7 @@ linalg::assign( GCAElements, 0 );
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         k.grid_data(),
         true,
         false );
@@ -394,6 +391,7 @@ linalg::assign( GCAElements, 0 );
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         k.grid_data(),
         false,
         false );
@@ -403,6 +401,7 @@ linalg::assign( GCAElements, 0 );
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         k.grid_data(),
         false,
         true );
@@ -427,11 +426,25 @@ linalg::assign( GCAElements, 0 );
             "coefficient interpolation",
             local_domain_md_range_policy_nodes( domains[level] ),
             KInterpolator( coords_shell[level], coords_radii[level], k_c.grid_data(), kmax ) );
-        A_diag.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, true );
+        A_diag.emplace_back(
+            domains[level],
+            coords_shell[level],
+            coords_radii[level],
+            boundary_mask_data[level],
+            k_c.grid_data(),
+            true,
+            true );
 
         if ( level < num_levels - 1 )
         {
-            A_c.emplace_back( domains[level], coords_shell[level], coords_radii[level], k_c.grid_data(), true, false );
+            A_c.emplace_back(
+                domains[level],
+                coords_shell[level],
+                coords_radii[level],
+                boundary_mask_data[level],
+                k_c.grid_data(),
+                true,
+                false );
             if ( gca == 2 )
             {
                 A_c.back().set_stored_matrix_mode(
@@ -768,10 +781,8 @@ int main( int argc, char** argv )
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;
 
-                    std::cout << "Iters: " << iterations
-                              << std::endl;
-                    cycles[std::string( "k_max=" ) + std::to_string( kmax )] =
-                        iterations;
+                    std::cout << "Iters: " << iterations << std::endl;
+                    cycles[std::string( "k_max=" ) + std::to_string( kmax )] = iterations;
                 }
             }
             if ( gca == 1 )

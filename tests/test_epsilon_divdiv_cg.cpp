@@ -222,6 +222,7 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
     auto mask_data = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
 
     VectorQ1Vec< ScalarType >    u( "u", domain, mask_data );
     VectorQ1Vec< ScalarType >    g( "g", domain, mask_data );
@@ -248,9 +249,11 @@ double test( int level, const std::shared_ptr< util::Table >& table )
     Kokkos::fence();
     using Epsilon = fe::wedge::operators::shell::EpsilonDivDivKerngen< ScalarType, 3 >;
 
-    Epsilon A( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), true, false );
-    Epsilon A_neumann( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), false, false );
-    Epsilon A_neumann_diag( domain, subdomain_shell_coords, subdomain_radii, k.grid_data(), false, true );
+    Epsilon A( domain, subdomain_shell_coords, subdomain_radii, boundary_mask_data, k.grid_data(), true, false );
+    Epsilon A_neumann(
+        domain, subdomain_shell_coords, subdomain_radii, boundary_mask_data, k.grid_data(), false, false );
+    Epsilon A_neumann_diag(
+        domain, subdomain_shell_coords, subdomain_radii, boundary_mask_data, k.grid_data(), false, true );
 
     using Mass = fe::wedge::operators::shell::VectorMass< ScalarType, 3 >;
 

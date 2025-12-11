@@ -52,10 +52,10 @@ using grid::shell::SubdomainInfo;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
+using linalg::solvers::TwoGridGCA;
 using util::logroot;
 using util::Ok;
 using util::Result;
-using linalg::solvers::TwoGridGCA;
 
 struct InitialConditionInterpolator
 {
@@ -290,7 +290,7 @@ Result<> run( const Parameters& prm )
 
     // determine AGCA elements
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], ownership_mask_data[0] );
-    int gca = 1;
+    int                          gca = 1;
     if ( gca == 2 )
     {
         linalg::assign( GCAElements, 0 );
@@ -381,6 +381,7 @@ Result<> run( const Parameters& prm )
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         eta[velocity_level].grid_data(),
         true,
         false );
@@ -390,6 +391,7 @@ Result<> run( const Parameters& prm )
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         eta[velocity_level].grid_data(),
         false,
         false );
@@ -407,7 +409,13 @@ Result<> run( const Parameters& prm )
     for ( int level = 0; level < num_levels - 1; level++ )
     {
         A_c.emplace_back(
-            domains[level], coords_shell[level], coords_radii[level], eta[level].grid_data(), true, false );
+            domains[level],
+            coords_shell[level],
+            coords_radii[level],
+            boundary_mask_data[level],
+            eta[level].grid_data(),
+            true,
+            false );
         if ( gca == 2 )
         {
             A_c.back().set_stored_matrix_mode(

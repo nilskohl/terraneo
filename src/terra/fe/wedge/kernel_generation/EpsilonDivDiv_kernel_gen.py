@@ -162,16 +162,40 @@ num_nodes_per_wedge = 6
 # (could also generate exactly the same loop bounds, but to multiply with conds and unroll
 #  enables a cse across loop iteration (essentially, cse finds loop invariants) which
 # *might* result in fewer flops.
-cmb_shift, surface_shift = sp.symbols("cmb_shift surface_shift", integer=True)
+cmb_shift, surface_shift, at_surface_boundary, at_cmb_boundary = sp.symbols(
+    "cmb_shift surface_shift at_surface_boundary at_cmb_boundary", integer=True
+)
 max_rad, treat_boundary, diagonal, postloop = sp.symbols(
     " max_rad treat_boundary_ diagonal_ postloop", integer=True
 )
 kernel_code += "\n" + ccode(
     CodeBlock(
         *[
+            Variable.deduced(at_cmb_boundary).as_Declaration(
+                value=FunctionCall(
+                    "has_flag",
+                    [
+                        FunctionCall(
+                            "mask_", [local_subdomain_id, x_cell, y_cell, r_cell]
+                        ),
+                        String("CMB"),
+                    ],
+                )
+            ),
+            Variable.deduced(at_surface_boundary).as_Declaration(
+                value=FunctionCall(
+                    "has_flag",
+                    [
+                        FunctionCall(
+                            "mask_", [local_subdomain_id, x_cell, y_cell, r_cell + 1]
+                        ),
+                        String("SURFACE"),
+                    ],
+                )
+            ),
             Variable.deduced(cmb_shift).as_Declaration(
                 value=sp.Piecewise(
-                    (3, sp.Eq(diagonal, False) & treat_boundary & sp.Eq(r_cell, 0)),
+                    (3, sp.Eq(diagonal, False) & treat_boundary & Ge(at_cmb_boundary, 1)),
                     (0, True),
                 )
             ),
@@ -184,7 +208,7 @@ kernel_code += "\n" + ccode(
                         3,
                         sp.Eq(diagonal, False)
                         & treat_boundary
-                        & sp.Eq(r_cell + 1, max_rad),
+                        & Ge(at_surface_boundary, 1),
                     ),
                     (0, True),
                 )
@@ -226,7 +250,6 @@ k_eval = sum(
 k_eval_replacements, k_eval_reduced_exprs = sp.cse(
     exprs=k_eval, symbols=numbered_symbols(prefix=f"tmpcse_k_eval_", real=True)
 )
-
 quadloop_body += [
     Comment("Coefficient evaluation on current wedge w")
 ] + make_ast_from_exprs(k_eval_replacements)
@@ -290,14 +313,18 @@ else:
         ),
         contract=False,
     )
-  
+
     J_invT = IndexedBase("J_invT", shape=(3, 3))
     factors = IndexedBase("factors", shape=(3))
     d1, d2 = symbols("d1 d2", integer=True)
     quadloop_body += [
-        Comment("\nLoad the radially constant parts of the Jacobial from storage,\n scale with radial parts of the current element."),
+        Comment(
+            "\nLoad the radially constant parts of the Jacobial from storage,\n scale with radial parts of the current element."
+        ),
         String(f"double J_invT[{dim}][{dim}] = {{0}};"),
-        Variable.deduced(r_inv).as_Declaration(value=1.0/(forward_map_rad(rads[0], rads[1], qp[2]))),
+        Variable.deduced(r_inv).as_Declaration(
+            value=1.0 / (forward_map_rad(rads[0], rads[1], qp[2]))
+        ),
         String(f"double factors[{dim}] = {{ {r_inv}, {r_inv}, {grad_r_inv} }};"),
         Variable.deduced(d1).as_Declaration(),
         Variable.deduced(d2).as_Declaration(),
@@ -311,8 +338,8 @@ else:
                     [
                         Assignment(
                             J_invT[d1, d2],
-                            factors[d2] *
-                            FunctionCall(
+                            factors[d2]
+                            * FunctionCall(
                                 "g1_",
                                 [
                                     local_subdomain_id,
@@ -340,7 +367,9 @@ else:
 
     r = 1 / r_inv
     J_abs_det = r * r * grad_r * g2
-    J_invT_cse_replaced = Matrix([[J_invT[i, j] for j in range(dim)] for i in range(dim)])
+    J_invT_cse_replaced = Matrix(
+        [[J_invT[i, j] for j in range(dim)] for i in range(dim)]
+    )
 
 # precompute gradients + CSE
 grad_exprs = []
@@ -559,7 +588,7 @@ dimloop_i_body += [
 
 dimloop_diagBC_body = [
     Conditional(
-        (diagonal | (treat_boundary & (sp.Eq(r_cell, 0) | sp.Eq(r_cell + 1, max_rad)))),
+        (diagonal | (treat_boundary & (Ge(at_surface_boundary, 1) | Ge(at_cmb_boundary, 1)))),
         [
             Variable.deduced(g_symbol).as_Declaration(),
             For(

@@ -14,6 +14,9 @@
 
 namespace terra::fe::wedge::operators::shell {
 
+using grid::shell::ShellBoundaryFlag::CMB;
+using grid::shell::ShellBoundaryFlag::SURFACE;
+using util::has_flag;
 template < typename ScalarT, int VecDim = 3 >
 class EpsilonDivDivKerngen
 {
@@ -30,9 +33,10 @@ class EpsilonDivDivKerngen
 
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 >    grid_;
-    grid::Grid2DDataScalar< ScalarT >    radii_;
-    grid::Grid4DDataScalar< ScalarType > k_;
+    grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
+    grid::Grid2DDataScalar< ScalarT >                        radii_;
+    grid::Grid4DDataScalar< ScalarType >                     k_;
+    grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -61,19 +65,21 @@ class EpsilonDivDivKerngen
 
   public:
     EpsilonDivDivKerngen(
-        const grid::shell::DistributedDomain&    domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarT >& radii,
-        const grid::Grid4DDataScalar< ScalarT >& k,
-        bool                                     treat_boundary,
-        bool                                     diagonal,
-        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode        operator_communication_mode =
+        const grid::shell::DistributedDomain&                           domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
+        const grid::Grid2DDataScalar< ScalarT >&                        radii,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
+        const grid::Grid4DDataScalar< ScalarT >&                        k,
+        bool                                                            treat_boundary,
+        bool                                                            diagonal,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively,
         linalg::OperatorStoredMatrixMode operator_stored_matrix_mode = linalg::OperatorStoredMatrixMode::Off )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
+    , mask_( mask )
     , k_( k )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
@@ -395,13 +401,16 @@ class EpsilonDivDivKerngen
             k_local_hex[1][5] = k_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 );
             double qp_array[1][3];
             double qw_array[1];
-            qp_array[0][0]    = 0.33333333333333331;
-            qp_array[0][1]    = 0.33333333333333331;
-            qp_array[0][2]    = 0.0;
-            qw_array[0]       = 1.0;
-            int cmb_shift     = ( ( treat_boundary_ && diagonal_ == false && r_cell == 0 ) ? ( 3 ) : ( 0 ) );
-            int max_rad       = radii_.extent( 1 ) - 1;
-            int surface_shift = ( ( treat_boundary_ && diagonal_ == false && max_rad == r_cell + 1 ) ? ( 3 ) : ( 0 ) );
+            qp_array[0][0]          = 0.33333333333333331;
+            qp_array[0][1]          = 0.33333333333333331;
+            qp_array[0][2]          = 0.0;
+            qw_array[0]             = 1.0;
+            int at_cmb_boundary     = has_flag( mask_( local_subdomain_id, x_cell, y_cell, r_cell ), CMB );
+            int at_surface_boundary = has_flag( mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), SURFACE );
+            int cmb_shift = ( ( treat_boundary_ && diagonal_ == false && at_cmb_boundary >= 1 ) ? ( 3 ) : ( 0 ) );
+            int max_rad   = radii_.extent( 1 ) - 1;
+            int surface_shift =
+                ( ( treat_boundary_ && diagonal_ == false && at_surface_boundary >= 1 ) ? ( 3 ) : ( 0 ) );
             double dst_array[3][2][6] = { 0 };
             int    w                  = 0;
             /* Apply local matrix for both wedges and accumulated for all quadrature points. */;
@@ -571,7 +580,7 @@ class EpsilonDivDivKerngen
                     /* Loop to apply BCs or only the diagonal of the operator. */;
                     for ( dim_diagBC = 0; dim_diagBC < 3; dim_diagBC += 1 )
                     {
-                        if ( diagonal_ || treat_boundary_ && ( r_cell == 0 || r_cell + 1 == max_rad ) )
+                        if ( diagonal_ || treat_boundary_ && ( at_cmb_boundary >= 1 || at_surface_boundary >= 1 ) )
                         {
                             int node_idx;
                             for ( node_idx = surface_shift; node_idx < 6 - cmb_shift; node_idx += 1 )
