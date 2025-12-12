@@ -241,7 +241,7 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     else if ( benchmark == BenchmarkType::EpsDivDivKerngenDouble )
     {
         EpsilonDivDivKerngen A(
-            domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
+            domain, coords_shell_double, coords_radii_double, boundary_mask_data, coeff_double.grid_data(), true, false );
         util::Timer t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
