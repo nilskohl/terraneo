@@ -1,7 +1,8 @@
-from sympy import ccode
+
 import os, sys
 from integrands import *
 from kernel_helpers import *
+from ast_extensions import *
 from sympy.codegen.ast import (
     Assignment,
     For,
@@ -15,84 +16,13 @@ from sympy.codegen.ast import (
     Comment,
     String,
     Element,
-    Conditional,
 )
-from sympy.printing import ccode, print_ccode
 from sympy import symbols, IndexedBase, Idx
-from sympy.utilities.codegen import codegen
-from sympy import ccode
 from sympy.tensor.indexed import IndexedBase
-from sympy.printing import print_ccode
 
 local_subdomain_id, x_cell, y_cell, r_cell = sp.symbols(
     "local_subdomain_id x_cell y_cell r_cell", integer=True
 )
-
-
-def flattened_cse(M, prefix):
-
-    exprs = M.tolist()
-    exprs_flat = [item for row in exprs for item in row]
-
-    return sp.cse(exprs=exprs_flat, symbols=numbered_symbols(prefix=prefix, real=True))
-
-
-def create_3x3_mat_symbols(prefix):
-    mat_symbols = sp.zeros(3, 3)
-    for i in range(3):
-        for j in range(3):
-            mat_symbols[i, j] = sp.symbols(f"{prefix}_{i}_{j}", real=True)
-    return mat_symbols
-
-
-def create_3x3_mat_from_col_vec(prefix, col, col_vec):
-    mat_symbols = create_3x3_mat_symbols(prefix)
-    mat_decls = []
-    for i in range(3):
-        for j in range(3):
-            mat_decls.append(
-                (
-                    mat_symbols[i, j],
-                    col_vec[i]
-                    * sp.Piecewise(
-                        (1, sp.Eq(col, j)),
-                        (0, True),
-                    ),
-                )
-            )
-    return mat_symbols, mat_decls
-
-
-def replace_matrix(matrix, prefix):
-    replace_assignments = []
-    replaced_matrix = []
-    row, col = matrix.shape
-    for i in range(row):
-        for j in range(col):
-            tmp_ij = sp.symbols(f"{prefix}_{i}_{j}", real=True)
-            replaced_matrix.append(tmp_ij)
-            replace_assignments.append((tmp_ij, matrix[i, j]))
-    replaced_matrix = sp.Matrix(row, col, replaced_matrix)
-    return replace_assignments, replaced_matrix
-
-
-def make_ast_from_exprs(exprs):
-    ast = []
-    for expr in exprs:
-        if isinstance(expr, str):
-            ast.append(String(expr))
-        else:
-            lhs, rhs = expr
-            if isinstance(lhs, Symbol):
-                if lhs in rhs.free_symbols:
-                    ast.append(Assignment(lhs, rhs))
-                else:
-                    ast.append(Variable.deduced(lhs).as_Declaration(value=rhs))
-            elif isinstance(lhs, Indexed):
-                ast.append(Assignment(lhs, rhs))
-            else:
-                exit(f"Unexpected expression: {expr}")
-    return ast
 
 
 # initial decls and loads of coords and src
@@ -116,12 +46,12 @@ k_symbol, k_array_declaration, k_assignments = (
 
 kernel_code = "\n"
 kernel_code += wedge_array_declarations
-kernel_code += ccode(wedge_assignments, contract=False)
-kernel_code += "\n" + ccode(rad_assignments, contract=False)
+kernel_code += terraneo_ccode(wedge_assignments)
+kernel_code += "\n" + terraneo_ccode(rad_assignments)
 kernel_code += src_array_declaration
-kernel_code += ccode(src_assignments, contract=False)
+kernel_code += terraneo_ccode(src_assignments)
 kernel_code += k_array_declaration
-kernel_code += ccode(k_assignments, contract=False)
+kernel_code += terraneo_ccode(k_assignments)
 
 
 # quadrature data initialization
@@ -138,19 +68,17 @@ qw_array = IndexedBase(qw_array_name, shape=(num_qps), real=True)
 
 kernel_code += f"\ndouble {qp_array_name}[{num_qps}][{3}];\n"
 kernel_code += f"double {qw_array_name}[{num_qps}];"
-kernel_code += "\n" + ccode(
+kernel_code += "\n" + terraneo_ccode(
     CodeBlock(
         *[
             Assignment(qp_array[q, d], qp_data[q][d])
             for d in range(dim)
             for q in range(num_qps)
         ]
-    ),
-    contract=False,
+    )
 )
-kernel_code += "\n" + ccode(
-    CodeBlock(*[Assignment(qw_array[q], qw_data[q]) for q in range(num_qps)]),
-    contract=False,
+kernel_code += "\n" + terraneo_ccode(
+    CodeBlock(*[Assignment(qw_array[q], qw_data[q]) for q in range(num_qps)])
 )
 
 num_wedges_per_hex_cell = 2
@@ -168,7 +96,7 @@ cmb_shift, surface_shift, at_surface_boundary, at_cmb_boundary = sp.symbols(
 max_rad, treat_boundary, diagonal, postloop = sp.symbols(
     " max_rad treat_boundary_ diagonal_ postloop", integer=True
 )
-kernel_code += "\n" + ccode(
+kernel_code += "\n" + terraneo_ccode(
     CodeBlock(
         *[
             Variable.deduced(at_cmb_boundary).as_Declaration(
@@ -195,7 +123,7 @@ kernel_code += "\n" + ccode(
             ),
             Variable.deduced(cmb_shift).as_Declaration(
                 value=sp.Piecewise(
-                    (3, sp.Eq(diagonal, False) & treat_boundary & Ge(at_cmb_boundary, 1)),
+                    (3, sp.Eq(diagonal, False) & treat_boundary & Ne(at_cmb_boundary, 0)),
                     (0, True),
                 )
             ),
@@ -208,7 +136,7 @@ kernel_code += "\n" + ccode(
                         3,
                         sp.Eq(diagonal, False)
                         & treat_boundary
-                        & Ge(at_surface_boundary, 1),
+                        & Ne(at_surface_boundary, 0),
                     ),
                     (0, True),
                 )
@@ -304,14 +232,13 @@ if not jac_laterally_precomputed:
     ] + make_ast_from_exprs(jac_exprs)
 else:
     r_inv, g2, grad_r, grad_r_inv = symbols("r_inv g2 grad_r grad_r_inv", real=True)
-    kernel_code += "\n" + ccode(
+    kernel_code += "\n" + terraneo_ccode(
         CodeBlock(
             Variable.deduced(grad_r).as_Declaration(
                 value=grad_forward_map_rad(rads[0], rads[1])
             ),
             Variable.deduced(grad_r_inv).as_Declaration(value=1.0 / grad_r),
-        ),
-        contract=False,
+        )
     )
 
     J_invT = IndexedBase("J_invT", shape=(3, 3))
@@ -588,7 +515,7 @@ dimloop_i_body += [
 
 dimloop_diagBC_body = [
     Conditional(
-        (diagonal | (treat_boundary & (Ge(at_surface_boundary, 1) | Ge(at_cmb_boundary, 1)))),
+        (diagonal | (treat_boundary & (Ne(at_surface_boundary, 0) | Ne(at_cmb_boundary, 0)))),
         [
             Variable.deduced(g_symbol).as_Declaration(),
             For(
@@ -603,7 +530,7 @@ dimloop_diagBC_body = [
 # generate code for quadloop, wedgeloop and dimloop (eps + divdiv components)
 kernel_code += (
     "\n"
-    + ccode(
+    + terraneo_ccode(
         CodeBlock(
             *[
                 Variable.deduced(w_symbol).as_Declaration(value=0),
@@ -648,18 +575,16 @@ kernel_code += (
                     ],
                 ),
             ]
-        ),
-        contract=False,
+        )
     )
     + "\n"
 )
 
 # atomic adds of local dsts to global dst
-kernel_code += ccode(
+kernel_code += terraneo_ccode(
     make_atomic_add_local_wedge_vector_coefficients(
         local_subdomain_id, x_cell, y_cell, r_cell, dst_symbol
-    ),
-    contract=False,
+    )
 )
 
 print(kernel_code)
