@@ -139,8 +139,7 @@ class TerraNeoASTPrinter(C89CodePrinter):
             step = expr.iterable.step
         elif isinstance(expr.iterable, list):
             start, stop, step = expr.iterable
-
-        elif isinstance(expr.iterable, tuple):
+        elif isinstance(expr.iterable, Tuple):
             start, stop, step = expr.iterable
         else:
             raise NotImplementedError("Unknown type of iterable: %s" % type(expr.iterable))
