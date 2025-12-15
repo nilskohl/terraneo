@@ -1,4 +1,3 @@
-
 import os, sys
 from integrands import *
 from kernel_helpers import *
@@ -102,28 +101,23 @@ kernel_code += "\n" + terraneo_ccode(
             Variable.deduced(at_cmb_boundary).as_Declaration(
                 value=FunctionCall(
                     "has_flag",
-                    [
-                        FunctionCall(
-                            "mask_", [local_subdomain_id, x_cell, y_cell, r_cell]
-                        ),
-                        String("CMB"),
-                    ],
+                    [local_subdomain_id, x_cell, y_cell, r_cell, String("CMB")],
                 )
             ),
             Variable.deduced(at_surface_boundary).as_Declaration(
                 value=FunctionCall(
                     "has_flag",
-                    [
-                        FunctionCall(
-                            "mask_", [local_subdomain_id, x_cell, y_cell, r_cell + 1]
-                        ),
-                        String("SURFACE"),
-                    ],
+                    [local_subdomain_id, x_cell, y_cell, r_cell + 1, String("SURFACE")],
                 )
             ),
             Variable.deduced(cmb_shift).as_Declaration(
                 value=sp.Piecewise(
-                    (3, sp.Eq(diagonal, False) & treat_boundary & Ne(at_cmb_boundary, 0)),
+                    (
+                        3,
+                        sp.Eq(diagonal, False)
+                        & treat_boundary
+                        & Ne(at_cmb_boundary, 0),
+                    ),
                     (0, True),
                 )
             ),
@@ -515,7 +509,10 @@ dimloop_i_body += [
 
 dimloop_diagBC_body = [
     Conditional(
-        (diagonal | (treat_boundary & (Ne(at_surface_boundary, 0) | Ne(at_cmb_boundary, 0)))),
+        (
+            diagonal
+            | (treat_boundary & (Ne(at_surface_boundary, 0) | Ne(at_cmb_boundary, 0)))
+        ),
         [
             Variable.deduced(g_symbol).as_Declaration(),
             For(
