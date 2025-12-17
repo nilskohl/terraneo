@@ -10,13 +10,16 @@
 #include "fe/wedge/operators/shell/mass.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_linear.hpp"
+
+#include "fe/wedge/operators/shell/prolongation_constant.hpp"
+#include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
 #include "io/xdmf.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/fgmres.hpp"
-#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "linalg/solvers/gca/gca_elements_collector.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
@@ -347,8 +350,9 @@ std::tuple< double, double, int >
     using Gradient    = Stokes::Block12Type;
     using ViscousMass = fe::wedge::operators::shell::VectorMass< ScalarType >;
 
-    using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
-    using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
+
+    using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
+    using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
 
     // coefficient data
 
@@ -454,8 +458,10 @@ std::tuple< double, double, int >
             {
                 A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
             }
-            P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
-            R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
+           // P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
+           // R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
+            P.emplace_back( linalg::OperatorApplyMode::Add );
+            R.emplace_back( domains[level] );
         }
     }
 
@@ -732,7 +738,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 5;
+    const int max_level = 6;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
@@ -740,7 +746,7 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 1 }; //, 1 };
+    std::vector< int > gcas = { 1, 0 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();

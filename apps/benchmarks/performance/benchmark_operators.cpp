@@ -50,16 +50,17 @@ enum class BenchmarkType : int
 };
 
 constexpr auto all_benchmark_types = {
-    BenchmarkType::LaplaceFloat,
+    /*BenchmarkType::LaplaceFloat,
     BenchmarkType::LaplaceDouble,
     BenchmarkType::LaplaceSimpleDouble,
     BenchmarkType::VectorLaplaceFloat,
     BenchmarkType::VectorLaplaceDouble,
     BenchmarkType::VectorLaplaceNeumannDouble,
-    BenchmarkType::EpsDivDivFloat,
-    BenchmarkType::EpsDivDivDouble,
+    BenchmarkType::EpsDivDivFloat,*/
+ //   BenchmarkType::EpsDivDivDouble,
     BenchmarkType::EpsDivDivKerngenDouble,
-    BenchmarkType::StokesDouble };
+//    BenchmarkType::StokesDouble 
+};
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
     { BenchmarkType::LaplaceFloat, "Laplace (float)" },
@@ -83,8 +84,8 @@ struct BenchmarkData
 struct Parameters
 {
     int min_level  = 1;
-    int max_level  = 6;
-    int executions = 5;
+    int max_level  = 8;
+    int executions = 1;
 };
 
 template < OperatorLike OperatorT >
