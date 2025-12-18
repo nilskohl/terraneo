@@ -66,7 +66,7 @@ class TwoGridGCA
         std::optional< int >                                  level_range,
         std::optional< grid::Grid4DDataScalar< ScalarType > > GCAElements,
         bool                                                  treat_boundary = true,
-        InterpolationMode                                     interpolation_mode = InterpolationMode::Constant)
+        InterpolationMode                                     interpolation_mode = InterpolationMode::Linear)
     : domain_fine_( fine_op.get_domain() )
     , fine_op_( fine_op )
     , coarse_op_( coarse_op )

@@ -231,25 +231,19 @@ class EpsilonDivDivKerngen
         }
 
         util::Timer timer_kernel( "epsilon_divdiv_kernel" );
-        //const auto  num_cells =
-        //    src_.extent( 0 ) * ( src_.extent( 1 ) - 1 ) * ( src_.extent( 2 ) - 1 ) * ( src_.extent( 3 ) - 1 );
+        const auto  num_cells =
+            src_.extent( 0 ) * ( src_.extent( 1 ) - 1 ) * ( src_.extent( 2 ) - 1 ) * ( src_.extent( 3 ) - 1 );
 
-        //const int            bytes_wedge_surf = 3 * 3 * sizeof( ScalarT );
-        //const int            bytes_fe_local   = 2 * sizeof( ScalarT ) * 6;
-        //Kokkos::TeamPolicy<> policy( num_cells, 18 );
-        //  .set_scratch_size( 0, Kokkos::PerTeam( 2 * bytes_wedge_surf + ( 2 * 3 + 1 ) * bytes_fe_local ) );
+        constexpr int        size_g1    = num_wedges_per_hex_cell * 1 * 9 * sizeof( ScalarT );
+        constexpr int        size_g2    = num_wedges_per_hex_cell * 1 * sizeof( ScalarT );
+        constexpr int        shmem_size = size_g1 + size_g2;
+        Kokkos::TeamPolicy<> policy =
+            Kokkos::TeamPolicy<>( blocks_, block_size_ ).set_scratch_size( 0, Kokkos::PerTeam( shmem_size ));
 
-        /*Kokkos::TeamPolicy<> policy( blocks_, block_size_ );
-        std::cout << "team_size_max = " << policy.team_size_max( *this, Kokkos::ParallelForTag() )
-                  << ", team_size_recommended = " << policy.team_size_recommended( *this, Kokkos::ParallelForTag() )
-                  << ", vector_length_max = " << policy.vector_length_max()
-                  << ", scratch_size_max (0) = " << policy.scratch_size_max( 0 )
-                  << ", scratch_size_max (1) = " << policy.scratch_size_max( 1 ) << std::endl;
-*/
+      
+        Kokkos::parallel_for( "matvec", policy, *this );
 
-        //Kokkos::parallel_for( "matvec", policy, *this );
-
-        Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
+        //Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
         Kokkos::fence();
         timer_kernel.stop();
 
@@ -298,7 +292,6 @@ class EpsilonDivDivKerngen
         }
     }
 
-    using Team = Kokkos::TeamPolicy<>::member_type;
     KOKKOS_INLINE_FUNCTION
     void map_league_idx_to_indices(
         int  global_cell_idx,
@@ -319,20 +312,25 @@ class EpsilonDivDivKerngen
         r_cell             = rem % num_cells_x;
     }
 
-    KOKKOS_INLINE_FUNCTION void operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
+    using Team = Kokkos::TeamPolicy<>::member_type;
+    KOKKOS_INLINE_FUNCTION void operator()( const Team& team ) const
     {
-        /*const int league_idx = team.league_rank();
-        int       local_subdomain_id, x_cell, y_cell, r_cell;
-        map_league_idx_to_indices(
-            league_idx,
-            ( src_.extent( 1 ) - 1 ) * ( src_.extent( 2 ) - 1 ) * ( src_.extent( 3 ) - 1 ),
-            src_.extent( 1 ) - 1,
-            src_.extent( 2 ) - 1,
-            src_.extent( 3 ) - 1,
-            local_subdomain_id,
-            x_cell,
-            y_cell,
-            r_cell );*/
+        int local_subdomain_id, x_cell, y_cell, r_cell;
+
+        {
+            const int league_rank   = team.league_rank();
+            int       tmp           = league_rank;
+            const int r_block_index = tmp % blocks_per_column_;
+            tmp /= blocks_per_column_;
+            y_cell             = tmp & ( hex_lat_ - 1 );       // league_rank % hex_lat_
+            tmp                = tmp >> lat_refinement_level_; // league_rank / hex_lat_
+            x_cell             = tmp & ( hex_lat_ - 1 );       // tmp % hex_lat_
+            local_subdomain_id = tmp >> lat_refinement_level_; // tmp / hex_lat_
+
+            const int thread_index = team.team_rank();
+            const int block_size   = team.team_size();
+            r_cell                 = r_block_index * block_size + thread_index;
+        }
 
         // If we have stored lmatrices, use them.
         // It's the user's responsibility to write meaningful matrices via set_lmatrix()
@@ -481,7 +479,37 @@ class EpsilonDivDivKerngen
             int surface_shift =
                 ( ( treat_boundary_ && diagonal_ == false && at_surface_boundary != 0 ) ? ( 3 ) : ( 0 ) );
             double dst_array[3][2][6] = { 0 };
+            double grad_r             = -1.0 / 2.0 * r_0 + ( 1.0 / 2.0 ) * r_1;
+            double grad_r_inv         = 1.0 / grad_r;
             int    w                  = 0;
+
+            constexpr int N_q     = 1;
+            constexpr int size_g1 = num_wedges_per_hex_cell * N_q * 9 * sizeof( ScalarT );
+            constexpr int size_g2 = num_wedges_per_hex_cell * N_q * sizeof( ScalarT );
+
+            ScalarT* shmem_g1 = (ScalarT*) team.team_shmem().get_shmem( size_g1 );
+            ScalarT* shmem_g2 = (ScalarT*) team.team_shmem().get_shmem( size_g2 );
+
+            if ( team.team_rank() == 0 )
+            {
+                for ( int wedge = 0; wedge < num_wedges_per_hex_cell; ++wedge )
+                {
+                    for ( int q = 0; q < N_q; ++q )
+                    {
+                        shmem_g2[wedge * N_q + q] = g2_( local_subdomain_id, x_cell, y_cell, wedge, q );
+                        for ( int d1 = 0; d1 < 3; ++d1 )
+                        {
+                            for ( int d2 = 0; d2 < 3; ++d2 )
+                            {
+                                shmem_g1[wedge * N_q * 9 + q * 9 + 3 * d1 + d2] =
+                                    g1_( local_subdomain_id, x_cell, y_cell, wedge, q, d1, d2 );
+                            }
+                        }
+                    }
+                }
+            }
+            team.team_barrier();
+
             /* Apply local matrix for both wedges and accumulated for all quadrature points. */;
             for ( w = 0; w < 2; w += 1 )
             {
@@ -499,37 +527,23 @@ class EpsilonDivDivKerngen
                                     tmpcse_k_eval_2 * tmpcse_k_eval_3 * k_local_hex[w][3] +
                                     tmpcse_k_eval_2 * k_local_hex[w][4] * qp_array[q][0] +
                                     tmpcse_k_eval_2 * k_local_hex[w][5] * qp_array[q][1];
-                    /* Computation + Inversion of the Jacobian */;
-                    double tmpcse_J_0 = -1.0 / 2.0 * r_0 + ( 1.0 / 2.0 ) * r_1;
-                    double tmpcse_J_1 = r_0 + tmpcse_J_0 * ( qp_array[q][2] + 1 );
-                    double tmpcse_J_2 = -qp_array[q][0] - qp_array[q][1] + 1;
-                    double J_0_0 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][0] + wedge_surf_phy_coords[w][1][0] );
-                    double J_0_1 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][0] + wedge_surf_phy_coords[w][2][0] );
-                    double J_0_2 = tmpcse_J_0 * ( tmpcse_J_2 * wedge_surf_phy_coords[w][0][0] +
-                                                  qp_array[q][0] * wedge_surf_phy_coords[w][1][0] +
-                                                  qp_array[q][1] * wedge_surf_phy_coords[w][2][0] );
-                    double J_1_0 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][1] + wedge_surf_phy_coords[w][1][1] );
-                    double J_1_1 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][1] + wedge_surf_phy_coords[w][2][1] );
-                    double J_1_2 = tmpcse_J_0 * ( tmpcse_J_2 * wedge_surf_phy_coords[w][0][1] +
-                                                  qp_array[q][0] * wedge_surf_phy_coords[w][1][1] +
-                                                  qp_array[q][1] * wedge_surf_phy_coords[w][2][1] );
-                    double J_2_0 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][2] + wedge_surf_phy_coords[w][1][2] );
-                    double J_2_1 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][2] + wedge_surf_phy_coords[w][2][2] );
-                    double J_2_2 = tmpcse_J_0 * ( tmpcse_J_2 * wedge_surf_phy_coords[w][0][2] +
-                                                  qp_array[q][0] * wedge_surf_phy_coords[w][1][2] +
-                                                  qp_array[q][1] * wedge_surf_phy_coords[w][2][2] );
-                    double J_det = J_0_0 * J_1_1 * J_2_2 - J_0_0 * J_1_2 * J_2_1 - J_0_1 * J_1_0 * J_2_2 +
-                                   J_0_1 * J_1_2 * J_2_0 + J_0_2 * J_1_0 * J_2_1 - J_0_2 * J_1_1 * J_2_0;
-                    double tmpcse_J_invT_0 = 1.0 / J_det;
-                    double J_invT_cse_0_0  = tmpcse_J_invT_0 * ( J_1_1 * J_2_2 - J_1_2 * J_2_1 );
-                    double J_invT_cse_0_1  = tmpcse_J_invT_0 * ( -J_1_0 * J_2_2 + J_1_2 * J_2_0 );
-                    double J_invT_cse_0_2  = tmpcse_J_invT_0 * ( J_1_0 * J_2_1 - J_1_1 * J_2_0 );
-                    double J_invT_cse_1_0  = tmpcse_J_invT_0 * ( -J_0_1 * J_2_2 + J_0_2 * J_2_1 );
-                    double J_invT_cse_1_1  = tmpcse_J_invT_0 * ( J_0_0 * J_2_2 - J_0_2 * J_2_0 );
-                    double J_invT_cse_1_2  = tmpcse_J_invT_0 * ( -J_0_0 * J_2_1 + J_0_1 * J_2_0 );
-                    double J_invT_cse_2_0  = tmpcse_J_invT_0 * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
-                    double J_invT_cse_2_1  = tmpcse_J_invT_0 * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
-                    double J_invT_cse_2_2  = tmpcse_J_invT_0 * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
+                    /* 
+      Load the radially constant parts of the Jacobial from storage,
+      scale with radial parts of the current element. */
+                    ;
+                    double J_invT[3][3] = { 0 };
+                    double r_inv = 1.0 / ( r_0 + ( -1.0 / 2.0 * r_0 + ( 1.0 / 2.0 ) * r_1 ) * ( qp_array[q][2] + 1 ) );
+                    double factors[3] = { r_inv, r_inv, grad_r_inv };
+                    int    d1;
+                    int    d2;
+                    for ( d1 = 0; d1 < 3; d1 += 1 )
+                    {
+                        for ( d2 = 0; d2 < 3; d2 += 1 )
+                        {
+                            J_invT[d1][d2] = factors[d2] * shmem_g1[w * N_q * 9 + q * 9 + 3 * d1 + d2];
+                        };
+                    };
+                    double g2 = shmem_g2[w * N_q + q];
                     /* Computation of the gradient of the scalar shape functions belonging to each DoF.
       In the Eps-component-loops, we insert the gradient at the entry of the
       vectorial gradient matrix corresponding to the Eps-component. */
@@ -541,40 +555,40 @@ class EpsilonDivDivKerngen
                     double tmpcse_grad_i_2   = ( 1.0 / 2.0 ) * qp_array[q][0];
                     double tmpcse_grad_i_3   = ( 1.0 / 2.0 ) * qp_array[q][1];
                     double tmpcse_grad_i_4   = tmpcse_grad_i_2 + tmpcse_grad_i_3 - 1.0 / 2.0;
-                    double tmpcse_grad_i_5   = J_invT_cse_0_2 * tmpcse_grad_i_2;
+                    double tmpcse_grad_i_5   = tmpcse_grad_i_2 * J_invT[0][2];
                     double tmpcse_grad_i_6   = -tmpcse_grad_i_1;
-                    double tmpcse_grad_i_7   = J_invT_cse_1_2 * tmpcse_grad_i_2;
-                    double tmpcse_grad_i_8   = J_invT_cse_2_2 * tmpcse_grad_i_2;
-                    double tmpcse_grad_i_9   = J_invT_cse_0_2 * tmpcse_grad_i_3;
-                    double tmpcse_grad_i_10  = J_invT_cse_1_2 * tmpcse_grad_i_3;
-                    double tmpcse_grad_i_11  = J_invT_cse_2_2 * tmpcse_grad_i_3;
+                    double tmpcse_grad_i_7   = tmpcse_grad_i_2 * J_invT[1][2];
+                    double tmpcse_grad_i_8   = tmpcse_grad_i_2 * J_invT[2][2];
+                    double tmpcse_grad_i_9   = tmpcse_grad_i_3 * J_invT[0][2];
+                    double tmpcse_grad_i_10  = tmpcse_grad_i_3 * J_invT[1][2];
+                    double tmpcse_grad_i_11  = tmpcse_grad_i_3 * J_invT[2][2];
                     double tmpcse_grad_i_12  = tmpcse_grad_i_0 + 1.0 / 2.0;
                     double tmpcse_grad_i_13  = -tmpcse_grad_i_12;
                     double tmpcse_grad_i_14  = -tmpcse_grad_i_4;
-                    scalar_grad[0][0]        = J_invT_cse_0_0 * tmpcse_grad_i_1 + J_invT_cse_0_1 * tmpcse_grad_i_1 +
-                                        J_invT_cse_0_2 * tmpcse_grad_i_4;
-                    scalar_grad[0][1] = J_invT_cse_1_0 * tmpcse_grad_i_1 + J_invT_cse_1_1 * tmpcse_grad_i_1 +
-                                        J_invT_cse_1_2 * tmpcse_grad_i_4;
-                    scalar_grad[0][2] = J_invT_cse_2_0 * tmpcse_grad_i_1 + J_invT_cse_2_1 * tmpcse_grad_i_1 +
-                                        J_invT_cse_2_2 * tmpcse_grad_i_4;
-                    scalar_grad[1][0] = J_invT_cse_0_0 * tmpcse_grad_i_6 - tmpcse_grad_i_5;
-                    scalar_grad[1][1] = J_invT_cse_1_0 * tmpcse_grad_i_6 - tmpcse_grad_i_7;
-                    scalar_grad[1][2] = J_invT_cse_2_0 * tmpcse_grad_i_6 - tmpcse_grad_i_8;
-                    scalar_grad[2][0] = J_invT_cse_0_1 * tmpcse_grad_i_6 - tmpcse_grad_i_9;
-                    scalar_grad[2][1] = J_invT_cse_1_1 * tmpcse_grad_i_6 - tmpcse_grad_i_10;
-                    scalar_grad[2][2] = J_invT_cse_2_1 * tmpcse_grad_i_6 - tmpcse_grad_i_11;
-                    scalar_grad[3][0] = J_invT_cse_0_0 * tmpcse_grad_i_13 + J_invT_cse_0_1 * tmpcse_grad_i_13 +
-                                        J_invT_cse_0_2 * tmpcse_grad_i_14;
-                    scalar_grad[3][1] = J_invT_cse_1_0 * tmpcse_grad_i_13 + J_invT_cse_1_1 * tmpcse_grad_i_13 +
-                                        J_invT_cse_1_2 * tmpcse_grad_i_14;
-                    scalar_grad[3][2] = J_invT_cse_2_0 * tmpcse_grad_i_13 + J_invT_cse_2_1 * tmpcse_grad_i_13 +
-                                        J_invT_cse_2_2 * tmpcse_grad_i_14;
-                    scalar_grad[4][0] = J_invT_cse_0_0 * tmpcse_grad_i_12 + tmpcse_grad_i_5;
-                    scalar_grad[4][1] = J_invT_cse_1_0 * tmpcse_grad_i_12 + tmpcse_grad_i_7;
-                    scalar_grad[4][2] = J_invT_cse_2_0 * tmpcse_grad_i_12 + tmpcse_grad_i_8;
-                    scalar_grad[5][0] = J_invT_cse_0_1 * tmpcse_grad_i_12 + tmpcse_grad_i_9;
-                    scalar_grad[5][1] = J_invT_cse_1_1 * tmpcse_grad_i_12 + tmpcse_grad_i_10;
-                    scalar_grad[5][2] = J_invT_cse_2_1 * tmpcse_grad_i_12 + tmpcse_grad_i_11;
+                    scalar_grad[0][0]        = tmpcse_grad_i_1 * J_invT[0][0] + tmpcse_grad_i_1 * J_invT[0][1] +
+                                        tmpcse_grad_i_4 * J_invT[0][2];
+                    scalar_grad[0][1] = tmpcse_grad_i_1 * J_invT[1][0] + tmpcse_grad_i_1 * J_invT[1][1] +
+                                        tmpcse_grad_i_4 * J_invT[1][2];
+                    scalar_grad[0][2] = tmpcse_grad_i_1 * J_invT[2][0] + tmpcse_grad_i_1 * J_invT[2][1] +
+                                        tmpcse_grad_i_4 * J_invT[2][2];
+                    scalar_grad[1][0] = -tmpcse_grad_i_5 + tmpcse_grad_i_6 * J_invT[0][0];
+                    scalar_grad[1][1] = tmpcse_grad_i_6 * J_invT[1][0] - tmpcse_grad_i_7;
+                    scalar_grad[1][2] = tmpcse_grad_i_6 * J_invT[2][0] - tmpcse_grad_i_8;
+                    scalar_grad[2][0] = tmpcse_grad_i_6 * J_invT[0][1] - tmpcse_grad_i_9;
+                    scalar_grad[2][1] = -tmpcse_grad_i_10 + tmpcse_grad_i_6 * J_invT[1][1];
+                    scalar_grad[2][2] = -tmpcse_grad_i_11 + tmpcse_grad_i_6 * J_invT[2][1];
+                    scalar_grad[3][0] = tmpcse_grad_i_13 * J_invT[0][0] + tmpcse_grad_i_13 * J_invT[0][1] +
+                                        tmpcse_grad_i_14 * J_invT[0][2];
+                    scalar_grad[3][1] = tmpcse_grad_i_13 * J_invT[1][0] + tmpcse_grad_i_13 * J_invT[1][1] +
+                                        tmpcse_grad_i_14 * J_invT[1][2];
+                    scalar_grad[3][2] = tmpcse_grad_i_13 * J_invT[2][0] + tmpcse_grad_i_13 * J_invT[2][1] +
+                                        tmpcse_grad_i_14 * J_invT[2][2];
+                    scalar_grad[4][0] = tmpcse_grad_i_12 * J_invT[0][0] + tmpcse_grad_i_5;
+                    scalar_grad[4][1] = tmpcse_grad_i_12 * J_invT[1][0] + tmpcse_grad_i_7;
+                    scalar_grad[4][2] = tmpcse_grad_i_12 * J_invT[2][0] + tmpcse_grad_i_8;
+                    scalar_grad[5][0] = tmpcse_grad_i_12 * J_invT[0][1] + tmpcse_grad_i_9;
+                    scalar_grad[5][1] = tmpcse_grad_i_10 + tmpcse_grad_i_12 * J_invT[1][1];
+                    scalar_grad[5][2] = tmpcse_grad_i_11 + tmpcse_grad_i_12 * J_invT[2][1];
                     int dimj;
 
                     double grad_u[3][3] = { 0 };
@@ -632,7 +646,7 @@ class EpsilonDivDivKerngen
                                 double tmpcse_pairing_1      = 2 * tmpcse_symgrad_test_1;
                                 double tmpcse_pairing_2      = 2 * tmpcse_symgrad_test_2;
                                 dst_array[dimi][w][node_idx] =
-                                    k_eval *
+                                    g2 * grad_r * k_eval *
                                         ( -0.66666666666666663 * div_u * E_grad_test[dimi][dimi] +
                                           tmpcse_pairing_0 * grad_u[0][1] + tmpcse_pairing_0 * grad_u[1][0] +
                                           tmpcse_pairing_1 * grad_u[0][2] + tmpcse_pairing_1 * grad_u[2][0] +
@@ -640,7 +654,7 @@ class EpsilonDivDivKerngen
                                           2.0 * E_grad_test[0][0] * grad_u[0][0] +
                                           2.0 * E_grad_test[1][1] * grad_u[1][1] +
                                           2.0 * E_grad_test[2][2] * grad_u[2][2] ) *
-                                        fabs( J_det ) * qw_array[q] +
+                                        qw_array[q] / pow( r_inv, 2 ) +
                                     dst_array[dimi][w][node_idx];
                             };
                         };
@@ -675,7 +689,7 @@ class EpsilonDivDivKerngen
                                 double tmpcse_pairing_0 = 4 * src_local_hex[dim_diagBC][w][node_idx];
                                 double tmpcse_pairing_1 = 2.0 * src_local_hex[dim_diagBC][w][node_idx];
                                 dst_array[dim_diagBC][w][node_idx] =
-                                    k_eval *
+                                    g2 * grad_r * k_eval *
                                         ( tmpcse_pairing_0 * pow( tmpcse_symgrad_test_0, 2 ) +
                                           tmpcse_pairing_0 * pow( tmpcse_symgrad_test_1, 2 ) +
                                           tmpcse_pairing_0 * pow( tmpcse_symgrad_test_2, 2 ) +
@@ -684,7 +698,7 @@ class EpsilonDivDivKerngen
                                           tmpcse_pairing_1 * pow( E_grad_test[2][2], 2 ) -
                                           0.66666666666666663 * pow( E_grad_test[dim_diagBC][dim_diagBC], 2 ) *
                                               src_local_hex[dim_diagBC][w][node_idx] ) *
-                                        fabs( J_det ) * qw_array[q] +
+                                        qw_array[q] / pow( r_inv, 2 ) +
                                     dst_array[dim_diagBC][w][node_idx];
                             };
                         };

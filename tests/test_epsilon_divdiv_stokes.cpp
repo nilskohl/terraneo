@@ -8,11 +8,10 @@
 #include "fe/wedge/operators/shell/kmass.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/mass.hpp"
-#include "fe/wedge/operators/shell/prolongation_linear.hpp"
-#include "fe/wedge/operators/shell/restriction_linear.hpp"
-
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
+#include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
+#include "fe/wedge/operators/shell/restriction_linear.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
@@ -350,9 +349,10 @@ std::tuple< double, double, int >
     using Gradient    = Stokes::Block12Type;
     using ViscousMass = fe::wedge::operators::shell::VectorMass< ScalarType >;
 
-
-    using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
-    using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
+    //using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
+    //using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
+    using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
+    using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
 
     // coefficient data
 
@@ -458,10 +458,10 @@ std::tuple< double, double, int >
             {
                 A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
             }
-           // P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
-           // R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
-            P.emplace_back( linalg::OperatorApplyMode::Add );
-            R.emplace_back( domains[level] );
+            P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
+            R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
+            // P.emplace_back( linalg::OperatorApplyMode::Add );
+            // R.emplace_back( domains[level] );
         }
     }
 
@@ -574,8 +574,8 @@ std::tuple< double, double, int >
             DiagonallyScaledOperator< Viscous > inv_diag_A( A_c[level], inverse_diagonals[level] );
             max_ev = power_iteration< DiagonallyScaledOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
         }
-        const auto omega_opt = 2.0 / ( 1.1 * max_ev );
-        smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt );
+        const auto omega_opt = 2.0 / ( 1.3 * max_ev );
+        smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt);
 
         std::cout << "Optimal omega on level " << level << ": " << omega_opt << std::endl;
     }
@@ -589,9 +589,9 @@ std::tuple< double, double, int >
     }
 
     CoarseGridSolver coarse_grid_solver(
-        linalg::solvers::IterativeSolverParameters{ 100, 1e-8, 1e-16 }, table, coarse_grid_tmps );
+        linalg::solvers::IterativeSolverParameters{ 1000, 1e-8, 1e-16 }, table, coarse_grid_tmps );
 
-    constexpr auto num_mg_cycles = 2;
+    constexpr auto num_mg_cycles = 3;
 
     using PrecVisc = linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
     PrecVisc prec_11(
@@ -660,7 +660,7 @@ std::tuple< double, double, int >
         prec_11,
         linalg::solvers::IdentitySolver< fe::wedge::operators::shell::Identity< ScalarType > >() );*/
 
-    const int                                  iters = 150;
+    const int                                  iters = 100;
     linalg::solvers::IterativeSolverParameters solver_params{ iters, 1e-8, 1e-12 };
 
     constexpr auto                               num_tmps_fgmres = iters;
@@ -761,7 +761,7 @@ int main( int argc, char** argv )
             terra::util::Table::Row cycles;
             for ( int kmax : kmaxs )
             {
-                for ( int level = 2; level <= max_level; ++level )
+                for ( int level = 3; level <= max_level; ++level )
                 {
                     std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
                     std::cout << "level = " << level << std::endl;
@@ -789,19 +789,20 @@ int main( int argc, char** argv )
 
                     std::cout << "Iters: " << iterations << std::endl;
                     cycles[std::string( "k_max=" ) + std::to_string( kmax )] = iterations;
+
+                    if ( gca == 1 )
+                    {
+                        table_gca->add_row(  cycles  );
+                    }
+                    else if ( gca == 2 )
+                    {
+                        table_agca->add_row( cycles );
+                    }
+                    else
+                    {
+                        table_dca->add_row(  cycles  );
+                    }
                 }
-            }
-            if ( gca == 1 )
-            {
-                table_gca->add_row( cycles );
-            }
-            else if ( gca == 2 )
-            {
-                table_agca->add_row( cycles );
-            }
-            else
-            {
-                table_dca->add_row( cycles );
             }
         }
         table->query_rows_not_none( "dofs_vel" )

@@ -181,7 +181,7 @@ quadloop_body.append(
 
 
 # Jacobian
-jac_laterally_precomputed = False
+jac_laterally_precomputed = True
 if not jac_laterally_precomputed:
     jac_exprs = []
     J = jac_from_array(
