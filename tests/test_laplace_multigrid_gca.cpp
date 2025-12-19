@@ -5,7 +5,7 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
-#include "fe/wedge/operators/shell/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
@@ -40,7 +40,7 @@ using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
-using terra::fe::wedge::operators::shell::TwoGridGCA;
+using terra::linalg::solvers::TwoGridGCA;
 using terra::linalg::DiagonallyScaledOperator;
 using terra::linalg::solvers::power_iteration;
 
@@ -399,7 +399,7 @@ int run_test()
 {
     T prev_l2_error = 1.0;
 
-    const int max_level = 4;
+    const int max_level = 7;
 
     constexpr int prepost_smooth = 3;
 

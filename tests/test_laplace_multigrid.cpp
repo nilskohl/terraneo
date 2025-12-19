@@ -152,9 +152,9 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
 
     for ( int level = 0; level <= max_level; level++ )
     {
-        //auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
-        auto level_subdomains = 2;
-        auto domain = DistributedDomain::create_uniform( level, level, 0.5, 1.0, level_subdomains, level_subdomains );
+        auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
+        //auto level_subdomains = 2;
+        //auto domain = DistributedDomain::create_uniform( level, level, 0.5, 1.0, level_subdomains, level_subdomains );
 
         domains.push_back( domain );
 
@@ -320,7 +320,7 @@ int run_test()
 {
     T prev_l2_error = 1.0;
 
-    const int max_level = 5;
+    const int max_level = 7;
 
     constexpr T   omega          = 0.666;
     constexpr int prepost_smooth = 2;

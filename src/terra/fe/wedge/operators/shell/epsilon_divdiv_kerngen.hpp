@@ -238,12 +238,11 @@ class EpsilonDivDivKerngen
         constexpr int        size_g2    = num_wedges_per_hex_cell * 1 * sizeof( ScalarT );
         constexpr int        shmem_size = size_g1 + size_g2;
         Kokkos::TeamPolicy<> policy =
-            Kokkos::TeamPolicy<>( blocks_, block_size_ ).set_scratch_size( 0, Kokkos::PerTeam( shmem_size ));
+            Kokkos::TeamPolicy<>( blocks_, block_size_ ).set_scratch_size( 0, Kokkos::PerTeam( shmem_size ) );
 
-      
-        Kokkos::parallel_for( "matvec", policy, *this );
+        //Kokkos::parallel_for( "matvec", policy, *this );
 
-        //Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
+        Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
         Kokkos::fence();
         timer_kernel.stop();
 
@@ -313,9 +312,10 @@ class EpsilonDivDivKerngen
     }
 
     using Team = Kokkos::TeamPolicy<>::member_type;
-    KOKKOS_INLINE_FUNCTION void operator()( const Team& team ) const
+    //    KOKKOS_INLINE_FUNCTION void operator()( const Team& team ) const
+    KOKKOS_INLINE_FUNCTION void operator()( int local_subdomain_id, int x_cell, int y_cell, int r_cell ) const
     {
-        int local_subdomain_id, x_cell, y_cell, r_cell;
+        /* int local_subdomain_id, x_cell, y_cell, r_cell;
 
         {
             const int league_rank   = team.league_rank();
@@ -330,7 +330,7 @@ class EpsilonDivDivKerngen
             const int thread_index = team.team_rank();
             const int block_size   = team.team_size();
             r_cell                 = r_block_index * block_size + thread_index;
-        }
+        }*/
 
         // If we have stored lmatrices, use them.
         // It's the user's responsibility to write meaningful matrices via set_lmatrix()
@@ -483,6 +483,7 @@ class EpsilonDivDivKerngen
             double grad_r_inv         = 1.0 / grad_r;
             int    w                  = 0;
 
+            /*
             constexpr int N_q     = 1;
             constexpr int size_g1 = num_wedges_per_hex_cell * N_q * 9 * sizeof( ScalarT );
             constexpr int size_g2 = num_wedges_per_hex_cell * N_q * sizeof( ScalarT );
@@ -509,6 +510,7 @@ class EpsilonDivDivKerngen
                 }
             }
             team.team_barrier();
+            */
 
             /* Apply local matrix for both wedges and accumulated for all quadrature points. */;
             for ( w = 0; w < 2; w += 1 )
@@ -540,10 +542,16 @@ class EpsilonDivDivKerngen
                     {
                         for ( d2 = 0; d2 < 3; d2 += 1 )
                         {
-                            J_invT[d1][d2] = factors[d2] * shmem_g1[w * N_q * 9 + q * 9 + 3 * d1 + d2];
+                            J_invT[d1][d2] = factors[d2] * g1_( local_subdomain_id,
+                                                                x_cell,
+                                                                y_cell,
+                                                                w,
+                                                                q,
+                                                                d1,
+                                                                d2 ); //shmem_g1[w * N_q * 9 + q * 9 + 3 * d1 + d2];
                         };
                     };
-                    double g2 = shmem_g2[w * N_q + q];
+                    double g2 = g2_( local_subdomain_id, x_cell, y_cell, w, q ); //shmem_g2[w * N_q + q];
                     /* Computation of the gradient of the scalar shape functions belonging to each DoF.
       In the Eps-component-loops, we insert the gradient at the entry of the
       vectorial gradient matrix corresponding to the Eps-component. */

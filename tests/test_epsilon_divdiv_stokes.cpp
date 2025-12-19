@@ -211,7 +211,7 @@ struct KInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
+        const double value                   = 1; //2 + Kokkos::sin( coords( 2 ) );
         data_( local_subdomain_id, x, y, r ) = value;
         //data_( local_subdomain_id, x, y, r ) = value;
         /*if ( coords.norm() > 0.75 )
@@ -456,7 +456,7 @@ std::tuple< double, double, int >
             }
             else if ( gca == 1 )
             {
-                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
+                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, GCAElements.grid_data() );
             }
             P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
             R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
@@ -575,7 +575,7 @@ std::tuple< double, double, int >
             max_ev = power_iteration< DiagonallyScaledOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
         }
         const auto omega_opt = 2.0 / ( 1.3 * max_ev );
-        smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt);
+        smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt );
 
         std::cout << "Optimal omega on level " << level << ": " << omega_opt << std::endl;
     }
@@ -660,7 +660,7 @@ std::tuple< double, double, int >
         prec_11,
         linalg::solvers::IdentitySolver< fe::wedge::operators::shell::Identity< ScalarType > >() );*/
 
-    const int                                  iters = 100;
+    const int                                  iters = 150;
     linalg::solvers::IterativeSolverParameters solver_params{ iters, 1e-8, 1e-12 };
 
     constexpr auto                               num_tmps_fgmres = iters;
@@ -678,6 +678,7 @@ std::tuple< double, double, int >
     linalg::solvers::FGMRESOptions< ScalarType > fgmres_options;
     fgmres_options.restart                                     = iters;
     fgmres_options.max_iterations                              = iters;
+    fgmres_options.relative_residual_tolerance                 = 1e-6;
     auto                                          solver_table = std::make_shared< util::Table >();
     linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );
@@ -746,7 +747,7 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 1, 0 }; //, 1 };
+    std::vector< int > gcas = { 0, 1 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
@@ -761,7 +762,7 @@ int main( int argc, char** argv )
             terra::util::Table::Row cycles;
             for ( int kmax : kmaxs )
             {
-                for ( int level = 3; level <= max_level; ++level )
+                for ( int level = 2; level <= max_level; ++level )
                 {
                     std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
                     std::cout << "level = " << level << std::endl;
@@ -792,7 +793,7 @@ int main( int argc, char** argv )
 
                     if ( gca == 1 )
                     {
-                        table_gca->add_row(  cycles  );
+                        table_gca->add_row( cycles );
                     }
                     else if ( gca == 2 )
                     {
@@ -800,7 +801,7 @@ int main( int argc, char** argv )
                     }
                     else
                     {
-                        table_dca->add_row(  cycles  );
+                        table_dca->add_row( cycles );
                     }
                 }
             }

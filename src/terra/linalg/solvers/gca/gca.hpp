@@ -6,8 +6,8 @@
 #include "dense/vec.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
-#include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "fe/wedge/shell/grid_transfer_constant.hpp"
+#include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "grid/grid_types.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/solvers/gca/gca_elements_collector.hpp"
@@ -65,8 +65,8 @@ class TwoGridGCA
         Operator                                              coarse_op,
         std::optional< int >                                  level_range,
         std::optional< grid::Grid4DDataScalar< ScalarType > > GCAElements,
-        bool                                                  treat_boundary = true,
-        InterpolationMode                                     interpolation_mode = InterpolationMode::Linear)
+        bool                                                  treat_boundary     = true,
+        InterpolationMode                                     interpolation_mode = InterpolationMode::Constant )
     : domain_fine_( fine_op.get_domain() )
     , fine_op_( fine_op )
     , coarse_op_( coarse_op )
@@ -173,6 +173,8 @@ class TwoGridGCA
 
             dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim >
                 A_coarse[num_wedges_per_hex_cell] = {};
+            A_coarse[0].fill( 0 );
+            A_coarse[1].fill( 0 );
             // loop finer hexes of our coarse hex
             for ( int fine_hex_lidx = 0; fine_hex_lidx < 8; fine_hex_lidx++ )
             {
@@ -203,10 +205,10 @@ class TwoGridGCA
                         }
 
                         // else: need radial direction bot (>=) and top (<=) of current fine DoF
-                        const auto r_idx_coarse_bot = fine_dof_idx( 3 ) < radii_fine_.extent( 1 ) - 1 ?
-                                                          fine_dof_idx( 3 ) / 2 :
-                                                          fine_dof_idx( 3 ) / 2 - 1;
-                        const auto r_idx_coarse_top = r_idx_coarse_bot + 1;
+                        int r_idx_coarse_bot = fine_dof_idx( 3 ) < radii_fine_.extent( 1 ) - 1 ?
+                                                   fine_dof_idx( 3 ) / 2 :
+                                                   fine_dof_idx( 3 ) / 2 - 1;
+                        int r_idx_coarse_top = r_idx_coarse_bot + 1;
                         (void) r_idx_coarse_top; // unused
 
                         // fine dof is radially aligned: x and y index match with coarse DoFs
@@ -333,10 +335,38 @@ class TwoGridGCA
                         }
                         else if ( interpolation_mode_ == InterpolationMode::Constant )
                         {
-                            P( fine_dof_lidx, coarse_dof_lindices[0] ) = 0.25;
-                            P( fine_dof_lidx, coarse_dof_lindices[1] ) = 0.25;
-                            P( fine_dof_lidx, coarse_dof_lindices[2] ) = 0.25;
-                            P( fine_dof_lidx, coarse_dof_lindices[3] ) = 0.25;
+                            P( fine_dof_lidx, coarse_dof_lindices[0] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x0_idx_coarse,
+                                    y0_idx_coarse,
+                                    r_idx_coarse_bot );
+                            P( fine_dof_lidx, coarse_dof_lindices[1] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x1_idx_coarse,
+                                    y1_idx_coarse,
+                                    r_idx_coarse_bot );
+                            P( fine_dof_lidx, coarse_dof_lindices[2] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x0_idx_coarse,
+                                    y0_idx_coarse,
+                                    r_idx_coarse_top );
+                            P( fine_dof_lidx, coarse_dof_lindices[3] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x1_idx_coarse,
+                                    y1_idx_coarse,
+                                    r_idx_coarse_top );
                         }
                         else
                         {
@@ -397,7 +427,23 @@ class TwoGridGCA
                 }
             }
 
-            if ( treat_boundary_ )
+            if ( false )
+            {
+                //std::cout << "A coarse 0: \n" << A_coarse[0] << std::endl;
+                //std::cout << "A coarse assembled: \n"
+                //          << coarse_op_.assemble_local_matrix(
+                //                 local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 )
+                //          << std::endl;
+            }
+
+            /*   A_coarse[0] = coarse_op_.assemble_local_matrix(
+         local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 );
+
+            A_coarse[1] = coarse_op_.assemble_local_matrix(
+         local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1 );
+            */
+
+            if ( false )
             {
                 dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > boundary_mask;
                 boundary_mask.fill( 1.0 );

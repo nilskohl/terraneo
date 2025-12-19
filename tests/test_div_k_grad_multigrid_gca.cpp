@@ -11,7 +11,7 @@
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_linear.hpp"
-#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "linalg/solvers/gca/gca_elements_collector.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
@@ -119,9 +119,9 @@ struct RHSInterpolator
         const double x7 = Kokkos::tanh( x6 * ( -x3 - x4 + x5 ) );
         const double x8 = 0.5 * k_max_;
         const double x9 = x6 * ( 1 - Kokkos::pow( x7, 2 ) ) / x5;
-        //data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
-        //                                       coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
-        //                                       1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );
+        /*data_( local_subdomain_id, x, y, r ) = -0.25 * k_max_ * x2 * x9 * coords( 1 ) * Kokkos::cosh( coords( 1 ) ) -
+                                               coords( 0 ) * x0 * x8 * x9 * Kokkos::cos( x1 ) +
+                                               1.5 * x0 * x2 * ( k_max_ + x8 * ( x7 + 1 ) );*/
         data_( local_subdomain_id, x, y, r ) = ( 1.0 / 2.0 ) * Kokkos::sin( 2 * coords( 0 ) ) *
                                                Kokkos::sin( 4 * coords( 1 ) ) * Kokkos::sin( -3 * coords( 2 ) );
     }
@@ -185,18 +185,18 @@ struct KInterpolator
         const double rad = coords.norm();
         const double polar = Kokkos::acos(coords(2)/rad);
         const double azimut = Kokkos::atan2(coords(1), coords(0));
-        // const double x0  = 0.5 * r_max_;
-        // const double x1  = 0.5 * r_min_;
-        // data_( local_subdomain_id, x, y, r ) =
-        //     0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
-        if ( coords.norm() > 0.625 )// 0.75 + 0.1 * sin( -2 * polar) * sin( 4 * azimut ) )
+        const double x0  = 0.5 * r_max_;
+        const double x1  = 0.5 * r_min_;
+        data_( local_subdomain_id, x, y, r ) = 1;
+            // 0.5 * k_max_ * ( Kokkos::tanh( alpha_ * ( -x0 - x1 + rad ) / ( x0 - x1 ) ) + 1 ) + k_max_;
+        /*if ( coords.norm() > 0.625 )// 0.75 + 0.1 * sin( -2 * polar) * sin( 4 * azimut ) )
         {
             data_( local_subdomain_id, x, y, r ) = k_max_;
         }
         else
         {
             data_( local_subdomain_id, x, y, r ) = 1.0;
-        }
+        }*/
     }
 };
 
@@ -390,19 +390,19 @@ T test(
     }
 
     DivKGrad A(
-        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), k_function, true, false );
+        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), boundary_mask_data.back(), k.grid_data(), k_function, true, false );
     // A.set_single_quadpoint( true );
     DivKGrad A_neumann(
         domains.back(),
         subdomain_shell_coords.back(),
-        subdomain_radii.back(),
+        subdomain_radii.back(),boundary_mask_data.back(),
         k.grid_data(),
         k_function,
         false,
         false );
     //A_neumann.set_single_quadpoint( true );
     DivKGrad A_neumann_diag(
-        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(), k.grid_data(), k_function, false, true );
+        domains.back(), subdomain_shell_coords.back(), subdomain_radii.back(),boundary_mask_data.back(), k.grid_data(), k_function, false, true );
     //A_neumann_diag.set_single_quadpoint( true );
 
     // setup operators (prolongation, restriction, matrix storage)
@@ -442,7 +442,7 @@ T test(
             A_c.emplace_back(
                 domains[level],
                 subdomain_shell_coords[level],
-                subdomain_radii[level],
+                subdomain_radii[level],boundary_mask_data[level],
                 k_c.grid_data(),
                 k_function,
                 true,
@@ -506,6 +506,7 @@ T test(
             }
         }
     }
+    //exit(0);
 
     // setup smoothers
     for ( int level = min_level; level <= max_level; level++ )
@@ -551,7 +552,7 @@ T test(
         T omega_opt = 2.0 / ( 1.5 * max_ev );
         std::cout << "Maximum ev on level " << level << ": " << max_ev << ", optimal omega: " << omega_opt << std::endl;
 
-        smoothers.emplace_back( inverse_diagonal, prepost_smooth, tmp_smoother, omega_opt );
+        smoothers.emplace_back( inverse_diagonal, prepost_smooth, tmp_smoother, 2.0/3.0 );
     }
 
     VectorQ1Scalar< ScalarType > u( "u", domains.back(), mask_data.back() );
@@ -657,17 +658,17 @@ int run_test()
 {
     T prev_l2_error = 1.0;
 
-    const int max_level = 4;
+    const int max_level = 7;
 
     constexpr int         prepost_smooth = 3;
     std::vector< double > alphas         = { 1 };
-    std::vector< int >    pows           = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    std::vector< int >    gcas           = { 0 }; //, 1 };
+    std::vector< int >    pows           = { 1 };
+    std::vector< int >    gcas           = { 1, 0 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
     auto table_agca = std::make_shared< util::Table >();
-    for ( int minlevel = 0; minlevel < max_level; minlevel++ )
+    for ( int minlevel = 0; minlevel < 1; minlevel++ )
     {
         std::cout << "Minlevel=" << minlevel << std::endl;
         for ( int gca : gcas )
@@ -697,7 +698,7 @@ int run_test()
                         const auto time_total = timer.seconds();
                         table->add_row( { { "tag", "time_total" }, { "level", level }, { "time_total", time_total } } );
 
-                        if ( false )
+                        if ( true )
                         {
                             std::cout << "l2_error = " << l2_error << std::endl;
                             const T order = prev_l2_error / l2_error;
@@ -714,8 +715,8 @@ int run_test()
                         std::cout << "Iters: " <<  table->query_rows_equals( "tag", "multigrid" ).rows().size() << std::endl;
                         cycles[std::string( "k_max=" ) + std::to_string( k_max )] =
                             table->query_rows_equals( "tag", "multigrid" ).rows().size();
-                    }
-                }
+                    
+                
                 if ( gca == 1 )
                 {
                     table_gca->add_row( cycles );
@@ -728,6 +729,8 @@ int run_test()
                 {
                     table_dca->add_row( cycles );
                 }
+            }
+            }
             }
         }
         std::cout << "DCA: " << std::endl;
