@@ -369,6 +369,56 @@ class EpsilonDivDivKerngen
                 A[1] = A[1].diagonal();
             }
 
+            if ( treat_boundary_ )
+            {
+                dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
+                boundary_mask.fill( 1.0 );
+
+                for ( int dimi = 0; dimi < 3; ++dimi )
+                {
+                    for ( int dimj = 0; dimj < 3; ++dimj )
+                    {
+                        if ( r_cell == 0 )
+                        {
+                            // Inner boundary (CMB).
+                            for ( int i = 0; i < 6; i++ )
+                            {
+                                for ( int j = 0; j < 6; j++ )
+                                {
+                                    // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
+                                    if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
+                                         ( dimi != dimj && ( i < 3 || j < 3 ) ) )
+                                    {
+                                        boundary_mask(
+                                            i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    }
+                                }
+                            }
+                        }
+
+                        if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                        {
+                            // Outer boundary (surface).
+                            for ( int i = 0; i < 6; i++ )
+                            {
+                                for ( int j = 0; j < 6; j++ )
+                                {
+                                    // on diagonal components of the vectorial diffusion operator, we exclude the diagonal entries from elimination
+                                    if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
+                                         ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
+                                    {
+                                        boundary_mask(
+                                            i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                A[0].hadamard_product( boundary_mask );
+                A[1].hadamard_product( boundary_mask );
+            }
+
             dense::Vec< ScalarT, 18 > src[num_wedges_per_hex_cell];
             for ( int dimj = 0; dimj < 3; dimj++ )
             {

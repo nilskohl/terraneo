@@ -506,7 +506,7 @@ T test(
             }
         }
     }
-    //exit(0);
+    exit(0);
 
     // setup smoothers
     for ( int level = min_level; level <= max_level; level++ )
@@ -658,7 +658,7 @@ int run_test()
 {
     T prev_l2_error = 1.0;
 
-    const int max_level = 7;
+    const int max_level = 1;
 
     constexpr int         prepost_smooth = 3;
     std::vector< double > alphas         = { 1 };
@@ -680,7 +680,7 @@ int run_test()
                 for ( int pow : pows )
                 {
                     int k_max = Kokkos::pow( 10, pow );
-                    for ( int level = max_level; level <= max_level; level++ )
+                    for ( int level = minlevel + 1; level <= max_level; level++ )
                     {
                         auto table = std::make_shared< util::Table >();
 
@@ -691,8 +691,8 @@ int run_test()
                                   << " >>>>>>>>>" << std::endl;
                         T l2_error = test<
                             T,
-                            fe::wedge::operators::shell::ProlongationLinear< T >,
-                            fe::wedge::operators::shell::RestrictionLinear< T > >(
+                            fe::wedge::operators::shell::ProlongationConstant< T >,
+                            fe::wedge::operators::shell::RestrictionConstant< T > >(
                             minlevel, level, table, prepost_smooth, alpha, k_max, gca );
 
                         const auto time_total = timer.seconds();

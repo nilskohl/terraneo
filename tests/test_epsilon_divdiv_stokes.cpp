@@ -211,7 +211,7 @@ struct KInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
-        const double value                   = 1; //2 + Kokkos::sin( coords( 2 ) );
+        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
         data_( local_subdomain_id, x, y, r ) = value;
         //data_( local_subdomain_id, x, y, r ) = value;
         /*if ( coords.norm() > 0.75 )
@@ -349,10 +349,10 @@ std::tuple< double, double, int >
     using Gradient    = Stokes::Block12Type;
     using ViscousMass = fe::wedge::operators::shell::VectorMass< ScalarType >;
 
-    //using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
-    //using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
-    using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
-    using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
+    using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
+    using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
+    //using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
+    //using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
 
     // coefficient data
 
@@ -458,10 +458,10 @@ std::tuple< double, double, int >
             {
                 A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, GCAElements.grid_data() );
             }
-            P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
-            R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
-            // P.emplace_back( linalg::OperatorApplyMode::Add );
-            // R.emplace_back( domains[level] );
+            //P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
+            //R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
+            P.emplace_back( linalg::OperatorApplyMode::Add );
+            R.emplace_back( domains[level] );
         }
     }
 
@@ -678,7 +678,7 @@ std::tuple< double, double, int >
     linalg::solvers::FGMRESOptions< ScalarType > fgmres_options;
     fgmres_options.restart                                     = iters;
     fgmres_options.max_iterations                              = iters;
-    fgmres_options.relative_residual_tolerance                 = 1e-6;
+    fgmres_options.relative_residual_tolerance                 = 1e-8;
     auto                                          solver_table = std::make_shared< util::Table >();
     linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );

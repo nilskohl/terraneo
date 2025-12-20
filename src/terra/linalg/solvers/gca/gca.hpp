@@ -424,6 +424,13 @@ class TwoGridGCA
                     {
                         Kokkos::abort( "Unexpected path." );
                     }
+
+                    //std::cout << "P: \n" << P;
+                    //std::cout << "A coarse 0: \n" << A_coarse[0];
+                    //std::cout << "A coarse assembled: \n"
+                    //      << coarse_op_.assemble_local_matrix(
+                     //            local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 )
+                    //      << std::endl;
                 }
             }
 
