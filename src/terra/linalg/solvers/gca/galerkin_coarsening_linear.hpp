@@ -16,6 +16,9 @@
 using terra::fe::wedge::num_nodes_per_wedge;
 using terra::fe::wedge::num_wedges_per_hex_cell;
 
+using terra::grid::shell::ShellBoundaryFlag::CMB;
+using terra::grid::shell::ShellBoundaryFlag::SURFACE;
+using terra::util::has_flag;
 namespace terra::linalg::solvers {
 
 /// @brief: Galerkin coarse approximation (GCA).
@@ -366,7 +369,7 @@ class TwoGridGCA
                     {
                         for ( int dimj = 0; dimj < 3; ++dimj )
                         {
-                            if ( r_coarse_idx == 0 )
+                            if ( coarse_op_.has_flag( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, CMB ) )
                             {
                                 // Inner boundary (CMB).
                                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
@@ -383,28 +386,30 @@ class TwoGridGCA
                                 }
                             }
 
-                            if ( r_coarse_idx + 1 == radii_coarse_.extent( 1 ) - 1 )
-                            {
-                                // Outer boundary (surface).
-                                for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                            if ( coarse_op_.has_flag(
+                                     local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx + 1, SURFACE ) )  
                                 {
-                                    for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                                    // Outer boundary (surface).
+                                    for ( int i = 0; i < num_nodes_per_wedge; i++ )
                                     {
-                                        if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
-                                             ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
+                                        for ( int j = 0; j < num_nodes_per_wedge; j++ )
                                         {
-                                            boundary_mask(
-                                                i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                            if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
+                                                 ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
+                                            {
+                                                boundary_mask(
+                                                    i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
+                                                    0.0;
+                                            }
                                         }
                                     }
                                 }
-                            }
                         }
                     }
                 }
                 else
                 {
-                    if ( r_coarse_idx == 0 )
+                    if ( coarse_op_.has_flag( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, CMB ) )
                     {
                         // Inner boundary (CMB).
                         for ( int i = 0; i < num_nodes_per_wedge; i++ )
@@ -419,7 +424,7 @@ class TwoGridGCA
                         }
                     }
 
-                    if ( r_coarse_idx + 1 == radii_coarse_.extent( 1 ) - 1 )
+                    if ( coarse_op_.has_flag( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx + 1, SURFACE ) )
                     {
                         // Outer boundary (surface).
                         for ( int i = 0; i < num_nodes_per_wedge; i++ )

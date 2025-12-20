@@ -139,10 +139,24 @@ class TerraNeoASTPrinter(C89CodePrinter):
             step = expr.iterable.step
         elif isinstance(expr.iterable, list):
             start, stop, step = expr.iterable
+        elif isinstance(expr.iterable, Tuple):
+            start, stop, step = expr.iterable
         else:
             raise NotImplementedError("Unknown type of iterable: %s" % type(expr.iterable))
         
         return f"for ({self._print(expr.target)} = {start};  {self._print(expr.target)} < {stop}; {self._print(expr.target)} += {step}) {{\n{self._print(expr.body)}\n}}"
 
+
+    def _print_Indexed(self, expr):
+        # calculate index for 1d array
+        offset = getattr(expr.base, 'offset', S.Zero)
+        strides = getattr(expr.base, 'strides', None)
+        indices = list(expr.indices)
+        print(indices)
+        access = "%s" % self._print(expr.base.label)
+        for idx in indices:
+            access += f"[{ self._print(idx)}]"
+        return access
+    
 def terraneo_ccode(stmts):
     return TerraNeoASTPrinter({"contract" : False}).doprint(stmts)
