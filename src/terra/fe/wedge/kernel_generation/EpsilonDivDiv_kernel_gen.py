@@ -15,6 +15,7 @@ from sympy.codegen.ast import (
     Comment,
     String,
     Element,
+    Scope,
 )
 from sympy import symbols, IndexedBase, Idx
 from sympy.tensor.indexed import IndexedBase
@@ -44,8 +45,10 @@ k_symbol, k_array_declaration, k_assignments = (
 )
 
 kernel_code = "\n"
-kernel_code += wedge_array_declarations
-kernel_code += terraneo_ccode(wedge_assignments)
+kernel_code += wedge_array_declarations[0]
+kernel_code += terraneo_ccode(
+    Scope([String(wedge_array_declarations[1]), *wedge_assignments])
+)
 kernel_code += "\n" + terraneo_ccode(rad_assignments)
 kernel_code += src_array_declaration
 kernel_code += terraneo_ccode(src_assignments)
@@ -181,7 +184,13 @@ quadloop_body.append(
 
 
 # Jacobian
-jac_laterally_precomputed = True
+g_symbol = symbols("node_idx", integer=True)
+scalar_grad_name = "scalar_grad"
+scalar_grad = IndexedBase(scalar_grad_name, shape=(num_nodes_per_wedge, dim), real=True)
+quadloop_body += [
+    String(f"\ndouble {scalar_grad_name}[{num_nodes_per_wedge}][{dim}] = {{0}}")
+]
+jac_laterally_precomputed = False
 if not jac_laterally_precomputed:
     jac_exprs = []
     J = jac_from_array(
@@ -224,8 +233,35 @@ if not jac_laterally_precomputed:
     quadloop_body += [
         Comment("Computation + Inversion of the Jacobian")
     ] + make_ast_from_exprs(jac_exprs)
+
+    # precompute gradients + CSE
+    grad_exprs = []
+    scalar_grad_is = []
+
+    for i in range(num_nodes_per_wedge):
+        scalar_grad_is.append(J_invT_cse_replaced * grad_shape_vec(i, qp))
+    scalar_grad_i_replacements, scalar_grad_i_reduced_exprs = sp.cse(
+        exprs=scalar_grad_is,
+        symbols=numbered_symbols(prefix=f"tmpcse_grad_i_", real=True),
+    )
+    grad_exprs += scalar_grad_i_replacements
+    for i, grad_i_expr in enumerate(scalar_grad_i_reduced_exprs):
+        for d, gie in enumerate(grad_i_expr):
+            grad_exprs.append((scalar_grad[i, d], gie))
+
+    # up to here, we are component-invariant, and can already transform
+    # the symbolic computation to actual AST nodes and add it to the quadrature loop body
+    quadloop_body += [
+        Comment(
+            "Computation of the gradient of the scalar shape functions belonging to each DoF.\n "
+            "In the Eps-component-loops, we insert the gradient at the entry of the\n "
+            "vectorial gradient matrix corresponding to the Eps-component."
+        )
+    ] + make_ast_from_exprs(grad_exprs)
 else:
-    r_inv, g2, grad_r, grad_r_inv = symbols("r_inv g2 grad_r grad_r_inv", real=True)
+    r_inv, g3, grad_r, grad_r_inv = symbols("r_inv g3 grad_r grad_r_inv", real=True)
+    g1 = IndexedBase("grad1", shape=(3))
+    g2 = IndexedBase("grad2", shape=(3))
     kernel_code += "\n" + terraneo_ccode(
         CodeBlock(
             Variable.deduced(grad_r).as_Declaration(
@@ -236,30 +272,30 @@ else:
     )
 
     J_invT = IndexedBase("J_invT", shape=(3, 3))
-    factors = IndexedBase("factors", shape=(3))
-    d1, d2 = symbols("d1 d2", integer=True)
+    # factors = IndexedBase("factors", shape=(3))
+    d_symbol = symbols("d", integer=True)
     quadloop_body += [
         Comment(
             "\nLoad the radially constant parts of the Jacobial from storage,\n scale with radial parts of the current element."
         ),
-        String(f"double J_invT[{dim}][{dim}] = {{0}};"),
         Variable.deduced(r_inv).as_Declaration(
             value=1.0 / (forward_map_rad(rads[0], rads[1], qp[2]))
         ),
-        String(f"double factors[{dim}] = {{ {r_inv}, {r_inv}, {grad_r_inv} }};"),
-        Variable.deduced(d1).as_Declaration(),
-        Variable.deduced(d2).as_Declaration(),
+        Variable.deduced(g_symbol).as_Declaration(),
         For(
-            d1,
-            range(0, dim),
+            g_symbol,
+            [0, num_nodes_per_wedge, 1],
             [
+                String(f"dense::Vec< ScalarT, 3 > grad1;"),
+                String(f"dense::Vec< ScalarT, 3 > grad2;"),
+                Variable.deduced(d_symbol).as_Declaration(),
                 For(
-                    d2,
+                    d_symbol,
                     range(0, dim),
                     [
                         Assignment(
-                            J_invT[d1, d2],
-                            factors[d2]
+                            g1[d_symbol],
+                            r_inv
                             * FunctionCall(
                                 "g1_",
                                 [
@@ -268,56 +304,44 @@ else:
                                     y_cell,
                                     w_symbol,
                                     q_symbol,
-                                    d1,
-                                    d2,
+                                    g_symbol,
+                                    d_symbol,
                                 ],
                             ),
-                        )
+                        ),
+                        Assignment(
+                            g2[d_symbol],
+                            grad_r_inv
+                            * FunctionCall(
+                                "g2_",
+                                [
+                                    local_subdomain_id,
+                                    x_cell,
+                                    y_cell,
+                                    w_symbol,
+                                    q_symbol,
+                                    g_symbol,
+                                    d_symbol,
+                                ],
+                            ),
+                        ),
                     ],
-                )
+                ),
+                Assignment(scalar_grad[g_symbol, 0], g1[0] + g2[0]),
+                Assignment(scalar_grad[g_symbol, 1], g1[1] + g2[1]),
+                Assignment(scalar_grad[g_symbol, 2], g1[2] + g2[2]),
             ],
         ),
-    ]
-    quadloop_body.append(
-        Variable.deduced(g2).as_Declaration(
+        Variable.deduced(g3).as_Declaration(
             value=FunctionCall(
-                "g2_", [local_subdomain_id, x_cell, y_cell, w_symbol, q_symbol]
+                "g3_", [local_subdomain_id, x_cell, y_cell, w_symbol, q_symbol]
             )
-        )
-    )
+        ),
+    ]
 
     r = 1 / r_inv
-    J_abs_det = r * r * grad_r * g2
-    J_invT_cse_replaced = Matrix(
-        [[J_invT[i, j] for j in range(dim)] for i in range(dim)]
-    )
+    J_abs_det = r * r * grad_r * g3
 
-# precompute gradients + CSE
-grad_exprs = []
-scalar_grad_is = []
-scalar_grad_name = "scalar_grad"
-scalar_grad = IndexedBase(scalar_grad_name, shape=(num_nodes_per_wedge, dim), real=True)
-grad_exprs.append(f"\ndouble {scalar_grad_name}[{num_nodes_per_wedge}][{dim}] = {{0}}")
-for i in range(num_nodes_per_wedge):
-    scalar_grad_is.append(J_invT_cse_replaced * grad_shape_vec(i, qp))
-scalar_grad_i_replacements, scalar_grad_i_reduced_exprs = sp.cse(
-    exprs=scalar_grad_is,
-    symbols=numbered_symbols(prefix=f"tmpcse_grad_i_", real=True),
-)
-grad_exprs += scalar_grad_i_replacements
-for i, grad_i_expr in enumerate(scalar_grad_i_reduced_exprs):
-    for d, gie in enumerate(grad_i_expr):
-        grad_exprs.append((scalar_grad[i, d], gie))
-
-# up to here, we are component-invariant, and can already transform
-# the symbolic computation to actual AST nodes and add it to the quadrature loop body
-quadloop_body += [
-    Comment(
-        "Computation of the gradient of the scalar shape functions belonging to each DoF.\n "
-        "In the Eps-component-loops, we insert the gradient at the entry of the\n "
-        "vectorial gradient matrix corresponding to the Eps-component."
-    )
-] + make_ast_from_exprs(grad_exprs)
 
 # from now on, statements go into the component/dimensions loops
 dimloop_j_body = []
@@ -329,7 +353,6 @@ dimloop_i_exprs = []
 # assemble src/trial gradient (sum over rows in local matrix)
 E_trial_name = "E_grad_trial"
 E_trial = IndexedBase(E_trial_name, shape=(3, 3), real=True)
-g_symbol = symbols("node_idx", integer=True)
 div_u = symbols("div_u", real=True)
 u_grad_loop_exprs = []
 u_grad_loop_exprs.append(f"\ndouble {E_trial_name}[3][3] = {{0}}")
@@ -547,7 +570,6 @@ kernel_code += (
                                 Variable.deduced(dimj_symbol).as_Declaration(),
                                 String(f"\ndouble {grad_u}[3][3] = {{0}}"),
                                 Variable.deduced(div_u).as_Declaration(value=0.0),
-                                Variable.deduced(g_symbol).as_Declaration(),
                                 Comment(
                                     "In the following, we exploit the outer-product-structure of the local MV both in \nthe components of the Epsilon operators and in the local DoFs."
                                 ),

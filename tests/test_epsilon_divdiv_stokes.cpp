@@ -720,7 +720,10 @@ std::tuple< double, double, int >
           { "dofs_pre", num_dofs_pressure },
           { "l2_error_pre", l2_error_pressure },
           { "inf_res_vel", inf_residual_vel },
-          { "inf_res_pre", inf_residual_pre } } );
+          { "inf_res_pre", inf_residual_pre },
+          { "h_vel", (r_max - r_min)/std::pow(2,velocity_level)},
+          { "h_p", (r_max - r_min)/std::pow(2,pressure_level)}
+    } );
 
     io::XDMFOutput xdmf(
         "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
@@ -747,7 +750,7 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 0, 1 }; //, 1 };
+    std::vector< int > gcas = { 0 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
@@ -807,7 +810,7 @@ int main( int argc, char** argv )
             }
         }
         table->query_rows_not_none( "dofs_vel" )
-            .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel" } )
+            .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel", "h_vel", "h_p" } )
             .print_pretty();
         table->query_rows_not_none( "order_vel" )
             .select_columns( { "level", "order_pre", "order_vel" } )

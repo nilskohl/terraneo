@@ -399,7 +399,6 @@ class TwoGridGCA
                     {
                         // for scalar operators we just use the scalar interpolation
                         P_vec = P;
-                        //Kokkos::abort( "Not implemented." );
                     }
                     dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > PTAP =
                         P_vec.transposed() * A_fine * P_vec;
@@ -425,30 +424,11 @@ class TwoGridGCA
                         Kokkos::abort( "Unexpected path." );
                     }
 
-                    //std::cout << "P: \n" << P;
-                    //std::cout << "A coarse 0: \n" << A_coarse[0];
-                    //std::cout << "A coarse assembled: \n"
-                    //      << coarse_op_.assemble_local_matrix(
-                     //            local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 )
-                    //      << std::endl;
+                   
                 }
             }
 
-            if ( false )
-            {
-                //std::cout << "A coarse 0: \n" << A_coarse[0] << std::endl;
-                //std::cout << "A coarse assembled: \n"
-                //          << coarse_op_.assemble_local_matrix(
-                //                 local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 )
-                //          << std::endl;
-            }
-
-            /*   A_coarse[0] = coarse_op_.assemble_local_matrix(
-         local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 0 );
-
-            A_coarse[1] = coarse_op_.assemble_local_matrix(
-         local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, 1 );
-            */
+            
 
             if ( false )
             {

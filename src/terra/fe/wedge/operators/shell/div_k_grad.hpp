@@ -515,7 +515,7 @@ class DivKGrad
             }
         }
 
-        if ( false )
+        if ( treat_boundary_ )
         {
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
             boundary_mask.fill( 1.0 );

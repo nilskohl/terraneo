@@ -50,16 +50,16 @@ enum class BenchmarkType : int
 };
 
 constexpr auto all_benchmark_types = {
-    /*BenchmarkType::LaplaceFloat,
+    BenchmarkType::LaplaceFloat,
     BenchmarkType::LaplaceDouble,
     BenchmarkType::LaplaceSimpleDouble,
     BenchmarkType::VectorLaplaceFloat,
     BenchmarkType::VectorLaplaceDouble,
     BenchmarkType::VectorLaplaceNeumannDouble,
-    BenchmarkType::EpsDivDivFloat,*/
- //   BenchmarkType::EpsDivDivDouble,
+    BenchmarkType::EpsDivDivFloat,
+    BenchmarkType::EpsDivDivDouble,
     BenchmarkType::EpsDivDivKerngenDouble,
-//    BenchmarkType::StokesDouble 
+    BenchmarkType::StokesDouble
 };
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
@@ -84,7 +84,7 @@ struct BenchmarkData
 struct Parameters
 {
     int min_level  = 1;
-    int max_level  = 8;
+    int max_level  = 6;
     int executions = 1;
 };
 
@@ -107,7 +107,7 @@ double measure_run_time( int executions, OperatorT& A, const SrcOf< OperatorT >&
     // const auto mm = kernels::common::max_abs_entry( dst.grid_data() );
     // std::cout << "Printing some derived value to ensure nothing is optimized out: " << mm << std::endl;
 
-    const double duration = timer.seconds() / executions;
+    const double duration = timer.seconds() / exions;
     return duration;
 }
 
@@ -227,22 +227,36 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     }
     else if ( benchmark == BenchmarkType::EpsDivDivFloat )
     {
-        EpsilonDivDiv A( domain, coords_shell_float, coords_radii_float, coeff_float.grid_data(), true, false );
-        util::Timer   t( "EpsDivDiv - float" );
+        EpsilonDivDiv A(
+            domain, coords_shell_float, coords_radii_float, boundary_mask_data, coeff_float.grid_data(), true, false );
+        util::Timer t( "EpsDivDiv - float" );
         duration = measure_run_time( executions, A, src_vec_float, dst_vec_float );
         dofs     = dofs_vec;
     }
     else if ( benchmark == BenchmarkType::EpsDivDivDouble )
     {
-        EpsilonDivDiv A( domain, coords_shell_double, coords_radii_double, coeff_double.grid_data(), true, false );
-        util::Timer   t( "EpsDivDiv - double" );
+        EpsilonDivDiv A(
+            domain,
+            coords_shell_double,
+            coords_radii_double,
+            boundary_mask_data,
+            coeff_double.grid_data(),
+            true,
+            false );
+        util::Timer t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
     }
     else if ( benchmark == BenchmarkType::EpsDivDivKerngenDouble )
     {
         EpsilonDivDivKerngen A(
-            domain, coords_shell_double, coords_radii_double, boundary_mask_data, coeff_double.grid_data(), true, false );
+            domain,
+            coords_shell_double,
+            coords_radii_double,
+            boundary_mask_data,
+            coeff_double.grid_data(),
+            true,
+            false );
         util::Timer t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
         dofs     = dofs_vec;
