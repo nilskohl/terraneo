@@ -103,6 +103,10 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
     // Allow config files
     app.set_config( "--config" );
 
+    ///////////////
+    /// General ///
+    ///////////////
+
     add_option_with_default(
         app,
         "--write-config-and-exit",

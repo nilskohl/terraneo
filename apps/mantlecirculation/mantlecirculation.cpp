@@ -605,6 +605,7 @@ Result<> run( const Parameters& prm )
           .max_iterations              = prm.stokes_solver_parameters.krylov_max_iterations },
         table,
         prec_stokes );
+    stokes_fgmres.set_tag( "stokes_fgmres" );
 
     /////////////////////
     /// ENERGY SOLVER ///
@@ -620,6 +621,7 @@ Result<> run( const Parameters& prm )
         domains[velocity_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         u.block_1(),
         prm.physics_parameters.diffusivity,
         0.0,
@@ -631,6 +633,7 @@ Result<> run( const Parameters& prm )
         domains[velocity_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         u.block_1(),
         prm.physics_parameters.diffusivity,
         0.0,
@@ -642,6 +645,7 @@ Result<> run( const Parameters& prm )
         domains[velocity_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         u.block_1(),
         prm.physics_parameters.diffusivity,
         0.0,
@@ -698,6 +702,7 @@ Result<> run( const Parameters& prm )
           .absolute_residual_tolerance = prm.energy_solver_parameters.krylov_absolute_tolerance,
           .max_iterations              = prm.energy_solver_parameters.krylov_max_iterations },
         table );
+    energy_solver.set_tag( "energy_fgmres" );
 
     table->add_row( {
         { "tag", "setup" },
@@ -743,7 +748,7 @@ Result<> run( const Parameters& prm )
 
     for ( int timestep = 1; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
     {
-        logroot << "Timestep " << timestep << std::endl;
+        logroot << "\n### Timestep " << timestep << " ###" << std::endl;
 
         // Set up rhs data for Stokes.
 
@@ -771,7 +776,23 @@ Result<> run( const Parameters& prm )
         // Solve Stokes.
         solve( stokes_fgmres, K, u, f );
 
-        table->query_rows_equals( "tag", "fgmres_solver" ).print_pretty();
+        if ( true )
+        {
+            table->query_rows_equals( "tag", "stokes_fgmres" ).print_pretty();
+        }
+        else
+        {
+            const auto num_stokes_iterations =
+                table->query_rows_equals( "tag", "stokes_fgmres" ).column_as_vector< int >( "iteration" ).size();
+            table->query_rows_equals( "tag", "stokes_fgmres" )
+                .query_rows_where(
+                    "iteration",
+                    [num_stokes_iterations]( const util::Table::Value& v ) {
+                        return std::get< int >( v ) == 0 || std::get< int >( v ) == num_stokes_iterations - 1;
+                    } )
+                .print_pretty();
+        }
+
         table->clear();
 
         // "Normalize" pressure.
@@ -841,7 +862,23 @@ Result<> run( const Parameters& prm )
             // Solve energy.
             solve( energy_solver, A, T, q );
 
-            table->query_rows_equals( "tag", "fgmres_solver" ).print_pretty();
+            if ( true )
+            {
+                table->query_rows_equals( "tag", "energy_fgmres" ).print_pretty();
+            }
+            else
+            {
+                const auto num_energy_iterations =
+                    table->query_rows_equals( "tag", "energy_fgmres" ).column_as_vector< int >( "iteration" ).size();
+                table->query_rows_equals( "tag", "energy_fgmres" )
+                    .query_rows_where(
+                        "iteration",
+                        [num_energy_iterations]( const util::Table::Value& v ) {
+                            return std::get< int >( v ) == 0 || std::get< int >( v ) == num_energy_iterations - 1;
+                        } )
+                    .print_pretty();
+            }
+
             table->clear();
         }
 
