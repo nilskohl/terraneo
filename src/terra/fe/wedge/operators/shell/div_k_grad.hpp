@@ -34,7 +34,7 @@ class DivKGrad
   private:
     LocalMatrixStorage local_matrix_storage_;
 
-    bool single_quadpoint_ = true;
+    bool single_quadpoint_ = false;
     bool k_function_eval   = false;
 
     grid::shell::DistributedDomain domain_;
@@ -43,6 +43,8 @@ class DivKGrad
     grid::Grid2DDataScalar< ScalarT >    radii_;
     grid::Grid4DDataScalar< ScalarType > k_;
     KFunction                            k_function_;
+    grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
+
 
     bool treat_boundary_;
     bool diagonal_;
@@ -67,6 +69,7 @@ class DivKGrad
         const grid::shell::DistributedDomain&       domain,
         const grid::Grid3DDataVec< ScalarT, 3 >&    grid,
         const grid::Grid2DDataScalar< ScalarT >&    radii,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
         const grid::Grid4DDataScalar< ScalarType >& k,
         KFunction                                   k_function,
         bool                                        treat_boundary,
@@ -78,6 +81,7 @@ class DivKGrad
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
+    , mask_( mask )
     , k_( k )
     , k_function_( k_function )
     , treat_boundary_( treat_boundary )
@@ -93,6 +97,18 @@ class DivKGrad
         quadrature::quad_felippa_1x1_quad_weights( quad_weights_1x1_ );
         quadrature::quad_felippa_3x2_quad_points( quad_points_3x2_ );
         quadrature::quad_felippa_3x2_quad_weights( quad_weights_3x2_ );
+    }
+
+    /// @brief Getter for mask member
+    KOKKOS_INLINE_FUNCTION
+    bool has_flag(
+        const int                      local_subdomain_id,
+        const int                      x_cell,
+        const int                      y_cell,
+        const int                      r_cell,
+        grid::shell::ShellBoundaryFlag flag ) const
+    {
+        return util::has_flag( mask_( local_subdomain_id, x_cell, y_cell, r_cell ), flag );
     }
 
     void set_operator_apply_and_communication_modes(
@@ -248,6 +264,47 @@ class DivKGrad
                 A[0] = A[0].diagonal();
                 A[1] = A[1].diagonal();
             }
+
+            if ( treat_boundary_ )
+            {
+                for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+                {
+                    dense::Mat< ScalarT, 6, 6 > boundary_mask;
+                    boundary_mask.fill( 1.0 );
+                    if ( r_cell == 0 )
+                    {
+                        // Inner boundary (CMB).
+                        for ( int i = 0; i < 6; i++ )
+                        {
+                            for ( int j = 0; j < 6; j++ )
+                            {
+                                if ( i != j && ( i < 3 || j < 3 ) )
+                                {
+                                    boundary_mask( i, j ) = 0.0;
+                                }
+                            }
+                        }
+                    }
+
+                    if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                    {
+                        // Outer boundary (surface).
+                        for ( int i = 0; i < 6; i++ )
+                        {
+                            for ( int j = 0; j < 6; j++ )
+                            {
+                                if ( i != j && ( i >= 3 || j >= 3 ) )
+                                {
+                                    boundary_mask( i, j ) = 0.0;
+                                }
+                            }
+                        }
+                    }
+
+                    A[wedge].hadamard_product( boundary_mask );
+                }
+            }
+
             dense::Vec< ScalarT, LocalMatrixDim > src[num_wedges_per_hex_cell];
             extract_local_wedge_scalar_coefficients( src, local_subdomain_id, x_cell, y_cell, r_cell, src_ );
 

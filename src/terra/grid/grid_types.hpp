@@ -7,7 +7,7 @@
 
 namespace terra::grid {
 
-using Layout = Kokkos::LayoutLeft;
+using Layout = Kokkos::LayoutRight;
 
 template < typename ScalarType >
 using Grid0DDataScalar = Kokkos::View< ScalarType, Layout >;

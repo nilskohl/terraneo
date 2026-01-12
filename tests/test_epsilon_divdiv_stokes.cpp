@@ -8,7 +8,9 @@
 #include "fe/wedge/operators/shell/kmass.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/mass.hpp"
+#include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
+#include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_linear.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
@@ -16,7 +18,7 @@
 #include "io/xdmf.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/fgmres.hpp"
-#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "linalg/solvers/gca/gca_elements_collector.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
@@ -347,8 +349,10 @@ std::tuple< double, double, int >
     using Gradient    = Stokes::Block12Type;
     using ViscousMass = fe::wedge::operators::shell::VectorMass< ScalarType >;
 
-    using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
-    using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
+    using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
+    using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
+    //using Prolongation = fe::wedge::operators::shell::ProlongationVecLinear< ScalarType >;
+    //using Restriction  = fe::wedge::operators::shell::RestrictionVecLinear< ScalarType >;
 
     // coefficient data
 
@@ -452,10 +456,12 @@ std::tuple< double, double, int >
             }
             else if ( gca == 1 )
             {
-                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, std::nullopt );
+                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, GCAElements.grid_data() );
             }
-            P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
-            R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
+            //P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
+            //R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
+            P.emplace_back( linalg::OperatorApplyMode::Add );
+            R.emplace_back( domains[level] );
         }
     }
 
@@ -568,7 +574,7 @@ std::tuple< double, double, int >
             DiagonallyScaledOperator< Viscous > inv_diag_A( A_c[level], inverse_diagonals[level] );
             max_ev = power_iteration< DiagonallyScaledOperator< Viscous > >( inv_diag_A, tmp_pi_0, tmp_pi_1, 100 );
         }
-        const auto omega_opt = 2.0 / ( 1.1 * max_ev );
+        const auto omega_opt = 2.0 / ( 1.3 * max_ev );
         smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt );
 
         std::cout << "Optimal omega on level " << level << ": " << omega_opt << std::endl;
@@ -583,9 +589,9 @@ std::tuple< double, double, int >
     }
 
     CoarseGridSolver coarse_grid_solver(
-        linalg::solvers::IterativeSolverParameters{ 100, 1e-8, 1e-16 }, table, coarse_grid_tmps );
+        linalg::solvers::IterativeSolverParameters{ 1000, 1e-8, 1e-16 }, table, coarse_grid_tmps );
 
-    constexpr auto num_mg_cycles = 2;
+    constexpr auto num_mg_cycles = 3;
 
     using PrecVisc = linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
     PrecVisc prec_11(
@@ -672,6 +678,7 @@ std::tuple< double, double, int >
     linalg::solvers::FGMRESOptions< ScalarType > fgmres_options;
     fgmres_options.restart                                     = iters;
     fgmres_options.max_iterations                              = iters;
+    fgmres_options.relative_residual_tolerance                 = 1e-8;
     auto                                          solver_table = std::make_shared< util::Table >();
     linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );
@@ -713,7 +720,10 @@ std::tuple< double, double, int >
           { "dofs_pre", num_dofs_pressure },
           { "l2_error_pre", l2_error_pressure },
           { "inf_res_vel", inf_residual_vel },
-          { "inf_res_pre", inf_residual_pre } } );
+          { "inf_res_pre", inf_residual_pre },
+          { "h_vel", (r_max - r_min)/std::pow(2,velocity_level)},
+          { "h_p", (r_max - r_min)/std::pow(2,pressure_level)}
+    } );
 
     io::XDMFOutput xdmf(
         "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
@@ -732,7 +742,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 5;
+    const int max_level = 6;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
@@ -740,7 +750,7 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 1 }; //, 1 };
+    std::vector< int > gcas = { 0 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
@@ -783,23 +793,24 @@ int main( int argc, char** argv )
 
                     std::cout << "Iters: " << iterations << std::endl;
                     cycles[std::string( "k_max=" ) + std::to_string( kmax )] = iterations;
+
+                    if ( gca == 1 )
+                    {
+                        table_gca->add_row( cycles );
+                    }
+                    else if ( gca == 2 )
+                    {
+                        table_agca->add_row( cycles );
+                    }
+                    else
+                    {
+                        table_dca->add_row( cycles );
+                    }
                 }
-            }
-            if ( gca == 1 )
-            {
-                table_gca->add_row( cycles );
-            }
-            else if ( gca == 2 )
-            {
-                table_agca->add_row( cycles );
-            }
-            else
-            {
-                table_dca->add_row( cycles );
             }
         }
         table->query_rows_not_none( "dofs_vel" )
-            .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel" } )
+            .select_columns( { "level", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel", "h_vel", "h_p" } )
             .print_pretty();
         table->query_rows_not_none( "order_vel" )
             .select_columns( { "level", "order_pre", "order_vel" } )

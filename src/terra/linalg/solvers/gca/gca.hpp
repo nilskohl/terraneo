@@ -6,6 +6,7 @@
 #include "dense/vec.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
+#include "fe/wedge/shell/grid_transfer_constant.hpp"
 #include "fe/wedge/shell/grid_transfer_linear.hpp"
 #include "grid/grid_types.hpp"
 #include "linalg/operator.hpp"
@@ -20,6 +21,14 @@ using terra::grid::shell::ShellBoundaryFlag::CMB;
 using terra::grid::shell::ShellBoundaryFlag::SURFACE;
 using terra::util::has_flag;
 namespace terra::linalg::solvers {
+
+/// @brief Modes for choosing interpolation weights.
+enum class InterpolationMode
+{
+    Constant,
+    Linear,
+    //OpDep?
+};
 
 /// @brief: Galerkin coarse approximation (GCA).
 /// TwoGridGCA takes a coarser and a finer operator. Each thread assembles a
@@ -48,6 +57,7 @@ class TwoGridGCA
 
     int                                  level_range_;
     grid::Grid4DDataScalar< ScalarType > GCAElements_;
+    InterpolationMode                    interpolation_mode_;
 
   public:
     explicit TwoGridGCA(
@@ -55,7 +65,8 @@ class TwoGridGCA
         Operator                                              coarse_op,
         std::optional< int >                                  level_range,
         std::optional< grid::Grid4DDataScalar< ScalarType > > GCAElements,
-        bool                                                  treat_boundary = true )
+        bool                                                  treat_boundary     = true,
+        InterpolationMode                                     interpolation_mode = InterpolationMode::Constant )
     : domain_fine_( fine_op.get_domain() )
     , fine_op_( fine_op )
     , coarse_op_( coarse_op )
@@ -63,6 +74,7 @@ class TwoGridGCA
     , radii_fine_( fine_op.get_radii() )
     , radii_coarse_( coarse_op.get_radii() )
     , treat_boundary_( treat_boundary )
+    , interpolation_mode_( interpolation_mode )
     {
         assert( coarse_op_.get_stored_matrix_mode() != linalg::OperatorStoredMatrixMode::Off );
 
@@ -161,6 +173,8 @@ class TwoGridGCA
 
             dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim >
                 A_coarse[num_wedges_per_hex_cell] = {};
+            A_coarse[0].fill( 0 );
+            A_coarse[1].fill( 0 );
             // loop finer hexes of our coarse hex
             for ( int fine_hex_lidx = 0; fine_hex_lidx < 8; fine_hex_lidx++ )
             {
@@ -191,10 +205,10 @@ class TwoGridGCA
                         }
 
                         // else: need radial direction bot (>=) and top (<=) of current fine DoF
-                        const auto r_idx_coarse_bot = fine_dof_idx( 3 ) < radii_fine_.extent( 1 ) - 1 ?
-                                                          fine_dof_idx( 3 ) / 2 :
-                                                          fine_dof_idx( 3 ) / 2 - 1;
-                        const auto r_idx_coarse_top = r_idx_coarse_bot + 1;
+                        int r_idx_coarse_bot = fine_dof_idx( 3 ) < radii_fine_.extent( 1 ) - 1 ?
+                                                   fine_dof_idx( 3 ) / 2 :
+                                                   fine_dof_idx( 3 ) / 2 - 1;
+                        int r_idx_coarse_top = r_idx_coarse_bot + 1;
                         (void) r_idx_coarse_top; // unused
 
                         // fine dof is radially aligned: x and y index match with coarse DoFs
@@ -205,20 +219,31 @@ class TwoGridGCA
                             const auto fine_dof_x_idx_coarse = fine_dof_idx( 1 ) / 2;
                             const auto fine_dof_y_idx_coarse = fine_dof_idx( 2 ) / 2;
 
-                            // actual weight computation
-                            const auto weights = fe::wedge::shell::prolongation_linear_weights(
-                                dense::Vec< int, 4 >{
-                                    local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
-                                dense::Vec< int, 4 >{
-                                    local_subdomain_id,
-                                    fine_dof_x_idx_coarse,
-                                    fine_dof_y_idx_coarse,
-                                    r_idx_coarse_bot },
-                                grid_fine_,
-                                radii_fine_ );
+                            dense::Vec< ScalarType, 2 > weights{};
+                            if ( interpolation_mode_ == InterpolationMode::Linear )
+                            {
+                                // actual weight computation
+                                weights = fe::wedge::shell::prolongation_linear_weights(
+                                    dense::Vec< int, 4 >{
+                                        local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
+                                    dense::Vec< int, 4 >{
+                                        local_subdomain_id,
+                                        fine_dof_x_idx_coarse,
+                                        fine_dof_y_idx_coarse,
+                                        r_idx_coarse_bot },
+                                    grid_fine_,
+                                    radii_fine_ );
+                            }
+                            else if ( interpolation_mode_ == InterpolationMode::Constant )
+                            {
+                                weights( 0 ) = 0.5;
+                                weights( 1 ) = 0.5;
+                            }
+                            else
+                            {
+                                Kokkos::abort( "Unknown interpolation mode." );
+                            }
 
-                            // is hurts but we only do it once for assembling local Ps so its fine
-                            // local indices of coarse DoFs can be determined analytically
                             if ( fine_dof_lidx == 2 or fine_dof_lidx == 5 )
                             {
                                 P( fine_dof_lidx, 2 ) = weights( 0 );
@@ -291,18 +316,62 @@ class TwoGridGCA
                             coarse_dof_lindices[3] = 5;
                         }
 
-                        const auto weights = fe::wedge::shell::prolongation_linear_weights(
-                            dense::Vec< int, 4 >{
-                                local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
-                            dense::Vec< int, 4 >{ local_subdomain_id, x0_idx_coarse, y0_idx_coarse, r_idx_coarse_bot },
-                            dense::Vec< int, 4 >{ local_subdomain_id, x1_idx_coarse, y1_idx_coarse, r_idx_coarse_bot },
-                            grid_fine_,
-                            radii_fine_ );
+                        if ( interpolation_mode_ == InterpolationMode::Linear )
+                        {
+                            const auto weights = fe::wedge::shell::prolongation_linear_weights(
+                                dense::Vec< int, 4 >{
+                                    local_subdomain_id, fine_dof_idx( 1 ), fine_dof_idx( 2 ), fine_dof_idx( 3 ) },
+                                dense::Vec< int, 4 >{
+                                    local_subdomain_id, x0_idx_coarse, y0_idx_coarse, r_idx_coarse_bot },
+                                dense::Vec< int, 4 >{
+                                    local_subdomain_id, x1_idx_coarse, y1_idx_coarse, r_idx_coarse_bot },
+                                grid_fine_,
+                                radii_fine_ );
 
-                        P( fine_dof_lidx, coarse_dof_lindices[0] ) = weights( 0 );
-                        P( fine_dof_lidx, coarse_dof_lindices[1] ) = weights( 0 );
-                        P( fine_dof_lidx, coarse_dof_lindices[2] ) = weights( 1 );
-                        P( fine_dof_lidx, coarse_dof_lindices[3] ) = weights( 1 );
+                            P( fine_dof_lidx, coarse_dof_lindices[0] ) = weights( 0 );
+                            P( fine_dof_lidx, coarse_dof_lindices[1] ) = weights( 0 );
+                            P( fine_dof_lidx, coarse_dof_lindices[2] ) = weights( 1 );
+                            P( fine_dof_lidx, coarse_dof_lindices[3] ) = weights( 1 );
+                        }
+                        else if ( interpolation_mode_ == InterpolationMode::Constant )
+                        {
+                            P( fine_dof_lidx, coarse_dof_lindices[0] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x0_idx_coarse,
+                                    y0_idx_coarse,
+                                    r_idx_coarse_bot );
+                            P( fine_dof_lidx, coarse_dof_lindices[1] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x1_idx_coarse,
+                                    y1_idx_coarse,
+                                    r_idx_coarse_bot );
+                            P( fine_dof_lidx, coarse_dof_lindices[2] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x0_idx_coarse,
+                                    y0_idx_coarse,
+                                    r_idx_coarse_top );
+                            P( fine_dof_lidx, coarse_dof_lindices[3] ) =
+                                terra::fe::wedge::shell::prolongation_constant_weight< ScalarType >(
+                                    fine_dof_idx( 1 ),
+                                    fine_dof_idx( 2 ),
+                                    fine_dof_idx( 3 ),
+                                    x1_idx_coarse,
+                                    y1_idx_coarse,
+                                    r_idx_coarse_top );
+                        }
+                        else
+                        {
+                            Kokkos::abort( "Unknown interpolation mode." );
+                        }
                     }
 
                     dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > A_fine =
@@ -330,7 +399,6 @@ class TwoGridGCA
                     {
                         // for scalar operators we just use the scalar interpolation
                         P_vec = P;
-                        //Kokkos::abort( "Not implemented." );
                     }
                     dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > PTAP =
                         P_vec.transposed() * A_fine * P_vec;
@@ -355,10 +423,14 @@ class TwoGridGCA
                     {
                         Kokkos::abort( "Unexpected path." );
                     }
+
+                   
                 }
             }
 
-            if ( treat_boundary_ )
+            
+
+            if ( false )
             {
                 dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > boundary_mask;
                 boundary_mask.fill( 1.0 );
@@ -369,7 +441,8 @@ class TwoGridGCA
                     {
                         for ( int dimj = 0; dimj < 3; ++dimj )
                         {
-                            if ( coarse_op_.has_flag( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, CMB ) )
+                            if ( coarse_op_.has_flag(
+                                     local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx, CMB ) )
                             {
                                 // Inner boundary (CMB).
                                 for ( int i = 0; i < num_nodes_per_wedge; i++ )
@@ -387,23 +460,22 @@ class TwoGridGCA
                             }
 
                             if ( coarse_op_.has_flag(
-                                     local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx + 1, SURFACE ) )  
+                                     local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx + 1, SURFACE ) )
+                            {
+                                // Outer boundary (surface).
+                                for ( int i = 0; i < num_nodes_per_wedge; i++ )
                                 {
-                                    // Outer boundary (surface).
-                                    for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                                    for ( int j = 0; j < num_nodes_per_wedge; j++ )
                                     {
-                                        for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                                        if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
+                                             ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
                                         {
-                                            if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
-                                                 ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
-                                            {
-                                                boundary_mask(
-                                                    i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) =
-                                                    0.0;
-                                            }
+                                            boundary_mask(
+                                                i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
                                         }
                                     }
                                 }
+                            }
                         }
                     }
                 }
@@ -424,7 +496,8 @@ class TwoGridGCA
                         }
                     }
 
-                    if ( coarse_op_.has_flag( local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx + 1, SURFACE ) )
+                    if ( coarse_op_.has_flag(
+                             local_subdomain_id, x_coarse_idx, y_coarse_idx, r_coarse_idx + 1, SURFACE ) )
                     {
                         // Outer boundary (surface).
                         for ( int i = 0; i < num_nodes_per_wedge; i++ )

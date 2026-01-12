@@ -12,7 +12,7 @@ from sympy.codegen.ast import (
     integer,
     float64,
     FunctionCall,
-    String
+    String,
 )
 
 
@@ -36,36 +36,13 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
         for i in range(2)
     ]
 
-    # quad_surface_coords
-    quad_surface_coords = [
-        [
-            [
-                sp.symbols(f"quad_surface_coords_{i}_{j}_{d}", real=True)
-                for d in range(dim)
-            ]
-            for j in range(2)
-        ]
-        for i in range(2)
-    ]
-
-    # wedge_surf_phy_coords
-    wedge_surf_phy_coords = [
-        [
-            [
-                sp.symbols(f"wedge_surf_phy_coords_{w}_{n}_{d}", real=True)
-                for d in range(dim)
-            ]
-            for n in range(num_nodes_per_wedge_surface)
-        ]
-        for w in range(num_wedges_per_hex_cell)
-    ]
-
     assignments = []
-    array_declarations = "\n"
     wedge_name = "wedge_surf_phy_coords"
     quad_name = "quad_surface_coords"
-    array_declarations += f"double {wedge_name}[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];"
-    array_declarations += f"\ndouble {quad_name}[{2}][{2}][{dim}];\n"
+    array_declarations = [
+        f"double {wedge_name}[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];\n",
+        f"double {quad_name}[{2}][{2}][{dim}];\n",
+    ]
     wedge_surf_phy_coords_symbol = IndexedBase(
         wedge_name,
         shape=(num_wedges_per_hex_cell, num_nodes_per_wedge_surface, dim),
