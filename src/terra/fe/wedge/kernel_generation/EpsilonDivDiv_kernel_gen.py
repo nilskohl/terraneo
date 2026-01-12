@@ -24,6 +24,9 @@ local_subdomain_id, x_cell, y_cell, r_cell = sp.symbols(
     "local_subdomain_id x_cell y_cell r_cell", integer=True
 )
 
+# define scalar type
+scalar_type = 'double'
+
 
 # initial decls and loads of coords and src
 (
@@ -31,16 +34,16 @@ local_subdomain_id, x_cell, y_cell, r_cell = sp.symbols(
     wedge_surf_phy_coords_symbol,
     wedge_array_declarations,
     wedge_assignments,
-) = make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cell)
+) = make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cell, scalar_type)
 rads, rad_assignments = make_rad_assignments(local_subdomain_id, r_cell)
 src_symbol, src_array_declaration, src_assignments = (
     make_extract_local_wedge_vector_assignments(
-        local_subdomain_id, x_cell, y_cell, r_cell, "src"
+        local_subdomain_id, x_cell, y_cell, r_cell, "src", scalar_type
     )
 )
 k_symbol, k_array_declaration, k_assignments = (
     make_extract_local_wedge_scalar_assignments(
-        local_subdomain_id, x_cell, y_cell, r_cell, "k"
+        local_subdomain_id, x_cell, y_cell, r_cell, "k", scalar_type
     )
 )
 
@@ -68,8 +71,8 @@ qp_array = IndexedBase(qp_array_name, shape=(num_qps, 3), real=True)
 qw_array = IndexedBase(qw_array_name, shape=(num_qps), real=True)
 
 
-kernel_code += f"\ndouble {qp_array_name}[{num_qps}][{3}];\n"
-kernel_code += f"double {qw_array_name}[{num_qps}];"
+kernel_code += f"\n{scalar_type} {qp_array_name}[{num_qps}][{3}];\n"
+kernel_code += f"{scalar_type} {qw_array_name}[{num_qps}];"
 kernel_code += "\n" + terraneo_ccode(
     CodeBlock(
         *[
@@ -147,7 +150,7 @@ dst_array_name = "dst_array"
 dst_symbol = IndexedBase(
     dst_array_name, shape=(dim, num_wedges_per_hex_cell, num_nodes_per_wedge)
 )
-kernel_code += f"\ndouble {dst_array_name}[{dim}][{num_wedges_per_hex_cell}][{num_nodes_per_wedge}] = {{0}};"
+kernel_code += f"\n{scalar_type} {dst_array_name}[{dim}][{num_wedges_per_hex_cell}][{num_nodes_per_wedge}] = {{0}};"
 # construct quadrature loop
 quadloop_body = []
 quadloop_exprs = []
@@ -188,7 +191,7 @@ g_symbol = symbols("node_idx", integer=True)
 scalar_grad_name = "scalar_grad"
 scalar_grad = IndexedBase(scalar_grad_name, shape=(num_nodes_per_wedge, dim), real=True)
 quadloop_body += [
-    String(f"\ndouble {scalar_grad_name}[{num_nodes_per_wedge}][{dim}] = {{0}}")
+    String(f"\n{scalar_type} {scalar_grad_name}[{num_nodes_per_wedge}][{dim}] = {{0}}")
 ]
 jac_laterally_precomputed = False
 if not jac_laterally_precomputed:
@@ -355,7 +358,7 @@ E_trial_name = "E_grad_trial"
 E_trial = IndexedBase(E_trial_name, shape=(3, 3), real=True)
 div_u = symbols("div_u", real=True)
 u_grad_loop_exprs = []
-u_grad_loop_exprs.append(f"\ndouble {E_trial_name}[3][3] = {{0}}")
+u_grad_loop_exprs.append(f"\n{scalar_type} {E_trial_name}[3][3] = {{0}}")
 
 
 def create_col_assigns(E, col, col_vec):
@@ -404,7 +407,7 @@ u_grad_loop_exprs += (
 E_test_name = "E_grad_test"
 E_test = IndexedBase(E_test_name, shape=(3, 3), real=True)
 pairing_loop_exprs = []
-pairing_loop_exprs.append(f"\ndouble {E_test_name}[3][3] = {{0}}")
+pairing_loop_exprs.append(f"\n{scalar_type} {E_test_name}[3][3] = {{0}}")
 pairing_loop_exprs += create_col_assigns(
     E_test, dimi_symbol, [scalar_grad[g_symbol, d] for d in range(dim)]
 )
@@ -451,13 +454,13 @@ pairing_loop_exprs += (
 
 # boundary/diagonal loop
 boundary_loop_exprs = []
-boundary_loop_exprs.append(f"\ndouble {E_test_name}[3][3] = {{0}}")
+boundary_loop_exprs.append(f"\n{scalar_type} {E_test_name}[3][3] = {{0}}")
 boundary_loop_exprs += create_col_assigns(
     E_test, dim_diagBC_symbol, [scalar_grad[g_symbol, d] for d in range(dim)]
 )
 grad_u_diag_name = "grad_u_diag"
 grad_u_diag = IndexedBase(grad_u_diag_name, shape=(3, 3), real=True)
-boundary_loop_exprs.append(f"\ndouble {grad_u_diag_name}[3][3] = {{0}}")
+boundary_loop_exprs.append(f"\n{scalar_type} {grad_u_diag_name}[3][3] = {{0}}")
 grad_u_diag_matrix = Matrix(3, 3, symm_grad_i_reduced_exprs[0]).multiply_elementwise(
     Matrix(
         3,
@@ -508,6 +511,7 @@ dimloop_j_body += [
     Conditional(
         Eq(diagonal, False),
         [
+            Variable.deduced(g_symbol).as_Declaration(),
             For(
                 g_symbol,
                 [0 + cmb_shift, num_nodes_per_wedge - surface_shift, 1],
@@ -521,6 +525,7 @@ dimloop_i_body += [
     Conditional(
         Eq(diagonal, False),
         [
+            Variable.deduced(g_symbol).as_Declaration(),
             For(
                 g_symbol,
                 [0 + cmb_shift, num_nodes_per_wedge - surface_shift, 1],
@@ -568,7 +573,7 @@ kernel_code += (
                             [
                                 *quadloop_body,
                                 Variable.deduced(dimj_symbol).as_Declaration(),
-                                String(f"\ndouble {grad_u}[3][3] = {{0}}"),
+                                String(f"\n{scalar_type} {grad_u}[3][3] = {{0}}"),
                                 Variable.deduced(div_u).as_Declaration(value=0.0),
                                 Comment(
                                     "In the following, we exploit the outer-product-structure of the local MV both in \nthe components of the Epsilon operators and in the local DoFs."
