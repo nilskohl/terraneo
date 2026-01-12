@@ -119,6 +119,11 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
         ->group( "Domain" );
     add_option_with_default( app, "--refinement-level-mesh-max", parameters.mesh_parameters.refinement_level_mesh_max )
         ->group( "Domain" );
+
+    add_option_with_default(
+        app, "--refinement-level-subdomains", parameters.mesh_parameters.refinement_level_subdomains )
+        ->group( "Domain" );
+
     add_option_with_default( app, "--radius-min", parameters.mesh_parameters.radius_min )->group( "Domain" );
     add_option_with_default( app, "--radius-max", parameters.mesh_parameters.radius_max )->group( "Domain" );
 

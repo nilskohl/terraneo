@@ -205,13 +205,25 @@ Result<> run( const Parameters& prm )
         const int idx = level - prm.mesh_parameters.refinement_level_mesh_min;
 
         domains.push_back(
-            DistributedDomain::create_uniform_single_subdomain_per_diamond(
-                level, level, prm.mesh_parameters.radius_min, prm.mesh_parameters.radius_max ) );
+            DistributedDomain::create_uniform(
+                level,
+                level,
+                prm.mesh_parameters.radius_min,
+                prm.mesh_parameters.radius_max,
+                prm.mesh_parameters.refinement_level_subdomains,
+                prm.mesh_parameters.refinement_level_subdomains ) );
         coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
         coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
         ownership_mask_data.push_back( grid::setup_node_ownership_mask_data( domains[idx] ) );
         boundary_mask_data.push_back( grid::shell::setup_boundary_mask_data( domains[idx] ) );
     }
+
+    const auto subdomain_distr = grid::shell::subdomain_distribution( domains.back() );
+    logroot << "Subdomain distribution: \n";
+    logroot << " - total: " << subdomain_distr.total << "\n";
+    logroot << " - min:   " << subdomain_distr.min << "\n";
+    logroot << " - avg:   " << subdomain_distr.avg << "\n";
+    logroot << " - max:   " << subdomain_distr.max << "\n\n";
 
     const int  num_levels     = domains.size();
     const auto velocity_level = num_levels - 1;

@@ -2473,6 +2473,30 @@ class DistributedDomain
     std::map< LocalSubdomainIdx, SubdomainInfo > local_subdomain_index_to_subdomain_info_;
 };
 
+struct SubdomainDistribution
+{
+    int    total;
+    int    min;
+    int    max;
+    double avg;
+};
+
+inline SubdomainDistribution subdomain_distribution( const DistributedDomain& domain )
+{
+    const auto num_local_subdomains = static_cast< int >( domain.subdomains().size() );
+    int        total                = num_local_subdomains;
+    int        min                  = num_local_subdomains;
+    int        max                  = num_local_subdomains;
+
+    MPI_Reduce( &num_local_subdomains, &total, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
+    MPI_Reduce( &num_local_subdomains, &min, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD );
+    MPI_Reduce( &num_local_subdomains, &max, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD );
+
+    const SubdomainDistribution result{
+        .total = total, .min = min, .max = max, .avg = static_cast< double >( total ) / mpi::num_processes() };
+    return result;
+}
+
 template < typename ValueType >
 inline Grid4DDataScalar< ValueType >
     allocate_scalar_grid( const std::string label, const DistributedDomain& distributed_domain )
@@ -2508,7 +2532,7 @@ inline Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >
           distributed_domain.domain_info().subdomain_num_nodes_radially() } );
 }
 
-// loop only lateral dimensions of each subdomain. Used in the precomputation of lateral parts of the 
+// loop only lateral dimensions of each subdomain. Used in the precomputation of lateral parts of the
 // Jacobian (-> Oliver)
 inline Kokkos::MDRangePolicy< Kokkos::Rank< 3 > >
     local_domain_md_range_policy_cells_lateral( const DistributedDomain& distributed_domain )
