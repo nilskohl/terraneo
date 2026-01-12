@@ -750,7 +750,7 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 0 }; //, 1 };
+    std::vector< int > gcas = { 1 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
