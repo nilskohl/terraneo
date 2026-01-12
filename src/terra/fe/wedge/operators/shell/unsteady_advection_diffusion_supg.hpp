@@ -24,8 +24,9 @@ class UnsteadyAdvectionDiffusionSUPG
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 > grid_;
-    grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
+    grid::Grid2DDataScalar< ScalarT >                        radii_;
+    grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > boundary_mask_;
 
     linalg::VectorQ1Vec< ScalarT, VelocityVecDim > velocity_;
 
@@ -48,21 +49,23 @@ class UnsteadyAdvectionDiffusionSUPG
 
   public:
     UnsteadyAdvectionDiffusionSUPG(
-        const grid::shell::DistributedDomain&                 domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >&              grid,
-        const grid::Grid2DDataScalar< ScalarT >&              radii,
-        const linalg::VectorQ1Vec< ScalarT, VelocityVecDim >& velocity,
-        const ScalarT                                         diffusivity,
-        const ScalarT                                         dt,
-        bool                                                  treat_boundary,
-        bool                                                  diagonal,
-        ScalarT                                               mass_scaling,
-        linalg::OperatorApplyMode                             operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode                     operator_communication_mode =
+        const grid::shell::DistributedDomain&                           domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
+        const grid::Grid2DDataScalar< ScalarT >&                        radii,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& boundary_mask,
+        const linalg::VectorQ1Vec< ScalarT, VelocityVecDim >&           velocity,
+        const ScalarT                                                   diffusivity,
+        const ScalarT                                                   dt,
+        bool                                                            treat_boundary,
+        bool                                                            diagonal,
+        ScalarT                                                         mass_scaling,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
+    , boundary_mask_( boundary_mask )
     , velocity_( velocity )
     , diffusivity_( diffusivity )
     , dt_( dt )
@@ -252,11 +255,15 @@ class UnsteadyAdvectionDiffusionSUPG
 
         if ( treat_boundary_ )
         {
+            const int at_cmb_boundary = util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell ), CMB );
+            const int at_surface_boundary =
+                util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), SURFACE );
+
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
                 dense::Mat< ScalarT, 6, 6 > boundary_mask;
                 boundary_mask.fill( 1.0 );
-                if ( r_cell == 0 )
+                if ( at_cmb_boundary )
                 {
                     // Inner boundary (CMB).
                     for ( int i = 0; i < 6; i++ )
@@ -271,7 +278,7 @@ class UnsteadyAdvectionDiffusionSUPG
                     }
                 }
 
-                if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                if ( at_surface_boundary )
                 {
                     // Outer boundary (surface).
                     for ( int i = 0; i < 6; i++ )

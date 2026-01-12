@@ -111,7 +111,7 @@ void copy_to_buffer(
 
     constexpr bool is_scalar = std::is_same_v< ViewType, grid::Grid4DDataScalar< ScalarType > >;
 
-    if ( buffer.extent( 1 ) != VecDim )
+    if ( buffer.extent( 0 ) != VecDim )
     {
         Kokkos::abort( "The buffer VecDim should match its respective extent. This abort should not happen." );
     }
