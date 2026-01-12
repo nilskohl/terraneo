@@ -884,6 +884,11 @@ int main( int argc, char** argv )
 
     const auto actual_parameters = std::get< mantlecirculation::Parameters >( parameters.unwrap() );
 
+    if ( !actual_parameters.output_config_file.empty() )
+    {
+        return EXIT_SUCCESS;
+    }
+
     if ( auto run_result = run( actual_parameters ); run_result.is_err() )
     {
         logroot << run_result.error() << std::endl;

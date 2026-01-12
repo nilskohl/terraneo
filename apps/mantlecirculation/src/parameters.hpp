@@ -84,6 +84,8 @@ struct Parameters
     PhysicsParameters      physics_parameters;
     TimeSteppingParameters time_stepping_parameters;
     IOParameters           io_parameters;
+
+    std::string output_config_file;
 };
 
 struct CLIHelp
@@ -97,6 +99,17 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
 
     using util::add_flag_with_default;
     using util::add_option_with_default;
+
+    // Allow config files
+    app.set_config( "--config" );
+
+    add_option_with_default(
+        app,
+        "--write-config-and-exit",
+        parameters.output_config_file,
+        "Writes a config file with the passed (or default arguments) to the desired location to be then modified and passed. E.g., '--write-config-and-exit my-config.toml'.\n"
+        "IMPORTANT: THIS OPTION MUST BE REMOVED IN THE GENERATED CONFIG OR ELSE YOU WILL OVERWRITE IT AGAIN" )
+        ->group( "General" );
 
     ///////////////////////
     /// Domain and mesh ///
@@ -116,11 +129,16 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
     add_option_with_default( app, "--diffusivity", parameters.physics_parameters.diffusivity );
     add_option_with_default( app, "--rayleigh-number", parameters.physics_parameters.rayleigh_number );
 
-    const auto radial_profile_enabled = add_flag_with_default(
-                                            app,
-                                            "--viscosity-radial-profile",
-                                            parameters.physics_parameters.viscosity_parameters.radial_profile_enabled )
-                                            ->group( "Viscosity" );
+    const auto radial_profile_enabled =
+        add_flag_with_default(
+            app,
+            "--viscosity-radial-profile",
+            parameters.physics_parameters.viscosity_parameters.radial_profile_enabled )
+            ->group( "Viscosity" )
+            ->description(
+                "Add this flag if you want to supply a radial viscosity profile. "
+                "Then use further flags/arguments (starting with --viscosity-radial-profile-<...>) to specify the file path etc. "
+                "If you omit this flag, the viscosity is set to const (eta = 1)." );
     add_option_with_default(
         app,
         "--viscosity-radial-profile-csv-filename",
@@ -210,6 +228,14 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
     util::print_general_info( argc, argv, util::logroot );
     util::print_cli_summary( app, util::logroot );
     util::logroot << std::endl;
+
+    if ( !parameters.output_config_file.empty() )
+    {
+        util::logroot << "Writing config file to " << parameters.output_config_file << " and exiting." << std::endl;
+        std::ofstream config_file( parameters.output_config_file );
+        config_file << app.config_to_str( true, true );
+    }
+
     return { parameters };
 }
 
