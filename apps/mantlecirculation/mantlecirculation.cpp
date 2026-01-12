@@ -22,7 +22,7 @@
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/diagonal_solver.hpp"
 #include "linalg/solvers/fgmres.hpp"
-#include "linalg/solvers/gca/galerkin_coarsening_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
