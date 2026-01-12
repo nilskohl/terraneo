@@ -70,7 +70,7 @@ class DivKGrad
         const grid::Grid3DDataVec< ScalarT, 3 >&    grid,
         const grid::Grid2DDataScalar< ScalarT >&    radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
-       const grid::Grid4DDataScalar< ScalarType >& k,
+        const grid::Grid4DDataScalar< ScalarType >& k,
         KFunction                                   k_function,
         bool                                        treat_boundary,
         bool                                        diagonal,
@@ -81,8 +81,8 @@ class DivKGrad
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
-     , mask_( mask )
-   , k_( k )
+    , mask_( mask )
+    , k_( k )
     , k_function_( k_function )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )

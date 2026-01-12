@@ -50,16 +50,7 @@ enum class BenchmarkType : int
 };
 
 constexpr auto all_benchmark_types = {
-    BenchmarkType::LaplaceFloat,
-    BenchmarkType::LaplaceDouble,
-    BenchmarkType::LaplaceSimpleDouble,
-    BenchmarkType::VectorLaplaceFloat,
-    BenchmarkType::VectorLaplaceDouble,
-    BenchmarkType::VectorLaplaceNeumannDouble,
-    BenchmarkType::EpsDivDivFloat,
-    BenchmarkType::EpsDivDivDouble,
     BenchmarkType::EpsDivDivKerngenDouble,
-    BenchmarkType::StokesDouble
 };
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
@@ -85,7 +76,7 @@ struct Parameters
 {
     int min_level  = 1;
     int max_level  = 6;
-    int executions = 1;
+    int executions = 5;
 };
 
 template < OperatorLike OperatorT >
@@ -107,7 +98,7 @@ double measure_run_time( int executions, OperatorT& A, const SrcOf< OperatorT >&
     // const auto mm = kernels::common::max_abs_entry( dst.grid_data() );
     // std::cout << "Printing some derived value to ensure nothing is optimized out: " << mm << std::endl;
 
-    const double duration = timer.seconds() / exions;
+    const double duration = timer.seconds() / executions;
     return duration;
 }
 
