@@ -6,20 +6,7 @@ from sympy import symbols, IndexedBase, Idx
 from sympy.utilities.codegen import codegen
 from sympy.tensor.indexed import IndexedBase
 from sympy import ccode, Symbol
-from sympy.codegen.ast import (
-    Assignment,
-    For,
-    CodeBlock,
-    Variable,
-    Declaration,
-    Pointer,
-    AugmentedAssignment,
-    aug_assign,
-    integer,
-    Comment,
-    String,
-    Element,
-)
+from sympy.codegen.ast import *
 import sympy as sp
 import os, sys
 from integrands import *
@@ -129,6 +116,9 @@ def make_ast_from_exprs(exprs):
 from sympy.printing.c import C89CodePrinter
 
 class TerraNeoASTPrinter(C89CodePrinter):
+
+    #C89CodePrinter.type_mappings[real] = 'double'
+
     def _print_Conditional(self, expr):
         return f"if({self._print(expr.condition)}) {{\n {self._print(expr.body)}\n }}"
    

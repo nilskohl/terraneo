@@ -20,7 +20,7 @@ def make_float_symbol(name):
     return sp.symbols(name, real=True, finite=True)
 
 
-def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cell):
+def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_cell, scalar_type):
     num_wedges_per_hex_cell = 2
     num_nodes_per_wedge_surface = 3
     dim = 3
@@ -40,8 +40,8 @@ def make_wedge_surface_physical_coord_assignments(local_subdomain_id, x_cell, y_
     wedge_name = "wedge_surf_phy_coords"
     quad_name = "quad_surface_coords"
     array_declarations = [
-        f"double {wedge_name}[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];\n",
-        f"double {quad_name}[{2}][{2}][{dim}];\n",
+        f"{scalar_type} {wedge_name}[{num_wedges_per_hex_cell}][{num_nodes_per_wedge_surface}][{dim}];\n",
+        f"{scalar_type} {quad_name}[{2}][{2}][{dim}];\n",
     ]
     wedge_surf_phy_coords_symbol = IndexedBase(
         wedge_name,
@@ -100,7 +100,7 @@ def make_rad_assignments(local_subdomain_id, r_cell):
 
 
 def make_extract_local_wedge_scalar_assignments(
-    local_subdomain_id, x_cell, y_cell, r_cell, global_array
+    local_subdomain_id, x_cell, y_cell, r_cell, global_array, scalar_type
 ):
 
     # Input loads
@@ -112,7 +112,7 @@ def make_extract_local_wedge_scalar_assignments(
 
     assigns = []
     name = f"{global_array}_local_hex"
-    array_declaration = f"\ndouble {name}[2][{6}];\n"
+    array_declaration = f"\n{scalar_type} {name}[2][{6}];\n"
     src_symbol = IndexedBase(name, shape=(2, 6), real=True)
 
     # Output stores
@@ -143,7 +143,7 @@ def make_extract_local_wedge_scalar_assignments(
 
 
 def make_extract_local_wedge_vector_assignments(
-    local_subdomain_id, x_cell, y_cell, r_cell, global_array
+    local_subdomain_id, x_cell, y_cell, r_cell, global_array, scalar_type
 ):
 
     # Input loads
@@ -155,7 +155,7 @@ def make_extract_local_wedge_vector_assignments(
 
     assigns = []
     name = f"{global_array}_local_hex"
-    array_declaration = f"\ndouble {name}[3][2][{6}];\n"
+    array_declaration = f"\n{scalar_type} {name}[3][2][{6}];\n"
     src_symbol = IndexedBase(name, shape=(3, 2, 6), real=True)
 
     # Output stores
