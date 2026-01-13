@@ -255,9 +255,9 @@ class UnsteadyAdvectionDiffusionSUPG
 
         if ( treat_boundary_ )
         {
-            const int at_cmb_boundary = util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell ), CMB );
+            const int at_cmb_boundary = util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell ), grid::shell::ShellBoundaryFlag::CMB );
             const int at_surface_boundary =
-                util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), SURFACE );
+                util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), grid::shell::ShellBoundaryFlag::SURFACE );
 
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {

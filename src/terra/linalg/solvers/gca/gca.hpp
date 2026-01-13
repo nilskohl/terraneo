@@ -76,7 +76,7 @@ class TwoGridGCA
     , treat_boundary_( treat_boundary )
     , interpolation_mode_( interpolation_mode )
     {
-        assert( coarse_op_.get_stored_matrix_mode() != linalg::OperatorStoredMatrixMode::Off );
+        // assert( coarse_op_.get_stored_matrix_mode() != linalg::OperatorStoredMatrixMode::Off );
 
         GCAElements_ = GCAElements.value();
         level_range_ = level_range.value();

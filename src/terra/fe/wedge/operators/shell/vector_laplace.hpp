@@ -25,8 +25,9 @@ class VectorLaplace
   private:
     grid::shell::DistributedDomain domain_;
 
-    grid::Grid3DDataVec< ScalarT, 3 > grid_;
-    grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
+    grid::Grid2DDataScalar< ScalarT >                        radii_;
+    grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > boundary_mask_data_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -42,17 +43,19 @@ class VectorLaplace
 
   public:
     VectorLaplace(
-        const grid::shell::DistributedDomain&    domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarT >& radii,
-        bool                                     treat_boundary,
-        bool                                     diagonal,
-        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode        operator_communication_mode =
+        const grid::shell::DistributedDomain&                           domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
+        const grid::Grid2DDataScalar< ScalarT >&                        radii,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& boundary_mask_data,
+        bool                                                            treat_boundary,
+        bool                                                            diagonal,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
     , radii_( radii )
+    , boundary_mask_data_( boundary_mask_data )
     , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
@@ -175,12 +178,18 @@ class VectorLaplace
                 {
                     diagonal( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else if ( treat_boundary_ && r_cell == 0 )
+                else if (
+                    treat_boundary_ && util::has_flag(
+                                           boundary_mask_data_( local_subdomain_id, x_cell, y_cell, r_cell ),
+                                           grid::shell::ShellBoundaryFlag::CMB ) )
                 {
                     // Bottom boundary dirichlet
                     dirichlet_bot( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else if ( treat_boundary_ && r_cell + 1 == radii_.extent( 1 ) - 1 )
+                else if (
+                    treat_boundary_ && util::has_flag(
+                                           boundary_mask_data_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ),
+                                           grid::shell::ShellBoundaryFlag::SURFACE ) )
                 {
                     // Top boundary dirichlet
                     dirichlet_top( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );

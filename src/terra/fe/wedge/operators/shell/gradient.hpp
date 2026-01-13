@@ -26,8 +26,9 @@ class Gradient
     grid::shell::DistributedDomain domain_fine_;
     grid::shell::DistributedDomain domain_coarse_;
 
-    grid::Grid3DDataVec< ScalarT, 3 > grid_fine_;
-    grid::Grid2DDataScalar< ScalarT > radii_;
+    grid::Grid3DDataVec< ScalarT, 3 >                        grid_fine_;
+    grid::Grid2DDataScalar< ScalarT >                        radii_;
+    grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > boundary_mask_fine_;
 
     bool treat_boundary_;
 
@@ -42,18 +43,20 @@ class Gradient
 
   public:
     Gradient(
-        const grid::shell::DistributedDomain&    domain_fine,
-        const grid::shell::DistributedDomain&    domain_coarse,
-        const grid::Grid3DDataVec< ScalarT, 3 >& grid_fine,
-        const grid::Grid2DDataScalar< ScalarT >& radii_fine,
-        bool                                     treat_boundary,
-        linalg::OperatorApplyMode                operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode        operator_communication_mode =
+        const grid::shell::DistributedDomain&                           domain_fine,
+        const grid::shell::DistributedDomain&                           domain_coarse,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid_fine,
+        const grid::Grid2DDataScalar< ScalarT >&                        radii_fine,
+        const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& boundary_mask_fine,
+        bool                                                            treat_boundary,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_fine_( domain_fine )
     , domain_coarse_( domain_coarse )
     , grid_fine_( grid_fine )
     , radii_( radii_fine )
+    , boundary_mask_fine_( boundary_mask_fine )
     , treat_boundary_( treat_boundary )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
@@ -158,7 +161,9 @@ class Gradient
             {
                 dense::Mat< ScalarT, 18, 6 > boundary_mask;
                 boundary_mask.fill( 1.0 );
-                if ( r_cell == 0 )
+                if ( util::has_flag(
+                         boundary_mask_fine_( local_subdomain_id, x_cell, y_cell, r_cell ),
+                         grid::shell::ShellBoundaryFlag::CMB ) )
                 {
                     // Inner boundary (CMB).
                     for ( int d = 0; d < 3; d++ )
@@ -176,7 +181,9 @@ class Gradient
                     }
                 }
 
-                if ( r_cell + 1 == radii_.extent( 1 ) - 1 )
+                if ( util::has_flag(
+                         boundary_mask_fine_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ),
+                         grid::shell::ShellBoundaryFlag::SURFACE ) )
                 {
                     // Outer boundary (surface).
                     for ( int d = 0; d < 3; d++ )
