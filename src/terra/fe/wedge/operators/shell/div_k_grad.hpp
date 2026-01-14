@@ -41,9 +41,6 @@ class DivKGrad
     grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
     grid::Grid2DDataScalar< ScalarT >                        radii_;
     grid::Grid4DDataScalar< ScalarType >                     k_;
-    grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
-    grid::Grid2DDataScalar< ScalarT >                        radii_;
-    grid::Grid4DDataScalar< ScalarType >                     k_;
     grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
 
     bool treat_boundary_;
@@ -69,15 +66,7 @@ class DivKGrad
         const grid::shell::DistributedDomain&                           domain,
         const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
         const grid::Grid2DDataScalar< ScalarT >&                        radii,
-        const grid::shell::DistributedDomain&                           domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
-        const grid::Grid2DDataScalar< ScalarT >&                        radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
-        const grid::Grid4DDataScalar< ScalarType >&                     k,
-        bool                                                            treat_boundary,
-        bool                                                            diagonal,
-        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode operator_communication_mode =
         const grid::Grid4DDataScalar< ScalarType >&                     k,
         bool                                                            treat_boundary,
         bool                                                            diagonal,

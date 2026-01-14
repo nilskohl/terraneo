@@ -60,6 +60,15 @@ class TwoGridGCA
     InterpolationMode                    interpolation_mode_;
 
   public:
+    /// @brief GCA Ctor
+    /// Assembles Galerkin coarse-grid operators in the coarse-op passed.
+    /// @param fine_op: operator on the finer grid to derive the coarse-grid operators from
+    /// @param coarse_op: operator on the coarser grid to store the coarse-grid operators in
+    /// @param level_range: max_level - min_level range used in the app: required check whether a certain element
+    ///                     is a child of a GCA element.
+    /// @param GCAElements: map of coarsest-grid elements, on which GCA should be used. Using this and level_range,
+    ///                     the GCA can check for a certain element whether it is a child of a marked coarsest-grid 
+    ///                     element. If that is the case, GCA is applied to it.
     explicit TwoGridGCA(
         Operator                             fine_op,
         Operator                             coarse_op,
@@ -425,6 +434,7 @@ class TwoGridGCA
                 }
             }
 
+            // bc treatment moved to ops, will be revisited during freeslip impl
             if ( false )
             {
                 dense::Mat< ScalarT, Operator::LocalMatrixDim, Operator::LocalMatrixDim > boundary_mask;
