@@ -23,8 +23,7 @@ class DivKGrad
     using DstVectorType                 = linalg::VectorQ1Scalar< ScalarT >;
     using ScalarType                    = ScalarT;
     static constexpr int LocalMatrixDim = 6;
-    using Grid4DDataLocalMatrices = terra::grid::Grid4DDataMatrices< ScalarType, LocalMatrixDim, LocalMatrixDim, 2 >;
-    using LocalMatrixStorage      = linalg::solvers::LocalMatrixStorage< ScalarType, LocalMatrixDim >;
+    using LocalMatrixStorage            = linalg::solvers::LocalMatrixStorage< ScalarType, LocalMatrixDim >;
 
   private:
     LocalMatrixStorage local_matrix_storage_;
@@ -128,9 +127,9 @@ class DivKGrad
     void set_single_quadpoint( bool v ) { single_quadpoint_ = v; }
 
     void set_stored_matrix_mode(
-        linalg::OperatorStoredMatrixMode                      operator_stored_matrix_mode,
-        std::optional< int >                                  level_range,
-        std::optional< grid::Grid4DDataScalar< ScalarType > > GCAElements )
+        linalg::OperatorStoredMatrixMode     operator_stored_matrix_mode,
+        int                                  level_range,
+        grid::Grid4DDataScalar< ScalarType > GCAElements )
     {
         operator_stored_matrix_mode_ = operator_stored_matrix_mode;
 

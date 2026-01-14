@@ -230,16 +230,23 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
     // setup gca coarse ops
     if ( true )
     {
+        VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[min_level], mask_data[min_level] );
+
+        std::cout << "GCA on all elements " << std::endl;
+        assign( GCAElements, 1 );
+
         std::cout << "Forming gca coarse-grid ..." << std::endl;
         for ( int level = max_level - 1; level >= min_level; level-- )
         {
             if ( level == max_level - 1 )
             {
-                TwoGridGCA< ScalarType, Laplace >( A_neumann, A_c[level - min_level] );
+                TwoGridGCA< ScalarType, Laplace >(
+                    A_neumann, A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
             else
             {
-                TwoGridGCA< ScalarType, Laplace >( A_c[level + 1 - min_level], A_c[level - min_level] );
+                TwoGridGCA< ScalarType, Laplace >(
+                    A_c[level + 1 - min_level], A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
         }
     }
