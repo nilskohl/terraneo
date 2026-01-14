@@ -456,7 +456,7 @@ std::tuple< double, double, int >
             }
             else if ( gca == 1 )
             {
-                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, std::nullopt, GCAElements.grid_data() );
+                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, level, GCAElements.grid_data() );
             }
             //P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
             //R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
@@ -742,7 +742,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 6;
+    const int max_level = 5;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
@@ -750,7 +750,7 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 1 }; //, 1 };
+    std::vector< int > gcas = { 0, 1 }; //, 1 };
 
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
@@ -787,6 +787,10 @@ int main( int argc, char** argv )
 
                         table->add_row(
                             { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+                        
+                        if (level > 2 && (order_vel <= 3.8 or order_pre <= 2.0))
+                            Kokkos::abort("Conv order not reached.");
+                        
                     }
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;
