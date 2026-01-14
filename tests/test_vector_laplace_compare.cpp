@@ -77,7 +77,8 @@ void test( int level, bool treat_boundary, bool diagonal )
 
     const auto domain = DistributedDomain::create_uniform_single_subdomain_per_diamond( level, level, 0.5, 1.0 );
 
-    auto mask_data = grid::setup_node_ownership_mask_data( domain );
+    auto mask_data          = grid::setup_node_ownership_mask_data( domain );
+    auto boundary_mask_data = grid::shell::setup_boundary_mask_data( domain );
 
     VectorQ1Vec< ScalarType > src( "src", domain, mask_data );
     VectorQ1Vec< ScalarType > dst_a( "dst_a", domain, mask_data );
@@ -97,7 +98,7 @@ void test( int level, bool treat_boundary, bool diagonal )
     using LaplaceB = fe::wedge::operators::shell::VectorLaplace< ScalarType >;
 
     LaplaceA A( domain, coords_shell, coords_radii, treat_boundary, diagonal );
-    LaplaceB B( domain, coords_shell, coords_radii, treat_boundary, diagonal );
+    LaplaceB B( domain, coords_shell, coords_radii, boundary_mask_data, treat_boundary, diagonal );
 
     // Set up solution data.
     Kokkos::parallel_for(

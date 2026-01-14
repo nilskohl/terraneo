@@ -37,17 +37,17 @@ class EpsDivDivStokes
 
   public:
     EpsDivDivStokes(
-        const grid::shell::DistributedDomain&       domain_fine,
-        const grid::shell::DistributedDomain&       domain_coarse,
-        const grid::Grid3DDataVec< ScalarType, 3 >& grid,
-        const grid::Grid2DDataScalar< ScalarType >& radii,
+        const grid::shell::DistributedDomain&                           domain_fine,
+        const grid::shell::DistributedDomain&                           domain_coarse,
+        const grid::Grid3DDataVec< ScalarType, 3 >&                     grid,
+        const grid::Grid2DDataScalar< ScalarType >&                     radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
-        const grid::Grid4DDataScalar< ScalarType >& k,
-        bool                                        treat_boundary,
-        bool                                        diagonal )
+        const grid::Grid4DDataScalar< ScalarType >&                     k,
+        bool                                                            treat_boundary,
+        bool                                                            diagonal )
     : A_( domain_fine, grid, radii, mask, k, treat_boundary, diagonal )
-    , B_T_( domain_fine, domain_coarse, grid, radii, treat_boundary )
-    , B_( domain_fine, domain_coarse, grid, radii, treat_boundary )
+    , B_T_( domain_fine, domain_coarse, grid, radii, mask, treat_boundary )
+    , B_( domain_fine, domain_coarse, grid, radii, mask, treat_boundary )
     , diagonal_( diagonal )
     {}
 

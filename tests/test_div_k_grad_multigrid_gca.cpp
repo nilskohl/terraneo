@@ -203,6 +203,11 @@ T test(
     const double r_max = 1.0;
 
     using DivKGrad         = fe::wedge::operators::shell::DivKGrad< ScalarType >;
+    using ScalarType   = T;
+    const double r_min = 0.5;
+    const double r_max = 1.0;
+
+    using DivKGrad         = fe::wedge::operators::shell::DivKGrad< ScalarType >;
     using Smoother         = linalg::solvers::Jacobi< DivKGrad >;
     using CoarseGridSolver = linalg::solvers::PCG< DivKGrad >;
 
@@ -273,10 +278,19 @@ T test(
         k.grid_data(),
         true,
         false );
+        domains.back(),
+        subdomain_shell_coords.back(),
+        subdomain_radii.back(),
+        boundary_mask_data.back(),
+        k.grid_data(),
+        true,
+        false );
     // A.set_single_quadpoint( true );
     DivKGrad A_neumann(
         domains.back(),
         subdomain_shell_coords.back(),
+        subdomain_radii.back(),
+        boundary_mask_data.back(),
         subdomain_radii.back(),
         boundary_mask_data.back(),
         k.grid_data(),
@@ -284,6 +298,13 @@ T test(
         false );
     //A_neumann.set_single_quadpoint( true );
     DivKGrad A_neumann_diag(
+        domains.back(),
+        subdomain_shell_coords.back(),
+        subdomain_radii.back(),
+        boundary_mask_data.back(),
+        k.grid_data(),
+        false,
+        true );
         domains.back(),
         subdomain_shell_coords.back(),
         subdomain_radii.back(),
@@ -330,6 +351,8 @@ T test(
             A_c.emplace_back(
                 domains[level],
                 subdomain_shell_coords[level],
+                subdomain_radii[level],
+                boundary_mask_data[level],
                 subdomain_radii[level],
                 boundary_mask_data[level],
                 k_c.grid_data(),
@@ -439,6 +462,7 @@ T test(
         T omega_opt = 2.0 / ( 1.5 * max_ev );
         std::cout << "Maximum ev on level " << level << ": " << max_ev << ", optimal omega: " << omega_opt << std::endl;
 
+        smoothers.emplace_back( inverse_diagonal, prepost_smooth, tmp_smoother, 2.0 / 3.0 );
         smoothers.emplace_back( inverse_diagonal, prepost_smooth, tmp_smoother, 2.0 / 3.0 );
     }
 

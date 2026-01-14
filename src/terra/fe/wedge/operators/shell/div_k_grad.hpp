@@ -15,6 +15,7 @@
 
 namespace terra::fe::wedge::operators::shell {
 
+template < typename ScalarT >
 auto dummy_lambda = KOKKOS_LAMBDA( const double x, const double y, const double z )
 {
     return 0;
@@ -37,6 +38,9 @@ class DivKGrad
 
     grid::shell::DistributedDomain domain_;
 
+    grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
+    grid::Grid2DDataScalar< ScalarT >                        radii_;
+    grid::Grid4DDataScalar< ScalarType >                     k_;
     grid::Grid3DDataVec< ScalarT, 3 >                        grid_;
     grid::Grid2DDataScalar< ScalarT >                        radii_;
     grid::Grid4DDataScalar< ScalarType >                     k_;
@@ -65,7 +69,15 @@ class DivKGrad
         const grid::shell::DistributedDomain&                           domain,
         const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
         const grid::Grid2DDataScalar< ScalarT >&                        radii,
+        const grid::shell::DistributedDomain&                           domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
+        const grid::Grid2DDataScalar< ScalarT >&                        radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
+        const grid::Grid4DDataScalar< ScalarType >&                     k,
+        bool                                                            treat_boundary,
+        bool                                                            diagonal,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
         const grid::Grid4DDataScalar< ScalarType >&                     k,
         bool                                                            treat_boundary,
         bool                                                            diagonal,
@@ -354,6 +366,12 @@ class DivKGrad
 
                     // dot of coeff dofs and element-local shape functions to evaluate the coefficent on the current element
                     ScalarType k_eval = 0.0;
+
+                    for ( int k = 0; k < num_nodes_per_wedge; k++ )
+                    {
+                        k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
+                    }
+
                     for ( int k = 0; k < num_nodes_per_wedge; k++ )
                     {
                         k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
@@ -441,6 +459,12 @@ class DivKGrad
 
             // dot of coeff dofs and element-local shape functions to evaluate the coefficent on the current element
             ScalarType k_eval = 0.0;
+
+            for ( int k = 0; k < num_nodes_per_wedge; k++ )
+            {
+                k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
+            }
+
 
             for ( int k = 0; k < num_nodes_per_wedge; k++ )
             {
@@ -573,6 +597,8 @@ class DivKGrad
     }
 };
 
+static_assert( linalg::GCACapable< DivKGrad< float > > );
+static_assert( linalg::GCACapable< DivKGrad< double > > );
 static_assert( linalg::GCACapable< DivKGrad< float > > );
 static_assert( linalg::GCACapable< DivKGrad< double > > );
 
