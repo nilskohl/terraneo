@@ -571,7 +571,5 @@ class DivKGrad
 
 static_assert( linalg::GCACapable< DivKGrad< float > > );
 static_assert( linalg::GCACapable< DivKGrad< double > > );
-static_assert( linalg::GCACapable< DivKGrad< float > > );
-static_assert( linalg::GCACapable< DivKGrad< double > > );
 
 } // namespace terra::fe::wedge::operators::shell
