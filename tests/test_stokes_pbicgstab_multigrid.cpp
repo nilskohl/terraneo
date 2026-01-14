@@ -308,6 +308,7 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         true,
         false );
 
@@ -316,6 +317,7 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         false,
         false );
 
@@ -324,6 +326,7 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
         domains[pressure_level],
         coords_shell[velocity_level],
         coords_radii[velocity_level],
+        boundary_mask_data[velocity_level],
         false,
         true );
 
@@ -340,7 +343,8 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
     for ( int level = 0; level < num_levels; level++ )
     {
-        A_diag.emplace_back( domains[level], coords_shell[level], coords_radii[level], true, true );
+        A_diag.emplace_back(
+            domains[level], coords_shell[level], coords_radii[level], boundary_mask_data[level], true, true );
 
         inverse_diagonals.emplace_back(
             "inverse_diagonal_" + std::to_string( level ), domains[level], mask_data[level] );
@@ -354,7 +358,8 @@ std::pair< double, double > test( int min_level, int max_level, const std::share
 
         if ( level < num_levels - 1 )
         {
-            A_c.emplace_back( domains[level], coords_shell[level], coords_radii[level], true, false );
+            A_c.emplace_back(
+                domains[level], coords_shell[level], coords_radii[level], boundary_mask_data[level], true, false );
             P.emplace_back( linalg::OperatorApplyMode::Add );
             R.emplace_back( domains[level] );
         }

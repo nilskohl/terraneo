@@ -5,12 +5,12 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
-#include "linalg/solvers/gca/gca.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -40,9 +40,9 @@ using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
-using terra::linalg::solvers::TwoGridGCA;
 using terra::linalg::DiagonallyScaledOperator;
 using terra::linalg::solvers::power_iteration;
+using terra::linalg::solvers::TwoGridGCA;
 
 template < std::floating_point T >
 struct SolutionInterpolator
