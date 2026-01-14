@@ -442,7 +442,6 @@ T test(
         std::cout << "Maximum ev on level " << level << ": " << max_ev << ", optimal omega: " << omega_opt << std::endl;
 
         smoothers.emplace_back( inverse_diagonal, prepost_smooth, tmp_smoother, 2.0 / 3.0 );
-        smoothers.emplace_back( inverse_diagonal, prepost_smooth, tmp_smoother, 2.0 / 3.0 );
     }
 
     VectorQ1Scalar< ScalarType > u( "u", domains.back(), mask_data.back() );
