@@ -49,6 +49,11 @@ using grid::Grid4DDataVec;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
+using grid::shell::BoundaryConditionFlag::DIRICHLET;
+using grid::shell::BoundaryConditionFlag::FREESLIP;
+using grid::shell::BoundaryConditionFlag::NEUMANN;
+using grid::shell::ShellBoundaryFlag::CMB;
+using grid::shell::ShellBoundaryFlag::SURFACE;
 using linalg::DiagonallyScaledOperator;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
@@ -56,6 +61,7 @@ using linalg::VectorQ1Vec;
 using linalg::solvers::DiagonalSolver;
 using linalg::solvers::power_iteration;
 using linalg::solvers::TwoGridGCA;
+using terra::grid::shell::BoundaryConditions;
 
 struct SolutionVelocityInterpolator
 {
@@ -341,6 +347,11 @@ std::tuple< double, double, int >
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
 
+    // define boundaries
+    BoundaryConditions bcs = {
+        { CMB, FREESLIP },
+        { SURFACE, DIRICHLET },
+    };
     // Set up operators.
 
     std::cout << "Setting operators ... " << std::endl;
@@ -387,6 +398,7 @@ std::tuple< double, double, int >
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         k.grid_data(),
+        bcs,
         true,
         false );
 
@@ -397,6 +409,7 @@ std::tuple< double, double, int >
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         k.grid_data(),
+        bcs,
         false,
         false );
 
@@ -407,6 +420,7 @@ std::tuple< double, double, int >
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         k.grid_data(),
+        bcs,
         false,
         true );
 
@@ -436,7 +450,7 @@ std::tuple< double, double, int >
             coords_radii[level],
             boundary_mask_data[level],
             k_c.grid_data(),
-            true,
+            bcs,
             true );
 
         if ( level < num_levels - 1 )
@@ -447,7 +461,7 @@ std::tuple< double, double, int >
                 coords_radii[level],
                 boundary_mask_data[level],
                 k_c.grid_data(),
-                true,
+                bcs,
                 false );
             if ( gca == 2 )
             {
@@ -456,7 +470,8 @@ std::tuple< double, double, int >
             }
             else if ( gca == 1 )
             {
-                A_c.back().set_stored_matrix_mode( linalg::OperatorStoredMatrixMode::Full, level, GCAElements.grid_data() );
+                A_c.back().set_stored_matrix_mode(
+                    linalg::OperatorStoredMatrixMode::Full, level, GCAElements.grid_data() );
             }
             //P.emplace_back( coords_shell[level + 1], coords_radii[level + 1], linalg::OperatorApplyMode::Add );
             //R.emplace_back( domains[level], coords_shell[level + 1], coords_radii[level + 1] );
@@ -721,9 +736,8 @@ std::tuple< double, double, int >
           { "l2_error_pre", l2_error_pressure },
           { "inf_res_vel", inf_residual_vel },
           { "inf_res_pre", inf_residual_pre },
-          { "h_vel", (r_max - r_min)/std::pow(2,velocity_level)},
-          { "h_p", (r_max - r_min)/std::pow(2,pressure_level)}
-    } );
+          { "h_vel", ( r_max - r_min ) / std::pow( 2, velocity_level ) },
+          { "h_p", ( r_max - r_min ) / std::pow( 2, pressure_level ) } } );
 
     io::XDMFOutput xdmf(
         "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
@@ -787,10 +801,9 @@ int main( int argc, char** argv )
 
                         table->add_row(
                             { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
-                        
-                        if (level > 2 && (order_vel <= 3.8 or order_pre <= 2.0))
-                            Kokkos::abort("Conv order not reached.");
-                        
+
+                        if ( level > 2 && ( order_vel <= 3.8 or order_pre <= 2.0 ) )
+                            Kokkos::abort( "Conv order not reached." );
                     }
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;

@@ -15,8 +15,15 @@
 
 namespace terra::fe::wedge::operators::shell {
 
+using grid::shell::BoundaryConditionFlag::DIRICHLET;
+using grid::shell::BoundaryConditionFlag::FREESLIP;
+using grid::shell::BoundaryConditionFlag::NEUMANN;
 using grid::shell::ShellBoundaryFlag::CMB;
 using grid::shell::ShellBoundaryFlag::SURFACE;
+using terra::grid::shell::BoundaryConditionFlag;
+using terra::grid::shell::BoundaryConditions;
+using terra::grid::shell::ShellBoundaryFlag;
+
 template < typename ScalarT, int VecDim = 3 >
 class EpsilonDivDivKerngen
 {
@@ -37,8 +44,9 @@ class EpsilonDivDivKerngen
     grid::Grid2DDataScalar< ScalarT >                        radii_;
     grid::Grid4DDataScalar< ScalarType >                     k_;
     grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
+    BoundaryConditions                                       bcs_;
 
-    bool treat_boundary_;
+    bool treat_boundary_ = false; //obsolete, encoded in boundary_description_
     bool diagonal_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
@@ -64,8 +72,9 @@ class EpsilonDivDivKerngen
         const grid::Grid2DDataScalar< ScalarT >&                        radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
         const grid::Grid4DDataScalar< ScalarT >&                        k,
-        bool                                                            treat_boundary,
-        bool                                                            diagonal,
+        BoundaryConditions                                              bcs,
+        //bool                                                            treat_boundary,
+        bool                              diagonal,
         linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
         linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively,
@@ -75,7 +84,8 @@ class EpsilonDivDivKerngen
     , radii_( radii )
     , mask_( mask )
     , k_( k )
-    , treat_boundary_( treat_boundary )
+    //, treat_boundary_( treat_boundary )
+    // , bcs_( bcs )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
@@ -84,6 +94,8 @@ class EpsilonDivDivKerngen
     , send_buffers_( domain )
     , recv_buffers_( domain )
     {
+        bcs_[0] = bcs[0];
+        bcs_[1] = bcs[1];
         quadrature::quad_felippa_1x1_quad_points( quad_points );
         quadrature::quad_felippa_1x1_quad_weights( quad_weights );
     }
@@ -110,6 +122,17 @@ class EpsilonDivDivKerngen
 
     /// @brief Getter for grid member
     grid::Grid3DDataVec< ScalarT, 3 > get_grid() { return grid_; }
+
+    KOKKOS_INLINE_FUNCTION
+    BoundaryConditionFlag find_bcf( ShellBoundaryFlag sbf ) const
+    {
+        for ( int i = 0; i < 2; ++i ) // might become larger for more bc types
+        {
+            if ( bcs_[i].sbf == sbf )
+                return bcs_[i].bcf;
+        }
+        return NEUMANN;
+    }
 
     /// @brief Getter for mask member
     KOKKOS_INLINE_FUNCTION
@@ -249,18 +272,22 @@ class EpsilonDivDivKerngen
                 }
             }
 
-            if ( treat_boundary_ )
-            {
-                dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
-                boundary_mask.fill( 1.0 );
+            //if ( treat_boundary_ )
+            //{
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
+            boundary_mask.fill( 1.0 );
 
-                for ( int dimi = 0; dimi < 3; ++dimi )
+            for ( int dimi = 0; dimi < 3; ++dimi )
+            {
+                for ( int dimj = 0; dimj < 3; ++dimj )
                 {
-                    for ( int dimj = 0; dimj < 3; ++dimj )
+                    if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB ) )
                     {
-                        if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB ) )
+                        // Inner boundary (CMB).
+                        BoundaryConditionFlag bcf = find_bcf( CMB );
+
+                        if ( bcf == DIRICHLET )
                         {
-                            // Inner boundary (CMB).
                             for ( int i = 0; i < num_nodes_per_wedge; i++ )
                             {
                                 for ( int j = 0; j < num_nodes_per_wedge; j++ )
@@ -274,10 +301,20 @@ class EpsilonDivDivKerngen
                                 }
                             }
                         }
-
-                        if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE ) )
+                        else if ( bcf == FREESLIP )
                         {
-                            // Outer boundary (surface).
+                            // TODO
+                        }
+                        else if ( bcf == NEUMANN ) {}
+                    }
+
+                    if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE ) )
+                    {
+                        // Outer boundary (surface).
+                        BoundaryConditionFlag bcf = find_bcf( SURFACE );
+
+                        if ( bcf == DIRICHLET )
+                        {
                             for ( int i = 0; i < num_nodes_per_wedge; i++ )
                             {
                                 for ( int j = 0; j < num_nodes_per_wedge; j++ )
@@ -291,8 +328,14 @@ class EpsilonDivDivKerngen
                                 }
                             }
                         }
+                        else if ( bcf == FREESLIP )
+                        {
+                            // TODO
+                        }
+                        else if ( bcf == NEUMANN ) {}
                     }
                 }
+                //}
 
                 for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
                 {

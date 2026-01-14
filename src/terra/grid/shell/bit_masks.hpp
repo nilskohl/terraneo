@@ -2,6 +2,7 @@
 
 #pragma once
 #include "terra/util/bit_masking.hpp"
+#include <Kokkos_UnorderedMap.hpp>
 
 namespace terra::grid::shell {
 
@@ -17,6 +18,20 @@ enum class ShellBoundaryFlag : uint8_t
 };
 
 static_assert( util::FlagLike< ShellBoundaryFlag > );
+
+/// \ref FlagLike that indicates the type of boundary condition
+enum class BoundaryConditionFlag : uint8_t
+{
+    NEUMANN = 0, // not sure we need this one, implemented as teat_boundary == false in operators
+    DIRICHLET = 1,
+    FREESLIP = 2,
+};
+struct BoundaryConditionMapping {
+    ShellBoundaryFlag sbf;
+    BoundaryConditionFlag bcf;
+};
+
+using BoundaryConditions = BoundaryConditionMapping[2];
 
 /// @brief Set up mask data for a distributed shell domain.
 /// The mask encodes boundary information for each grid node.
