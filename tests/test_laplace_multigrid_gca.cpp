@@ -5,12 +5,12 @@
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
-#include "linalg/solvers/gca/gca.hpp"
 #include "fe/wedge/operators/shell/laplace_simple.hpp"
 #include "fe/wedge/operators/shell/prolongation_constant.hpp"
 #include "fe/wedge/operators/shell/prolongation_linear.hpp"
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/restriction_linear.hpp"
+#include "linalg/solvers/gca/gca.hpp"
 #include "linalg/solvers/jacobi.hpp"
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
@@ -40,9 +40,9 @@ using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
 using grid::shell::SubdomainInfo;
 using linalg::VectorQ1Scalar;
-using terra::linalg::solvers::TwoGridGCA;
 using terra::linalg::DiagonallyScaledOperator;
 using terra::linalg::solvers::power_iteration;
+using terra::linalg::solvers::TwoGridGCA;
 
 template < std::floating_point T >
 struct SolutionInterpolator
@@ -230,16 +230,23 @@ T test( int min_level, int max_level, const std::shared_ptr< util::Table >& tabl
     // setup gca coarse ops
     if ( true )
     {
+        VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[min_level], mask_data[min_level] );
+
+        std::cout << "GCA on all elements " << std::endl;
+        assign( GCAElements, 1 );
+
         std::cout << "Forming gca coarse-grid ..." << std::endl;
         for ( int level = max_level - 1; level >= min_level; level-- )
         {
             if ( level == max_level - 1 )
             {
-                TwoGridGCA< ScalarType, Laplace >( A_neumann, A_c[level - min_level] );
+                TwoGridGCA< ScalarType, Laplace >(
+                    A_neumann, A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
             else
             {
-                TwoGridGCA< ScalarType, Laplace >( A_c[level + 1 - min_level], A_c[level - min_level] );
+                TwoGridGCA< ScalarType, Laplace >(
+                    A_c[level + 1 - min_level], A_c[level - min_level], level - min_level, GCAElements.grid_data() );
             }
         }
     }
