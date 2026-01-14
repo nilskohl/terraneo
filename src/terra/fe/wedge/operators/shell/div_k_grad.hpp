@@ -16,12 +16,6 @@
 namespace terra::fe::wedge::operators::shell {
 
 template < typename ScalarT >
-auto dummy_lambda = KOKKOS_LAMBDA( const double x, const double y, const double z )
-{
-    return 0;
-};
-
-template < typename ScalarT >
 class DivKGrad
 {
   public:
@@ -361,11 +355,6 @@ class DivKGrad
                         k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
                     }
 
-                    for ( int k = 0; k < num_nodes_per_wedge; k++ )
-                    {
-                        k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
-                    }
-
                     jdet_keval_quadweight *= k_eval;
 
                     fused_local_mv( src_local_hex, dst_local_hex, wedge, jdet_keval_quadweight, grad, r_cell );
@@ -448,12 +437,6 @@ class DivKGrad
 
             // dot of coeff dofs and element-local shape functions to evaluate the coefficent on the current element
             ScalarType k_eval = 0.0;
-
-            for ( int k = 0; k < num_nodes_per_wedge; k++ )
-            {
-                k_eval += shape( k, qp ) * k_local_hex[wedge]( k );
-            }
-
 
             for ( int k = 0; k < num_nodes_per_wedge; k++ )
             {
