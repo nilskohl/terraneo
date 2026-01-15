@@ -155,6 +155,26 @@ void assign_masked_else_keep_old(
     Kokkos::fence();
 }
 
+template < typename ScalarType, int VecDim, util::FlagLike FlagType >
+void assign_masked_else_keep_old(
+    const grid::Grid4DDataVec< ScalarType, VecDim >& dst,
+    const ScalarType&                                value,
+    const grid::Grid4DDataScalar< FlagType >&        mask_grid,
+    const FlagType                                   mask_value,
+    const int                                        vector_component )
+{
+    Kokkos::parallel_for(
+        "assign_masked",
+        Kokkos::MDRangePolicy( { 0, 0, 0, 0 }, { dst.extent( 0 ), dst.extent( 1 ), dst.extent( 2 ), dst.extent( 3 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k ) {
+            const ScalarType mask_val = util::has_flag( mask_grid( local_subdomain, i, j, k ), mask_value ) ? 1.0 : 0.0;
+            dst( local_subdomain, i, j, k, vector_component ) =
+                mask_val * value + ( 1.0 - mask_val ) * dst( local_subdomain, i, j, k, vector_component );
+        } );
+
+    Kokkos::fence();
+}
+
 template < typename ScalarType >
 void lincomb(
     const grid::Grid4DDataScalar< ScalarType >& y,
