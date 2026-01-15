@@ -250,22 +250,32 @@ class EpsilonDivDivKerngen
 
             if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Full )
             {
+            // gca on all elements, load local matrices
                 A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
                 A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
             }
             else if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Selective )
             {
+                // adaptive gca: check if we have a matrix stored for this element
                 if ( local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) &&
                      local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) )
                 {
+                    // large coefficient variation element: use stored gca matrix
                     A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
                     A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
                 }
                 else
                 {
+                    // low coefficient variation: assemble matrix on-the-fly using dca
                     A[0] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
                     A[1] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
                 }
+            }
+            else
+            {
+                // boundary element: assemble matrix on-the-fly using dca
+                A[0] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                A[1] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
             }
 
             // read source dofs
@@ -331,6 +341,7 @@ class EpsilonDivDivKerngen
                 }
                 else if ( bcf == FREESLIP )
                 {
+                    Kokkos::abort("FS");
                     freeslip_reorder                                                                     = true;
                     dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A_tmp[num_wedges_per_hex_cell] = { 0 };
 
@@ -429,7 +440,8 @@ class EpsilonDivDivKerngen
                         }
                     }
                 }
-                else if ( bcf == NEUMANN ) {}
+                else if ( bcf == NEUMANN ) {
+                }
             }
 
             // apply boundary mask

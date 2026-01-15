@@ -53,6 +53,7 @@ using grid::shell::SubdomainInfo;
 using grid::shell::BoundaryConditionFlag::DIRICHLET;
 using grid::shell::BoundaryConditionFlag::FREESLIP;
 using grid::shell::BoundaryConditionFlag::NEUMANN;
+using grid::shell::ShellBoundaryFlag::BOUNDARY;
 using grid::shell::ShellBoundaryFlag::CMB;
 using grid::shell::ShellBoundaryFlag::SURFACE;
 using grid::shell::get_shell_boundary_flag;
@@ -352,8 +353,12 @@ std::tuple< double, double, int >
     // define boundaries: assign to each ShellBoundary flag occuring at the boundary in boundary_mask_data 
     // a type of PDE boundary condition
     BoundaryConditions bcs = {
-        { CMB, FREESLIP },
+        { CMB, DIRICHLET },
         { SURFACE, DIRICHLET },
+    };
+    BoundaryConditions bcs_neumann = {
+        { CMB, NEUMANN },
+        { SURFACE, NEUMANN },
     };
     // Set up operators.
 
@@ -412,7 +417,7 @@ std::tuple< double, double, int >
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         k.grid_data(),
-        bcs,
+        bcs_neumann,
         false,
         false );
 
@@ -423,7 +428,7 @@ std::tuple< double, double, int >
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         k.grid_data(),
-        bcs,
+        bcs_neumann,
         false,
         true );
 
@@ -531,14 +536,14 @@ std::tuple< double, double, int >
         stok_vecs["tmp_1"],
         stok_vecs["f"],
         boundary_mask_data[velocity_level],
-        get_shell_boundary_flag( bcs, DIRICHLET ) );
+        BOUNDARY );
 
-    fe::strong_algebraic_freeslip_enforcement_in_place(
+   /* fe::strong_algebraic_freeslip_enforcement_in_place(
         stok_vecs["f"],
         coords_shell[velocity_level],
         boundary_mask_data[velocity_level],
         get_shell_boundary_flag( bcs, FREESLIP ) );
-
+*/
     // Set up solvers.
 
     // Multigrid preconditioner for velocity block
@@ -773,8 +778,8 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 0, 1 }; //, 1 };
-
+    std::vector< int > gcas = { 0}; 
+    
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
     auto table_agca = std::make_shared< util::Table >();
