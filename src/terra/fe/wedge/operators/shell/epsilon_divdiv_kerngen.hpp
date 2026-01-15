@@ -412,6 +412,12 @@ class EpsilonDivDivKerngen
                         // transform local matrix to rotated/ normal-tangential space: pre/post multiply with rotation matrices
                         // TODO transpose this way?
                         A[wedge] = R[wedge] * A_tmp[wedge] * R[wedge].transposed();
+                        // transform source dofs to nt-space
+                        auto src_tmp = R[wedge].transposed() * src[wedge];
+                        for ( int i = 0; i < 18; ++i )
+                        {
+                            src[wedge]( i ) = src_tmp( i );
+                        }
 
                         // eliminate normal components: Dirichlet on the normal-tangential system
                         for ( int dimi = 0; dimi < 3; ++dimi )
