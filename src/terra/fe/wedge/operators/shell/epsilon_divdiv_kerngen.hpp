@@ -9,6 +9,7 @@
 #include "impl/Kokkos_Profiling.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/solvers/gca/local_matrix_storage.hpp"
+#include "linalg/trafo/local_basis_trafo_normal_tangential.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 #include "util/timer.hpp"
@@ -23,6 +24,7 @@ using grid::shell::ShellBoundaryFlag::SURFACE;
 using terra::grid::shell::BoundaryConditionFlag;
 using terra::grid::shell::BoundaryConditions;
 using terra::grid::shell::ShellBoundaryFlag;
+using terra::linalg::trafo::trafo_mat_cartesian_to_normal_tangential;
 
 template < typename ScalarT, int VecDim = 3 >
 class EpsilonDivDivKerngen
@@ -123,8 +125,11 @@ class EpsilonDivDivKerngen
     /// @brief Getter for grid member
     grid::Grid3DDataVec< ScalarT, 3 > get_grid() { return grid_; }
 
+    /// @brief Retrieve the boundary condition flag that is associated with a location in the shell
+    ///        e.g. SURFACE -> DIRICHLET
+    ///        TODO maybe make this a free function
     KOKKOS_INLINE_FUNCTION
-    BoundaryConditionFlag find_bcf( ShellBoundaryFlag sbf ) const
+    BoundaryConditionFlag get_bc_flag( ShellBoundaryFlag sbf ) const
     {
         for ( int i = 0; i < 2; ++i ) // might become larger for more bc types
         {
@@ -247,7 +252,12 @@ class EpsilonDivDivKerngen
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
-        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off )
+        // load stored matrix/assemble local matrix explicitly if we have matrices stored (GCA)
+        // or if we are at the boundary and need to potentially apply complicated freeslip bc treatment
+        // (easier on the explicitly assembled matrix)
+        bool at_cmb     = has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB );
+        bool at_surface = has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE );
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off || at_cmb || at_surface )
         {
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = { 0 };
 
@@ -266,89 +276,12 @@ class EpsilonDivDivKerngen
                 }
                 else
                 {
-                    // Kokkos::abort("Matrix not found.");
                     A[0] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
                     A[1] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
                 }
             }
 
-            //if ( treat_boundary_ )
-            //{
-            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
-            boundary_mask.fill( 1.0 );
-
-            for ( int dimi = 0; dimi < 3; ++dimi )
-            {
-                for ( int dimj = 0; dimj < 3; ++dimj )
-                {
-                    if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB ) )
-                    {
-                        // Inner boundary (CMB).
-                        BoundaryConditionFlag bcf = find_bcf( CMB );
-
-                        if ( bcf == DIRICHLET )
-                        {
-                            for ( int i = 0; i < num_nodes_per_wedge; i++ )
-                            {
-                                for ( int j = 0; j < num_nodes_per_wedge; j++ )
-                                {
-                                    if ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) or
-                                         ( dimi != dimj && ( i < 3 || j < 3 ) ) )
-                                    {
-                                        boundary_mask(
-                                            i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
-                                    }
-                                }
-                            }
-                        }
-                        else if ( bcf == FREESLIP )
-                        {
-                            // TODO
-                        }
-                        else if ( bcf == NEUMANN ) {}
-                    }
-
-                    if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE ) )
-                    {
-                        // Outer boundary (surface).
-                        BoundaryConditionFlag bcf = find_bcf( SURFACE );
-
-                        if ( bcf == DIRICHLET )
-                        {
-                            for ( int i = 0; i < num_nodes_per_wedge; i++ )
-                            {
-                                for ( int j = 0; j < num_nodes_per_wedge; j++ )
-                                {
-                                    if ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) or
-                                         ( dimi != dimj && ( i >= 3 || j >= 3 ) ) )
-                                    {
-                                        boundary_mask(
-                                            i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
-                                    }
-                                }
-                            }
-                        }
-                        else if ( bcf == FREESLIP )
-                        {
-                            // TODO
-                        }
-                        else if ( bcf == NEUMANN ) {}
-                    }
-                }
-                //}
-
-                for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
-                {
-                    A[wedge].hadamard_product( boundary_mask );
-                }
-            }
-
-            if ( diagonal_ )
-            {
-                A[0] = A[0].diagonal();
-                A[1] = A[1].diagonal();
-            }
-
+            // read source dofs
             dense::Vec< ScalarT, 18 > src[num_wedges_per_hex_cell];
             for ( int dimj = 0; dimj < 3; dimj++ )
             {
@@ -365,10 +298,169 @@ class EpsilonDivDivKerngen
                 }
             }
 
-            dense::Vec< ScalarT, LocalMatrixDim > dst[num_wedges_per_hex_cell];
+            // Boundary treatment
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
+            boundary_mask.fill( 1.0 );
 
+            // flag to later not go through the hustle of checking the bcs
+            bool freeslip_reorder = false;
+
+            if ( at_cmb || at_surface )
+            {
+                // Inner boundary (CMB).
+                ShellBoundaryFlag     sbf = at_cmb ? CMB : SURFACE;
+                BoundaryConditionFlag bcf = get_bc_flag( sbf );
+
+                if ( bcf == DIRICHLET )
+                {
+                    for ( int dimi = 0; dimi < 3; ++dimi )
+                    {
+                        for ( int dimj = 0; dimj < 3; ++dimj )
+                        {
+                            for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                            {
+                                for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                                {
+                                    if ( ( at_cmb && ( ( dimi == dimj /* at diagonal eps component */ &&
+                                                         i != j /* dont kill the diag */ &&
+                                                         ( i < 3 || j < 3 /* CMB -> bc at bot layer dofs */ ) ) ||
+                                                       ( dimi != dimj /* off-diagonal eps component, kill diag too */ &&
+                                                         ( i < 3 || j < 3 ) ) ) ) ||
+                                         ( at_surface &&
+                                           ( ( dimi == dimj /* at diagonal eps component */ &&
+                                               i != j /* dont kill the diag */ &&
+                                               ( i >= 3 || j >= 3 /* SUFACE -> bc at top layer dofs */ ) ) ||
+                                             ( dimi != dimj /* off-diagonal eps component, kill diag too */ &&
+                                               ( i >= 3 || j >= 3 ) ) ) ) )
+                                    {
+                                        boundary_mask(
+                                            i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else if ( bcf == FREESLIP )
+                {
+                    freeslip_reorder                                                                     = true;
+                    dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A_tmp[num_wedges_per_hex_cell] = { 0 };
+
+                    // reorder source dofs for nodes instead of velocity dims in src vector and local matrix
+                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    {
+                        for ( int dimi = 0; dimi < 3; ++dimi )
+                        {
+                            for ( int node_idxi = 0; node_idxi < num_nodes_per_wedge; node_idxi++ )
+                            {
+                                for ( int dimj = 0; dimj < 3; ++dimj )
+                                {
+                                    for ( int node_idxj = 0; node_idxj < num_nodes_per_wedge; node_idxj++ )
+                                    {
+                                        A_tmp[wedge]( node_idxi * 3 + dimi, node_idxj * 3 + dimj ) = A[wedge](
+                                            node_idxi + dimi * num_nodes_per_wedge,
+                                            node_idxj + dimj * num_nodes_per_wedge );
+                                    }
+                                }
+                            }
+                        }
+                        reorder_local_dofs( DoFOrdering::DIMENSIONWISE, DoFOrdering::NODEWISE, src[wedge] );
+                    }
+
+                    // assemble rotation matrices for boundary nodes
+                    // we are at CMB, so we need to rotate DoFs 0, 1, 2 of each wedge
+                    dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > R[num_wedges_per_hex_cell];
+
+                    constexpr int layer_hex_offset_x[2][3] = { { 0, 1, 0 }, { 1, 0, 1 } };
+                    constexpr int layer_hex_offset_y[2][3] = { { 0, 0, 1 }, { 1, 1, 0 } };
+
+                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    {
+                        // make rotation matrix unity
+                        for ( int i = 0; i < LocalMatrixDim; ++i )
+                        {
+                            R[wedge]( i, i ) = 1.0;
+                        }
+
+                        for ( int boundary_node_idx = 0; boundary_node_idx < 3; boundary_node_idx++ )
+                        {
+                            // compute normal
+                            const dense::Vec< double, 3 > normal = grid::shell::coords(
+                                local_subdomain_id,
+                                x_cell + layer_hex_offset_x[wedge][boundary_node_idx],
+                                y_cell + layer_hex_offset_y[wedge][boundary_node_idx],
+                                r_cell + ( at_cmb ? 0 : 1 ),
+                                grid_,
+                                radii_ );
+
+                            // compute rotation matrix for DoFs on current node
+                            auto R_i = trafo_mat_cartesian_to_normal_tangential( normal );
+
+                            // insert into wedge-local rotation matrix
+                            int offset_in_R = at_cmb ? 0 : 9;
+                            for ( int dimi = 0; dimi < 3; ++dimi )
+                            {
+                                for ( int dimj = 0; dimj < 3; ++dimj )
+                                {
+                                    R[wedge](
+                                        offset_in_R + boundary_node_idx * 3 + dimi,
+                                        offset_in_R + boundary_node_idx * 3 + dimj ) = R_i( dimi, dimj );
+                                }
+                            }
+                        }
+
+                        // transform local matrix to rotated/ normal-tangential space: pre/post multiply with rotation matrices
+                        // TODO transpose this way?
+                        A[wedge] = R[wedge] * A_tmp[wedge] * R[wedge].transposed();
+
+                        // eliminate normal components: Dirichlet on the normal-tangential system
+                        for ( int dimi = 0; dimi < 3; ++dimi )
+                        {
+                            for ( int dimj = 0; dimj < 3; ++dimj )
+                            {
+                                for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                                {
+                                    for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                                    {
+                                        int idxi = i + dimi * num_nodes_per_wedge;
+                                        int idxj = j + dimj * num_nodes_per_wedge;
+                                        /* Eliminate rows and cols for dofs corresponding to the normal component of a velocity */
+                                        if ( i != j && ( idxi % 3 == 0 || idxj % 3 == 0 ) )
+                                        {
+                                            boundary_mask( idxi, idxj ) = 0.0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else if ( bcf == NEUMANN ) {}
+            }
+
+            // apply boundary mask
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+            {
+                A[wedge].hadamard_product( boundary_mask );
+            }
+            //}
+
+            if ( diagonal_ )
+            {
+                A[0] = A[0].diagonal();
+                A[1] = A[1].diagonal();
+            }
+
+            dense::Vec< ScalarT, LocalMatrixDim > dst[num_wedges_per_hex_cell];
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];
+
+            // TODO: reorder dofs in case of freeslip
+            if ( freeslip_reorder )
+            {
+                reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[0] );
+                reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[1] );
+            }
 
             for ( int dimi = 0; dimi < 3; dimi++ )
             {
