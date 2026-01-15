@@ -368,7 +368,8 @@ class EpsilonDivDivKerngen
                     }
 
                     // assemble rotation matrices for boundary nodes
-                    // we are at CMB, so we need to rotate DoFs 0, 1, 2 of each wedge
+                    // e.g. if we are at CMB, we need to rotate DoFs 0, 1, 2 of each wedge
+                    // at SURFACE, we need to rotate DoFs 3, 4, 5
                     dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > R[num_wedges_per_hex_cell];
 
                     constexpr int layer_hex_offset_x[2][3] = { { 0, 1, 0 }, { 1, 0, 1 } };
