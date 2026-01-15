@@ -16,6 +16,7 @@
 
 namespace terra::fe::wedge::operators::shell {
 
+using grid::shell::get_boundary_condition_flag;
 using grid::shell::BoundaryConditionFlag::DIRICHLET;
 using grid::shell::BoundaryConditionFlag::FREESLIP;
 using grid::shell::BoundaryConditionFlag::NEUMANN;
@@ -24,7 +25,6 @@ using grid::shell::ShellBoundaryFlag::SURFACE;
 using terra::grid::shell::BoundaryConditionFlag;
 using terra::grid::shell::BoundaryConditions;
 using terra::grid::shell::ShellBoundaryFlag;
-using grid::shell::get_boundary_condition_flag;
 using terra::linalg::trafo::trafo_mat_cartesian_to_normal_tangential;
 
 template < typename ScalarT, int VecDim = 3 >
@@ -290,13 +290,14 @@ class EpsilonDivDivKerngen
             boundary_mask.fill( 1.0 );
 
             // flag to later not go through the hustle of checking the bcs
-            bool freeslip_reorder = false;
+            bool                                                  freeslip_reorder = false;
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > R[num_wedges_per_hex_cell];
 
             if ( at_cmb || at_surface )
             {
                 // Inner boundary (CMB).
                 ShellBoundaryFlag     sbf = at_cmb ? CMB : SURFACE;
-                BoundaryConditionFlag bcf = get_boundary_condition_flag(bcs_, sbf );
+                BoundaryConditionFlag bcf = get_boundary_condition_flag( bcs_, sbf );
 
                 if ( bcf == DIRICHLET )
                 {
@@ -357,7 +358,6 @@ class EpsilonDivDivKerngen
                     // assemble rotation matrices for boundary nodes
                     // e.g. if we are at CMB, we need to rotate DoFs 0, 1, 2 of each wedge
                     // at SURFACE, we need to rotate DoFs 3, 4, 5
-                    dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > R[num_wedges_per_hex_cell];
 
                     constexpr int layer_hex_offset_x[2][3] = { { 0, 1, 0 }, { 1, 0, 1 } };
                     constexpr int layer_hex_offset_y[2][3] = { { 0, 0, 1 }, { 1, 1, 0 } };
@@ -401,7 +401,7 @@ class EpsilonDivDivKerngen
                         // TODO transpose this way?
                         A[wedge] = R[wedge] * A_tmp[wedge] * R[wedge].transposed();
                         // transform source dofs to nt-space
-                        auto src_tmp = R[wedge].transposed() * src[wedge];
+                        auto src_tmp = R[wedge] * src[wedge];
                         for ( int i = 0; i < 18; ++i )
                         {
                             src[wedge]( i ) = src_tmp( i );
@@ -449,9 +449,19 @@ class EpsilonDivDivKerngen
             dst[0] = A[0] * src[0];
             dst[1] = A[1] * src[1];
 
-            // TODO: reorder dofs in case of freeslip
             if ( freeslip_reorder )
             {
+                // transform dst back from nt space
+                dense::Vec< ScalarT, LocalMatrixDim > dst_tmp[num_wedges_per_hex_cell];
+                dst_tmp[0] = R[0].transposed() * dst[0];
+                dst_tmp[1] = R[1].transposed() * dst[1];
+                for ( int i = 0; i < 18; ++i )
+                {
+                    dst[0]( i ) = dst_tmp[0]( i );
+                    dst[1]( i ) = dst_tmp[1]( i );
+                }
+
+                // reorder to dimensionwise ordering
                 reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[0] );
                 reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[1] );
             }

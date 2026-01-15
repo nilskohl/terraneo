@@ -48,8 +48,8 @@ class EpsDivDivStokes
         bool                                                            treat_boundary,
         bool                                                            diagonal )
     : A_( domain_fine, grid, radii, mask, k, bcs, diagonal )
-    , B_T_( domain_fine, domain_coarse, grid, radii, mask, treat_boundary )
-    , B_( domain_fine, domain_coarse, grid, radii, mask, treat_boundary )
+    , B_T_( domain_fine, domain_coarse, grid, radii, mask, bcs )
+    , B_( domain_fine, domain_coarse, grid, radii, mask, bcs )
     , diagonal_( diagonal )
     {}
 
