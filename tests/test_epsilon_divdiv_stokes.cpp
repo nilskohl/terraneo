@@ -2,6 +2,7 @@
 
 #include "../src/terra/communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
+#include "fe/strong_algebraic_freeslip_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv_stokes.hpp"
 #include "fe/wedge/operators/shell/identity.hpp"
@@ -54,6 +55,7 @@ using grid::shell::BoundaryConditionFlag::FREESLIP;
 using grid::shell::BoundaryConditionFlag::NEUMANN;
 using grid::shell::ShellBoundaryFlag::CMB;
 using grid::shell::ShellBoundaryFlag::SURFACE;
+using grid::shell::get_shell_boundary_flag;
 using linalg::DiagonallyScaledOperator;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
@@ -347,7 +349,8 @@ std::tuple< double, double, int >
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
 
-    // define boundaries
+    // define boundaries: assign to each ShellBoundary flag occuring at the boundary in boundary_mask_data 
+    // a type of PDE boundary condition
     BoundaryConditions bcs = {
         { CMB, FREESLIP },
         { SURFACE, DIRICHLET },
@@ -528,7 +531,13 @@ std::tuple< double, double, int >
         stok_vecs["tmp_1"],
         stok_vecs["f"],
         boundary_mask_data[velocity_level],
-        grid::shell::ShellBoundaryFlag::BOUNDARY );
+        get_shell_boundary_flag( bcs, DIRICHLET ) );
+
+    fe::strong_algebraic_freeslip_enforcement_in_place(
+        stok_vecs["f"],
+        coords_shell[velocity_level],
+        boundary_mask_data[velocity_level],
+        get_shell_boundary_flag( bcs, FREESLIP ) );
 
     // Set up solvers.
 
@@ -802,9 +811,8 @@ int main( int argc, char** argv )
                         table->add_row(
                             { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
 
-                        if (level > 2 && (order_vel <= 3.8 or order_pre <= 2.0))
-                            Kokkos::abort("Conv order not reached.");
-
+                        if ( level > 2 && ( order_vel <= 3.8 or order_pre <= 2.0 ) )
+                            Kokkos::abort( "Conv order not reached." );
                     }
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;

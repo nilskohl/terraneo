@@ -17,10 +17,10 @@ void strong_algebraic_freeslip_enforcement_in_place(
     const FlagType&                                 freeslip_boundary_mask )
 {
     // b <- Rb
-    linalg::trafo::cartesian_to_normal_tangential_in_place( b, coords_shell, mask_data, freeslip_boundary_mask );
+    linalg::trafo::cartesian_to_normal_tangential_in_place( b.block_1(), coords_shell, mask_data, freeslip_boundary_mask );
 
     // b <- 0 for normal components at FS boundary
-    kernels::common::assign_masked_else_keep_old( b.block_1().grid_data(), 0, mask_data, freeslip_boundary_mask, 0 );
+    kernels::common::assign_masked_else_keep_old<ScalarType, 3, FlagType>( b.block_1().grid_data(), 0, mask_data, freeslip_boundary_mask, 0 );
 }
 
 } // namespace terra::fe

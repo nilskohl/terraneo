@@ -24,6 +24,7 @@ using grid::shell::ShellBoundaryFlag::SURFACE;
 using terra::grid::shell::BoundaryConditionFlag;
 using terra::grid::shell::BoundaryConditions;
 using terra::grid::shell::ShellBoundaryFlag;
+using grid::shell::get_boundary_condition_flag;
 using terra::linalg::trafo::trafo_mat_cartesian_to_normal_tangential;
 
 template < typename ScalarT, int VecDim = 3 >
@@ -124,20 +125,6 @@ class EpsilonDivDivKerngen
 
     /// @brief Getter for grid member
     grid::Grid3DDataVec< ScalarT, 3 > get_grid() { return grid_; }
-
-    /// @brief Retrieve the boundary condition flag that is associated with a location in the shell
-    ///        e.g. SURFACE -> DIRICHLET
-    ///        TODO maybe make this a free function
-    KOKKOS_INLINE_FUNCTION
-    BoundaryConditionFlag get_bc_flag( ShellBoundaryFlag sbf ) const
-    {
-        for ( int i = 0; i < 2; ++i ) // might become larger for more bc types
-        {
-            if ( bcs_[i].sbf == sbf )
-                return bcs_[i].bcf;
-        }
-        return NEUMANN;
-    }
 
     /// @brief Getter for mask member
     KOKKOS_INLINE_FUNCTION
@@ -309,7 +296,7 @@ class EpsilonDivDivKerngen
             {
                 // Inner boundary (CMB).
                 ShellBoundaryFlag     sbf = at_cmb ? CMB : SURFACE;
-                BoundaryConditionFlag bcf = get_bc_flag( sbf );
+                BoundaryConditionFlag bcf = get_boundary_condition_flag(bcs_, sbf );
 
                 if ( bcf == DIRICHLET )
                 {
