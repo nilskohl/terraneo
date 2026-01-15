@@ -624,7 +624,7 @@ constexpr void
     }
 
     dense::Vec< ScalarT, 18 > tmp_dofs;
-    if ( doo_from == DoFOrdering::NODEWISE && doo_to == DoFOrdering::DIMENSIONWISE )
+    if ( (doo_from == DoFOrdering::NODEWISE) && (doo_to == DoFOrdering::DIMENSIONWISE) )
     {
         for ( int dim = 0; dim < 3; ++dim )
         {
@@ -634,7 +634,7 @@ constexpr void
             }
         }
     }
-    else if ( doo_from == DoFOrdering::DIMENSIONWISE && doo_to == DoFOrdering::NODEWISE )
+    else if ( (doo_from == DoFOrdering::DIMENSIONWISE) && (doo_to == DoFOrdering::NODEWISE) )
     {
         for ( int dim = 0; dim < 3; ++dim )
         {
