@@ -125,9 +125,10 @@ void cartesian_to_normal_tangential_in_place(
             }
 
             dense::Vec< ScalarType, 3 > normal;
+            int sign = flag == grid::shell::ShellBoundaryFlag::CMB ? -1 : 1;
             for ( int d = 0; d < 3; ++d )
             {
-                normal( d ) = coords_shell( local_subdomain, i, j, d );
+                normal( d ) = sign * coords_shell( local_subdomain, i, j, d );
             }
 
             const auto R                           = trafo_mat_cartesian_to_normal_tangential( normal );
@@ -168,9 +169,10 @@ void normal_tangential_to_cartesian_in_place(
             }
 
             dense::Vec< ScalarType, 3 > normal;
+            int sign = flag == grid::shell::ShellBoundaryFlag::CMB ? -1 : 1;
             for ( int d = 0; d < 3; ++d )
             {
-                normal( d ) = coords_shell( local_subdomain, i, j, d );
+                normal( d ) = sign * coords_shell( local_subdomain, i, j, d );
             }
 
             const auto Rt             = trafo_mat_normal_tangential_to_cartesian_trafo( normal );

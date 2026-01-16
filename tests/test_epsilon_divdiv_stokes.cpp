@@ -687,7 +687,7 @@ std::tuple< double, double, int >
         prec_11,
         linalg::solvers::IdentitySolver< fe::wedge::operators::shell::Identity< ScalarType > >() );*/
 
-    const int                                  iters = 150;
+    const int                                  iters = 500;
     linalg::solvers::IterativeSolverParameters solver_params{ iters, 1e-8, 1e-12 };
 
     constexpr auto                               num_tmps_fgmres = iters;
@@ -705,9 +705,10 @@ std::tuple< double, double, int >
     linalg::solvers::FGMRESOptions< ScalarType > fgmres_options;
     fgmres_options.restart                                     = iters;
     fgmres_options.max_iterations                              = iters;
-    fgmres_options.relative_residual_tolerance                 = 1e-6;
+    fgmres_options.relative_residual_tolerance                 = 1e-10;
     auto                                          solver_table = std::make_shared< util::Table >();
-    linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
+    //linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
+    linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, fgmres_options, solver_table );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );
 
     std::cout << "Solve ... " << std::endl;
@@ -751,14 +752,7 @@ std::tuple< double, double, int >
           { "h_vel", ( r_max - r_min ) / std::pow( 2, velocity_level ) },
           { "h_p", ( r_max - r_min ) / std::pow( 2, pressure_level ) } } );
 
-    io::XDMFOutput xdmf(
-        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
-
-    xdmf.add( k.grid_data() );
-    xdmf.add( u.block_1().grid_data() );
-    xdmf.add( solution.block_1().grid_data() );
-
-    xdmf.write();
+  
 
     // output normals
     // trafo velocity solution to nt space
@@ -770,8 +764,6 @@ std::tuple< double, double, int >
     terra::kernels::common::extract_vector_component( normals.grid_data(), u.block_1().grid_data(), 0 );
     // write normale component over radial profiles
     auto radii             = domains[velocity_level].domain_info().radii();
-    int  num_global_shells = domains[velocity_level].domain_info().subdomain_num_nodes_radially() *
-                            domains[velocity_level].subdomains().size();
     auto rprofiles = terra::shell::radial_profiles(
         normals,
         subdomain_shell_idx( domains[velocity_level] ),
@@ -779,6 +771,17 @@ std::tuple< double, double, int >
     auto          normaltable = terra::shell::radial_profiles_to_table( rprofiles, radii );
     std::ofstream out( "normal_radial_profiles.csv" );
     normaltable.print_csv( out );
+
+
+    io::XDMFOutput xdmf(
+        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
+
+    xdmf.add( k.grid_data() );
+    xdmf.add( normals.grid_data() );
+    xdmf.add( u.block_1().grid_data() );
+    xdmf.add( solution.block_1().grid_data() );
+
+    xdmf.write();
 
     return {
         l2_error_velocity, l2_error_pressure, solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() };
