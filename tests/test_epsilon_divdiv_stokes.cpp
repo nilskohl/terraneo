@@ -37,6 +37,7 @@
 #include "terra/linalg/diagonally_scaled_operator.hpp"
 #include "terra/linalg/solvers/diagonal_solver.hpp"
 #include "terra/linalg/solvers/power_iteration.hpp"
+#include "terra/shell/radial_profiles.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 
@@ -49,6 +50,7 @@ using grid::Grid4DDataScalar;
 using grid::Grid4DDataVec;
 using grid::shell::DistributedDomain;
 using grid::shell::DomainInfo;
+using grid::shell::get_shell_boundary_flag;
 using grid::shell::SubdomainInfo;
 using grid::shell::BoundaryConditionFlag::DIRICHLET;
 using grid::shell::BoundaryConditionFlag::FREESLIP;
@@ -56,7 +58,6 @@ using grid::shell::BoundaryConditionFlag::NEUMANN;
 using grid::shell::ShellBoundaryFlag::BOUNDARY;
 using grid::shell::ShellBoundaryFlag::CMB;
 using grid::shell::ShellBoundaryFlag::SURFACE;
-using grid::shell::get_shell_boundary_flag;
 using linalg::DiagonallyScaledOperator;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
@@ -350,7 +351,7 @@ std::tuple< double, double, int >
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
 
-    // define boundaries: assign to each ShellBoundary flag occuring at the boundary in boundary_mask_data 
+    // define boundaries: assign to each ShellBoundary flag occuring at the boundary in boundary_mask_data
     // a type of PDE boundary condition
     BoundaryConditions bcs = {
         { CMB, FREESLIP },
@@ -539,10 +540,7 @@ std::tuple< double, double, int >
         SURFACE );
 
     fe::strong_algebraic_freeslip_enforcement_in_place(
-        stok_vecs["f"],
-        coords_shell[velocity_level],
-        boundary_mask_data[velocity_level],
-        CMB );
+        stok_vecs["f"], coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
 
     // Set up solvers.
 
@@ -762,6 +760,26 @@ std::tuple< double, double, int >
 
     xdmf.write();
 
+    // output normals
+    // trafo velocity solution to nt space
+
+    terra::linalg::trafo::cartesian_to_normal_tangential_in_place< ScalarType, ScalarType >(
+        u.block_1(), coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
+    // extract normal component to array
+    VectorQ1Scalar< ScalarType > normals( "normals", domains[velocity_level], mask_data[velocity_level] );
+    terra::kernels::common::extract_vector_component( normals.grid_data(), u.block_1().grid_data(), 0 );
+    // write normale component over radial profiles
+    auto radii             = domains[velocity_level].domain_info().radii();
+    int  num_global_shells = domains[velocity_level].domain_info().subdomain_num_nodes_radially() *
+                            domains[velocity_level].subdomains().size();
+    auto rprofiles = terra::shell::radial_profiles(
+        normals,
+        subdomain_shell_idx( domains[velocity_level] ),
+        domains[velocity_level].domain_info().radii().size() );
+    auto          normaltable = terra::shell::radial_profiles_to_table( rprofiles, radii );
+    std::ofstream out( "normal_radial_profiles.csv" );
+    normaltable.print_csv( out );
+
     return {
         l2_error_velocity, l2_error_pressure, solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() };
 }
@@ -778,8 +796,8 @@ int main( int argc, char** argv )
 
     std::vector< int > kmaxs = { 1 };
 
-    std::vector< int > gcas = { 0}; 
-    
+    std::vector< int > gcas = { 0 };
+
     auto table_dca  = std::make_shared< util::Table >();
     auto table_gca  = std::make_shared< util::Table >();
     auto table_agca = std::make_shared< util::Table >();
