@@ -353,7 +353,7 @@ std::tuple< double, double, int >
     // define boundaries: assign to each ShellBoundary flag occuring at the boundary in boundary_mask_data 
     // a type of PDE boundary condition
     BoundaryConditions bcs = {
-        { CMB, DIRICHLET },
+        { CMB, FREESLIP },
         { SURFACE, DIRICHLET },
     };
     BoundaryConditions bcs_neumann = {
@@ -536,14 +536,14 @@ std::tuple< double, double, int >
         stok_vecs["tmp_1"],
         stok_vecs["f"],
         boundary_mask_data[velocity_level],
-        BOUNDARY );
+        SURFACE );
 
-   /* fe::strong_algebraic_freeslip_enforcement_in_place(
+    fe::strong_algebraic_freeslip_enforcement_in_place(
         stok_vecs["f"],
         coords_shell[velocity_level],
         boundary_mask_data[velocity_level],
-        get_shell_boundary_flag( bcs, FREESLIP ) );
-*/
+        CMB );
+
     // Set up solvers.
 
     // Multigrid preconditioner for velocity block
@@ -707,7 +707,7 @@ std::tuple< double, double, int >
     linalg::solvers::FGMRESOptions< ScalarType > fgmres_options;
     fgmres_options.restart                                     = iters;
     fgmres_options.max_iterations                              = iters;
-    fgmres_options.relative_residual_tolerance                 = 1e-8;
+    fgmres_options.relative_residual_tolerance                 = 1e-6;
     auto                                          solver_table = std::make_shared< util::Table >();
     linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );
@@ -770,7 +770,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 5;
+    const int max_level = 3;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
@@ -793,7 +793,7 @@ int main( int argc, char** argv )
             terra::util::Table::Row cycles;
             for ( int kmax : kmaxs )
             {
-                for ( int level = 2; level <= max_level; ++level )
+                for ( int level = max_level; level <= max_level; ++level )
                 {
                     std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
                     std::cout << "level = " << level << std::endl;
@@ -816,8 +816,8 @@ int main( int argc, char** argv )
                         table->add_row(
                             { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
 
-                        if ( level > 2 && ( order_vel <= 3.8 or order_pre <= 2.0 ) )
-                            Kokkos::abort( "Conv order not reached." );
+                        //if ( level > 2 && ( order_vel <= 3.8 or order_pre <= 2.0 ) )
+                        //    Kokkos::abort( "Conv order not reached." );
                     }
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;

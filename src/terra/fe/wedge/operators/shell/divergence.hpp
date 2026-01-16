@@ -14,7 +14,6 @@
 
 namespace terra::fe::wedge::operators::shell {
 
-
 using grid::shell::get_boundary_condition_flag;
 using grid::shell::BoundaryConditionFlag::DIRICHLET;
 using grid::shell::BoundaryConditionFlag::FREESLIP;
@@ -168,7 +167,6 @@ class Divergence
             }
         }
 
-       
         bool at_cmb = util::has_flag( boundary_mask_fine_( local_subdomain_id, x_cell, y_cell, r_cell ), CMB );
         bool at_surface =
             util::has_flag( boundary_mask_fine_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), SURFACE );
@@ -255,13 +253,17 @@ class Divergence
                     for ( int boundary_node_idx = 0; boundary_node_idx < 3; boundary_node_idx++ )
                     {
                         // compute normal
-                        const dense::Vec< double, 3 > normal = grid::shell::coords(
+                        dense::Vec< double, 3 > normal = grid::shell::coords(
                             local_subdomain_id,
                             x_cell + layer_hex_offset_x[wedge][boundary_node_idx],
                             y_cell + layer_hex_offset_y[wedge][boundary_node_idx],
                             r_cell + ( at_cmb ? 0 : 1 ),
                             grid_fine_,
                             radii_ );
+                        if ( at_cmb )
+                        {
+                            normal = { -normal( 0 ), -normal( 1 ), -normal( 2 ) };
+                        }
 
                         // compute rotation matrix for DoFs on current node
                         auto R_i = trafo_mat_cartesian_to_normal_tangential( normal );
