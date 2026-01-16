@@ -132,8 +132,9 @@ class FGMRES
         const int needed = 2 * m_req + 4;
         if ( nTmp < needed )
         {
-            std::cerr << "FGMRES: insufficient tmp vectors. Provided " << nTmp << ", required at least " << needed
-                      << " for restart m = " << m_req << std::endl;
+            std::cerr << "FGMRES: insufficient tmp vectors. Provided " << nTmp
+                      << ", required at least (2*restart + 4) = " << needed << " for restart m = " << m_req
+                      << std::endl;
             Kokkos::abort( "FGMRES: insufficient tmp vectors" );
         }
 
