@@ -216,6 +216,7 @@ class Divergence
             }
             else if ( bcf == FREESLIP )
             {
+                /*
                 dense::Mat< ScalarT, 6, 18 > A_tmp[num_wedges_per_hex_cell] = { 0 };
 
                 // reorder source dofs for nodes instead of velocity dims in src vector and local matrix
@@ -292,23 +293,20 @@ class Divergence
                     }
 
                     // eliminate normal components: Dirichlet on the normal-tangential system
-                    for ( int dimj = 0; dimj < 3; ++dimj )
+                    int node_start = at_surface ? 3 : 0;
+                    int node_end   = at_surface ? 6 : 3;
+                    for ( int node_idx = node_start; node_idx < node_end; node_idx++ )
                     {
-                        for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                        int idx = node_idx * 3;
+                        for ( int k = 0; k < 6; ++k )
                         {
-                            for ( int j = 0; j < num_nodes_per_wedge; j++ )
-                            {
-                                int idxi = i;
-                                int idxj = j + dimj * num_nodes_per_wedge;
-                                /* Eliminate cols for dofs corresponding to the normal component of a velocity */
-                                if ( idxj % 3 == 0 )
-                                {
-                                    boundary_mask( idxi, idxj ) = 0.0;
-                                }
-                            }
+                           // boundary_mask( k, idx ) = 0.0;
                         }
                     }
-                }
+
+                                     //  std::cout << boundary_mask;
+                  //  Kokkos::abort("Be");
+                }*/
             }
             else if ( bcf == NEUMANN ) {}
         }

@@ -204,6 +204,7 @@ class Gradient
             }
             else if ( bcf == FREESLIP )
             {
+                /*
                 freeslip_reorder                                            = true;
                 dense::Mat< ScalarT, 18, 6 > A_tmp[num_wedges_per_hex_cell] = { 0 };
 
@@ -274,23 +275,19 @@ class Gradient
                     A[wedge] = R[wedge] * A_tmp[wedge];
 
                     // eliminate normal components: Dirichlet on the normal-tangential system
-                    for ( int dimi = 0; dimi < 3; ++dimi )
+                    int node_start = at_surface ? 3 : 0;
+                    int node_end   = at_surface ? 6 : 3;
+
+                    for ( int node_idx = node_start; node_idx < node_end; node_idx++ )
                     {
-                        for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                        int idx = node_idx * 3;
+                        for ( int k = 0; k < 6; ++k )
                         {
-                            for ( int j = 0; j < num_nodes_per_wedge; j++ )
-                            {
-                                int idxi = i + dimi * num_nodes_per_wedge;
-                                int idxj = j;
-                                /* Eliminate cols for dofs corresponding to the normal component of a velocity */
-                                if ( idxi % 3 == 0 )
-                                {
-                                    boundary_mask( idxi, idxj ) = 0.0;
-                                }
-                            }
+                         //   boundary_mask( idx, k ) = 0.0;
                         }
                     }
                 }
+                */
             }
             else if ( bcf == NEUMANN ) {}
         }
@@ -308,6 +305,7 @@ class Gradient
 
         if ( freeslip_reorder )
         {
+            /*
             // transform dst back from nt space
             dense::Vec< ScalarT, 18 > dst_tmp[num_wedges_per_hex_cell];
             dst_tmp[0] = R[0].transposed() * dst[0];
@@ -321,6 +319,7 @@ class Gradient
             // reorder to dimensionwise ordering
             reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[0] );
             reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[1] );
+            */
         }
 
         for ( int d = 0; d < 3; d++ )

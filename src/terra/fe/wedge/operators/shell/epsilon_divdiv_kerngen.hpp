@@ -250,7 +250,7 @@ class EpsilonDivDivKerngen
 
             if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Full )
             {
-            // gca on all elements, load local matrices
+                // gca on all elements, load local matrices
                 A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
                 A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
             }
@@ -390,10 +390,11 @@ class EpsilonDivDivKerngen
                                 r_cell + ( at_cmb ? 0 : 1 ),
                                 grid_,
                                 radii_ );
-                            if (at_cmb) {
-                                normal = { -normal(0), -normal(1), -normal(2)};
+                            if ( at_cmb )
+                            {
+                                normal = { -normal( 0 ), -normal( 1 ), -normal( 2 ) };
                             }
-                            
+
                             // compute rotation matrix for DoFs on current node
                             auto R_i = trafo_mat_cartesian_to_normal_tangential( normal );
 
@@ -421,29 +422,27 @@ class EpsilonDivDivKerngen
                         }
 
                         // eliminate normal components: Dirichlet on the normal-tangential system
-                        for ( int dimi = 0; dimi < 3; ++dimi )
+                        int node_start = at_surface ? 3 : 0;
+                        int node_end   = at_surface ? 6 : 3;
+
+                        for ( int node_idx = node_start; node_idx < node_end; node_idx++ )
                         {
-                            for ( int dimj = 0; dimj < 3; ++dimj )
+                            int idx = node_idx * 3;
+                            /* Eliminate rows and cols for dofs corresponding to the normal component of a velocity */
+                            for ( int k = 0; k < 18; ++k )
                             {
-                                for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                                if ( k != idx )
                                 {
-                                    for ( int j = 0; j < num_nodes_per_wedge; j++ )
-                                    {
-                                        int idxi = i + dimi * num_nodes_per_wedge;
-                                        int idxj = j + dimj * num_nodes_per_wedge;
-                                        /* Eliminate rows and cols for dofs corresponding to the normal component of a velocity */
-                                        if ( i != j && ( idxi % 3 == 0 || idxj % 3 == 0 ) )
-                                        {
-                                            boundary_mask( idxi, idxj ) = 0.0;
-                                        }
-                                    }
+                                    boundary_mask( idx, k ) = 0.0;
+                                    boundary_mask( k, idx ) = 0.0;
                                 }
                             }
                         }
+                        //std::cout << boundary_mask;
+                        //Kokkos::abort("Be");
                     }
                 }
-                else if ( bcf == NEUMANN ) {
-                }
+                else if ( bcf == NEUMANN ) {}
             }
 
             // apply boundary mask

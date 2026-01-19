@@ -707,8 +707,8 @@ std::tuple< double, double, int >
     fgmres_options.max_iterations                              = iters;
     fgmres_options.relative_residual_tolerance                 = 1e-10;
     auto                                          solver_table = std::make_shared< util::Table >();
-    //linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
-    linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, fgmres_options, solver_table );
+    linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
+    //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, fgmres_options, solver_table );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );
 
     std::cout << "Solve ... " << std::endl;
@@ -752,36 +752,31 @@ std::tuple< double, double, int >
           { "h_vel", ( r_max - r_min ) / std::pow( 2, velocity_level ) },
           { "h_p", ( r_max - r_min ) / std::pow( 2, pressure_level ) } } );
 
-  
+
+    io::XDMFOutput xdmf(
+        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
+    xdmf.add( k.grid_data() );
+    xdmf.add( u.block_1().grid_data() );
+    xdmf.add( solution.block_1().grid_data() );
+
+    xdmf.write();
 
     // output normals
     // trafo velocity solution to nt space
-
     terra::linalg::trafo::cartesian_to_normal_tangential_in_place< ScalarType, ScalarType >(
         u.block_1(), coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
     // extract normal component to array
     VectorQ1Scalar< ScalarType > normals( "normals", domains[velocity_level], mask_data[velocity_level] );
     terra::kernels::common::extract_vector_component( normals.grid_data(), u.block_1().grid_data(), 0 );
     // write normale component over radial profiles
-    auto radii             = domains[velocity_level].domain_info().radii();
+    auto radii     = domains[velocity_level].domain_info().radii();
     auto rprofiles = terra::shell::radial_profiles(
-        normals,
-        subdomain_shell_idx( domains[velocity_level] ),
-        domains[velocity_level].domain_info().radii().size() );
+        normals, subdomain_shell_idx( domains[velocity_level] ), domains[velocity_level].domain_info().radii().size() );
     auto          normaltable = terra::shell::radial_profiles_to_table( rprofiles, radii );
     std::ofstream out( "normal_radial_profiles.csv" );
     normaltable.print_csv( out );
 
-
-    io::XDMFOutput xdmf(
-        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
-
-    xdmf.add( k.grid_data() );
-    xdmf.add( normals.grid_data() );
-    xdmf.add( u.block_1().grid_data() );
-    xdmf.add( solution.block_1().grid_data() );
-
-    xdmf.write();
+   
 
     return {
         l2_error_velocity, l2_error_pressure, solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() };
@@ -791,7 +786,7 @@ int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    const int max_level = 3;
+    const int max_level = 5;
     auto      table     = std::make_shared< util::Table >();
 
     double prev_l2_error_vel = 1.0;
