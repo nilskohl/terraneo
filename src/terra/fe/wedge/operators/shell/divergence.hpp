@@ -300,12 +300,9 @@ class Divergence
                         int idx = node_idx * 3;
                         for ( int k = 0; k < 6; ++k )
                         {
-                           // boundary_mask( k, idx ) = 0.0;
+                            boundary_mask( k, idx ) = 0.0;
                         }
                     }
-
-                                     //  std::cout << boundary_mask;
-                  //  Kokkos::abort("Be");
                 }
             }
             else if ( bcf == NEUMANN ) {}

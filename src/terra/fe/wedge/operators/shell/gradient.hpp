@@ -283,7 +283,7 @@ class Gradient
                         int idx = node_idx * 3;
                         for ( int k = 0; k < 6; ++k )
                         {
-                           // boundary_mask( idx, k ) = 0.0;
+                            boundary_mask( idx, k ) = 0.0;
                         }
                     }
                 }
