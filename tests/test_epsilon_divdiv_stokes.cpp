@@ -354,15 +354,15 @@ std::tuple< double, double, int >
     // define boundaries: assign to each ShellBoundary flag occuring at the boundary in boundary_mask_data
     // a type of PDE boundary condition
     BoundaryConditions bcs = {
-        { CMB, FREESLIP },
+        { CMB, DIRICHLET },
         { SURFACE, DIRICHLET },
     };
     BoundaryConditions bcs_neumann = {
         { CMB, NEUMANN },
         { SURFACE, NEUMANN },
     };
-    // Set up operators.
 
+    // Set up operators.
     std::cout << "Setting operators ... " << std::endl;
     using Stokes      = fe::wedge::operators::shell::EpsDivDivStokes< ScalarType >;
     using Viscous     = Stokes::Block11Type;
@@ -537,10 +537,7 @@ std::tuple< double, double, int >
         stok_vecs["tmp_1"],
         stok_vecs["f"],
         boundary_mask_data[velocity_level],
-        SURFACE );
-
-    fe::strong_algebraic_freeslip_enforcement_in_place(
-        stok_vecs["f"], coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
+        BOUNDARY );
 
     // Set up solvers.
 
@@ -809,7 +806,7 @@ int main( int argc, char** argv )
             terra::util::Table::Row cycles;
             for ( int kmax : kmaxs )
             {
-                for ( int level = max_level; level <= max_level; ++level )
+                for ( int level = minlevel + 1; level <= max_level; ++level )
                 {
                     std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
                     std::cout << "level = " << level << std::endl;
@@ -832,8 +829,8 @@ int main( int argc, char** argv )
                         table->add_row(
                             { { "level", level }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
 
-                        //if ( level > 2 && ( order_vel <= 3.8 or order_pre <= 2.0 ) )
-                        //    Kokkos::abort( "Conv order not reached." );
+                        if ( level > 2 && ( order_vel <= 3.8 or order_pre <= 2.0 ) )
+                            Kokkos::abort( "Conv order not reached." );
                     }
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;

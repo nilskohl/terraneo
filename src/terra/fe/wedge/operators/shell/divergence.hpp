@@ -216,7 +216,7 @@ class Divergence
             }
             else if ( bcf == FREESLIP )
             {
-                /*
+                
                 dense::Mat< ScalarT, 6, 18 > A_tmp[num_wedges_per_hex_cell] = { 0 };
 
                 // reorder source dofs for nodes instead of velocity dims in src vector and local matrix
@@ -306,7 +306,7 @@ class Divergence
 
                                      //  std::cout << boundary_mask;
                   //  Kokkos::abort("Be");
-                }*/
+                }
             }
             else if ( bcf == NEUMANN ) {}
         }

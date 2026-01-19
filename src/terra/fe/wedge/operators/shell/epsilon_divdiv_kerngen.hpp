@@ -438,8 +438,6 @@ class EpsilonDivDivKerngen
                                 }
                             }
                         }
-                        //std::cout << boundary_mask;
-                        //Kokkos::abort("Be");
                     }
                 }
                 else if ( bcf == NEUMANN ) {}
@@ -450,7 +448,6 @@ class EpsilonDivDivKerngen
             {
                 A[wedge].hadamard_product( boundary_mask );
             }
-            //}
 
             if ( diagonal_ )
             {
