@@ -16,11 +16,15 @@ void strong_algebraic_freeslip_enforcement_in_place(
     const grid::Grid4DDataScalar< FlagType >&       mask_data,
     const FlagType&                                 freeslip_boundary_mask )
 {
-    // b <- Rb
+    // b <- R b trafo to n-t space
     linalg::trafo::cartesian_to_normal_tangential_in_place( b.block_1(), coords_shell, mask_data, freeslip_boundary_mask );
 
     // b <- 0 for normal components at FS boundary
     kernels::common::assign_masked_else_keep_old<ScalarType, 3, FlagType>( b.block_1().grid_data(), 0, mask_data, freeslip_boundary_mask, 0 );
+
+    // b <- R^T b trafo back to carth space
+    linalg::trafo::normal_tangential_to_cartesian_in_place( b.block_1(), coords_shell, mask_data, freeslip_boundary_mask );
+
 }
 
 } // namespace terra::fe
