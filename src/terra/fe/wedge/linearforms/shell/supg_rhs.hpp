@@ -170,9 +170,6 @@ class SUPGRHS
         // Far from accurate but for now assume h = r.
         const auto h = r_2 - r_1;
 
-        // constants
-        const ScalarT Pe_tol = ScalarT( 1e-8 );
-
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
             ScalarT tau_accum = 0.0;
@@ -184,7 +181,7 @@ class SUPGRHS
                 const auto&   uq         = vel_interp[wedge][q];
                 const ScalarT vel_norm_q = uq.norm();
 
-                const ScalarT tau_q = operators::shell::supg_tau( vel_norm_q, diffusivity_, h, 1e-08 );
+                const ScalarT tau_q = operators::shell::supg_tau< ScalarT >( vel_norm_q, diffusivity_, h, 1e-08 );
 
                 // quadrature weight for this point (if you have weights)
                 const ScalarT wq = quad_weights[q]; // if not available, use 1.0

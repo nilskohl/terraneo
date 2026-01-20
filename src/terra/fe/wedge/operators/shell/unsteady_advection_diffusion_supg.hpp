@@ -44,8 +44,8 @@ KOKKOS_INLINE_FUNCTION ScalarT
     const ScalarT coth_term = ScalarT( 1.0 ) / Kokkos::tanh( Pe ) - ScalarT( 1.0 ) / Pe;
     const ScalarT tau       = ( h / ( 2.0 * vel_norm ) ) * coth_term;
 
-    // return ( tau > tau_max ) ? tau_max : tau;
-    return tau;
+    return ( tau > tau_max ) ? tau_max : tau;
+    // return tau;
 }
 
 /// \brief Linear operator for a method-of-lines discretization of the unsteady advection-diffusion equation with SUPG
@@ -163,19 +163,19 @@ class UnsteadyAdvectionDiffusionSUPG
 
   public:
     UnsteadyAdvectionDiffusionSUPG(
-        const grid::shell::DistributedDomain&                 domain,
-        const grid::Grid3DDataVec< ScalarT, 3 >&              grid,
-        const grid::Grid2DDataScalar< ScalarT >&              radii,
+        const grid::shell::DistributedDomain&                           domain,
+        const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
+        const grid::Grid2DDataScalar< ScalarT >&                        radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& boundary_mask,
-        const linalg::VectorQ1Vec< ScalarT, VelocityVecDim >& velocity,
-        const ScalarT                                         diffusivity,
-        const ScalarT                                         dt,
-        bool                                                  treat_boundary,
-        bool                                                  diagonal            = false,
-        ScalarT                                               mass_scaling        = 1.0,
-        bool                                                  lumped_mass         = false,
-        linalg::OperatorApplyMode                             operator_apply_mode = linalg::OperatorApplyMode::Replace,
-        linalg::OperatorCommunicationMode                     operator_communication_mode =
+        const linalg::VectorQ1Vec< ScalarT, VelocityVecDim >&           velocity,
+        const ScalarT                                                   diffusivity,
+        const ScalarT                                                   dt,
+        bool                                                            treat_boundary,
+        bool                                                            diagonal     = false,
+        ScalarT                                                         mass_scaling = 1.0,
+        bool                                                            lumped_mass  = false,
+        linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode operator_communication_mode =
             linalg::OperatorCommunicationMode::CommunicateAdditively )
     : domain_( domain )
     , grid_( grid )
@@ -272,10 +272,6 @@ class UnsteadyAdvectionDiffusionSUPG
         // Far from accurate but for now assume h = r.
         const auto h = r_2 - r_1;
 
-        // constants
-        const ScalarT eps_vel = ScalarT( 1e-12 );
-        const ScalarT Pe_tol  = ScalarT( 1e-8 );
-
         for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
         {
             ScalarT tau_accum = 0.0;
@@ -287,7 +283,7 @@ class UnsteadyAdvectionDiffusionSUPG
                 const auto&   uq         = vel_interp[wedge][q];
                 const ScalarT vel_norm_q = uq.norm();
 
-                const ScalarT tau_q = supg_tau( vel_norm_q, diffusivity_, h, 1e-08 );
+                const ScalarT tau_q = supg_tau< ScalarT >( vel_norm_q, diffusivity_, h, 1e-08 );
 
                 // quadrature weight for this point (if you have weights)
                 const ScalarT wq = quad_weights[q]; // if not available, use 1.0
@@ -349,9 +345,11 @@ class UnsteadyAdvectionDiffusionSUPG
 
         if ( treat_boundary_ )
         {
-            const int at_cmb_boundary = util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell ), grid::shell::ShellBoundaryFlag::CMB );
-            const int at_surface_boundary =
-                util::has_flag( boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ), grid::shell::ShellBoundaryFlag::SURFACE );
+            const int at_cmb_boundary = util::has_flag(
+                boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell ), grid::shell::ShellBoundaryFlag::CMB );
+            const int at_surface_boundary = util::has_flag(
+                boundary_mask_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ),
+                grid::shell::ShellBoundaryFlag::SURFACE );
 
             for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
             {
