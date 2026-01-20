@@ -106,7 +106,7 @@ struct SolutionVelocityInterpolator
 
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
-                data_u_( local_subdomain_id, x, y, r, 0 ) = -4 * Kokkos::cos( 4 * cz );
+            data_u_( local_subdomain_id, x, y, r, 0 ) = -4 * Kokkos::cos( 4 * cz );
             data_u_( local_subdomain_id, x, y, r, 1 ) = 8 * Kokkos::cos( 8 * cx );
             data_u_( local_subdomain_id, x, y, r, 2 ) = -2 * Kokkos::cos( 2 * cy );
 
@@ -150,9 +150,15 @@ struct SolutionPressureInterpolator
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
 
+        const double cx = coords( 0 );
+        const double cy = coords( 1 );
+        const double cz = coords( 2 );
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
-            data_p_( local_subdomain_id, x, y, r ) = 0.0;
+            // data_p_( local_subdomain_id, x, y, r ) = 0.0;
+
+            data_p_( local_subdomain_id, x, y, r ) =
+                Kokkos::sin( 4 * cx ) * Kokkos::sin( 8 * cy ) * Kokkos::sin( 2 * cz );
         }
     }
 };
@@ -187,6 +193,21 @@ struct RHSVelocityInterpolator
         const double cy = coords( 1 );
         const double cz = coords( 2 );
 
+        const double x0 = 4 * coords( 2 );
+
+        data_( local_subdomain_id, x, y, r, 0 ) =
+            -64.0 * ( Kokkos::sin( coords( 2 ) ) + 2 ) * Kokkos::cos( x0 ) -
+            16.0 * Kokkos::sin( x0 ) * Kokkos::cos( coords( 2 ) ) +
+            4 * Kokkos::sin( 8 * coords( 1 ) ) * Kokkos::sin( 2 * coords( 2 ) ) * Kokkos::cos( 4 * coords( 0 ) );
+        data_( local_subdomain_id, x, y, r, 1 ) =
+            512.0 * ( Kokkos::sin( coords( 2 ) ) + 2 ) * Kokkos::cos( 8 * coords( 0 ) ) +
+            8 * Kokkos::sin( 4 * coords( 0 ) ) * Kokkos::sin( 2 * coords( 2 ) ) * Kokkos::cos( 8 * coords( 1 ) ) -
+            4.0 * Kokkos::sin( 2 * coords( 1 ) ) * Kokkos::cos( coords( 2 ) );
+        data_( local_subdomain_id, x, y, r, 2 ) =
+            -8.0 * ( Kokkos::sin( coords( 2 ) ) + 2 ) * Kokkos::cos( 2 * coords( 1 ) ) +
+            2 * Kokkos::sin( 4 * coords( 0 ) ) * Kokkos::sin( 8 * coords( 1 ) ) * Kokkos::cos( 2 * coords( 2 ) );
+
+        /*
         {
             const double x0  = Kokkos::pow( cy, 3 );
             const double x1  = Kokkos::pow( cx, 2 );
@@ -215,6 +236,7 @@ struct RHSVelocityInterpolator
                    2.0 * x3 * x4 + 2.0 * x4 * x7 * x8;
         }
         data_( local_subdomain_id, x, y, r, 2 ) = 0;
+        */
     }
 };
 
@@ -517,12 +539,24 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         stok_vecs["tmp_1"],
         stok_vecs["f"],
         boundary_mask_data[velocity_level],
-        SURFACE);
-    //    BOUNDARY );
+        SURFACE );
+    //BOUNDARY );
 
     fe::strong_algebraic_freeslip_enforcement_in_place(
         stok_vecs["f"], coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
+    fe::strong_algebraic_freeslip_enforcement_in_place(
+        u, coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
+    
+    //terra::linalg::trafo::cartesian_to_normal_tangential_in_place< ScalarType, ScalarType >(
+    //    u.block_1(), coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
 
+  
+    io::XDMFOutput xdmf(
+        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
+    xdmf.add( stok_vecs["f"].block_1().grid_data() );
+
+    //   xdmf.write();
+    //   exit(0);
     // Set up solvers.
 
     // Multigrid preconditioner for velocity block
@@ -649,6 +683,7 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     fgmres_options.relative_residual_tolerance                 = 1e-13;
     auto                                          solver_table = std::make_shared< util::Table >();
     linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
+    //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, fgmres_options, solver_table );
 
     std::cout << "Solve ... " << std::endl;
     assign( u, 0 );
@@ -656,6 +691,9 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
     solver_table->query_rows_equals( "tag", "fgmres_solver" )
         .select_columns( { "absolute_residual", "relative_residual", "iteration" } )
         .print_pretty();
+
+    //terra::linalg::trafo::normal_tangential_to_cartesian_in_place< ScalarType, ScalarType >(
+    //    u.block_1(), coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
 
     const double avg_pressure_solution =
         kernels::common::masked_sum(
@@ -691,28 +729,45 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
           { "h_vel", ( r_max - r_min ) / std::pow( 2, velocity_level ) },
           { "h_p", ( r_max - r_min ) / std::pow( 2, pressure_level ) } } );
 
-    io::XDMFOutput xdmf(
-        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
     xdmf.add( k.grid_data() );
     xdmf.add( u.block_1().grid_data() );
     xdmf.add( solution.block_1().grid_data() );
 
     xdmf.write();
 
-    // output normals
+    // output normals< ScalarType, ScalarType >
     // trafo velocity solution to nt space
     terra::linalg::trafo::cartesian_to_normal_tangential_in_place< ScalarType, ScalarType >(
         u.block_1(), coords_shell[velocity_level], boundary_mask_data[velocity_level], CMB );
+
     // extract normal component to array
-    VectorQ1Scalar< ScalarType > normals( "normals", domains[velocity_level], mask_data[velocity_level] );
-    terra::kernels::common::extract_vector_component( normals.grid_data(), u.block_1().grid_data(), 0 );
     // write normale component over radial profiles
-    auto radii     = domains[velocity_level].domain_info().radii();
-    auto rprofiles = terra::shell::radial_profiles(
+    auto radii = domains[velocity_level].domain_info().radii();
+
+    VectorQ1Scalar< ScalarType > normals( "normals", domains[velocity_level], mask_data[velocity_level] );
+    VectorQ1Scalar< ScalarType > t1( "t1", domains[velocity_level], mask_data[velocity_level] );
+    VectorQ1Scalar< ScalarType > t2( "t2", domains[velocity_level], mask_data[velocity_level] );
+    terra::kernels::common::extract_vector_component( normals.grid_data(), u.block_1().grid_data(), 0 );
+    terra::kernels::common::extract_vector_component( t1.grid_data(), u.block_1().grid_data(), 1 );
+    terra::kernels::common::extract_vector_component( t2.grid_data(), u.block_1().grid_data(), 2 );
+
+    auto rprofiles_normals = terra::shell::radial_profiles(
         normals, subdomain_shell_idx( domains[velocity_level] ), domains[velocity_level].domain_info().radii().size() );
-    auto          normaltable = terra::shell::radial_profiles_to_table( rprofiles, radii );
-    std::ofstream out( "normal_radial_profiles.csv" );
-    normaltable.print_csv( out );
+    auto          table_normals = terra::shell::radial_profiles_to_table( rprofiles_normals, radii );
+    std::ofstream out_n( "normal_radial_profiles.csv" );
+    table_normals.print_csv( out_n );
+
+    auto rprofiles_t1 = terra::shell::radial_profiles(
+        t1, subdomain_shell_idx( domains[velocity_level] ), domains[velocity_level].domain_info().radii().size() );
+    auto          table_t1 = terra::shell::radial_profiles_to_table( rprofiles_t1, radii );
+    std::ofstream out_t1( "t1_radial_profiles.csv" );
+    table_t1.print_csv( out_t1 );
+
+    auto rprofiles_t2 = terra::shell::radial_profiles(
+        t2, subdomain_shell_idx( domains[velocity_level] ), domains[velocity_level].domain_info().radii().size() );
+    auto          table_t2 = terra::shell::radial_profiles_to_table( rprofiles_t2, radii );
+    std::ofstream out_t2( "t2_radial_profiles.csv" );
+    table_t2.print_csv( out_t2 );
 
     return {
         l2_error_velocity, l2_error_pressure, solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() };
@@ -731,7 +786,7 @@ int main( int argc, char** argv )
 
     std::cout << "minlevel = " << minlevel << std::endl;
 
-    for ( int level = minlevel + 1; level <= max_level; ++level )
+    for ( int level = max_level; level <= max_level; ++level )
     {
         std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;
