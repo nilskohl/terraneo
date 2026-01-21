@@ -242,34 +242,113 @@ f_p
 \f]
 and a lifting vector \f$g\f$ (with non-zero entries on the Dirichlet boundary nodes in the velocity component).
 In this definition, we explicitly allow for non-symmetric versions of \f$K\f$ due to the possible compressibility of the
-fluid. 
+fluid.
 
 The treatment of the RHS vector, i.e., the computation of \f$b_\mathrm{elim}\f$, works just as in the Poisson-like
-case. Note that although only velocity components are prescribed, the elimination may also alter the values in the 
+case. Note that although only velocity components are prescribed, the elimination may also alter the values in the
 pressure component of the RHS.
 
 We perform the steps just as above:
+
 1. \f$ g_K \gets K g \f$,
 2. \f$ g_D \gets \mathrm{diag}(K) g \f$,
 3. \f$ b_\text{elim} \gets b - g_K \f$,
 4. \f$ b_{\text{elim},d} \gets g_D \f$, i.e., setting the RHS \f$ b_\mathrm{elim} \f$ to \f$ g_D \f$ at the boundary
    nodes (only velocity components are prescribed).
 
-The other subtlety is that of course the elimination process must also be carried out on the gradient and 
+The other subtlety is that of course the elimination process must also be carried out on the gradient and
 divergence-like operators \f$B\f$ and \f$C\f$. Specifically, we need to zero out rows in \f$B\f$ and columns in \f$C\f$
 corresponding to the boundary nodes. Just as in the Poisson-like case, this can be realized on-the-fly in a matrix-free
 context.
 
 ## Plate boundaries
 
-Plate boundary conditions are just Dirichlet boundary conditions for the velocity on the plate surface. 
+Plate boundary conditions are just Dirichlet boundary conditions for the velocity on the plate surface.
 Nothing special here from the algebraic point of view. Refer to the Stokes-like case above.
 
 ## Free-slip
 
-Free-slip boundary conditions model fluid flow in which the velocity components at a boundary are not constrained in 
-the tangential direction, while normal velocity is fixed to zero. 
+Free-slip boundary conditions model fluid flow in which the velocity components at a boundary are not constrained in
+the tangential direction, while the normal velocity is fixed to zero.
 
-🏗️ TODO
+Concretely, at free-slip boundaries, we want to enforce the following condition:
+\f[
+\begin{aligned}
+u_n &= 0, &\qquad \text{no normal flow} \\
+(\sigma n)_t &= 0 &\qquad \text{no tangential stress}
+\end{aligned}
+\f]
+where \f$u_n\f$ is the velocity component in the normal direction, and
+\f[
+\sigma = 2 \eta \dot \varepsilon(u) - p I
+\f]
+with
+\f[
+\dot \varepsilon (u) = \frac{1}{2}(\nabla u + (\nabla u)^T).
+\f]
+
+To implement the free-slip boundary condition, we only enforce the first condition on the velocity component in the
+normal direction, since the second one is naturally satisfied by the weak formulation.
+
+Let's look at the simple case of the isoviscous Stokes system:
+\f[
+\begin{aligned}
+
+- \Delta u + \nabla p &= 0, \\
+  \nabla \cdot u &= 0
+  \end{aligned}
+  \f]
+
+Multiplying the momentum equation by a test function \f$ v \f$ and integrating by parts yields
+\f[
+\int_{\Omega} \nabla u : \nabla v - \int_{\Omega} p \nabla \cdot v - \int_{\partial \Omega} (\partial_n u - pn) \cdot v = 0.
+\f]
+Since we impose \f$u \cdot n = 0\f$ we also have vanishing normal components of the test functions, i.e.,
+\f$v \cdot n = 0\f$,
+and therefore on the free-slip boundary
+\f[
+(\partial_n u - pn) \cdot v_t = (\partial_n u)_t \cdot v_t
+\f]
+because \f$n \cdot v_t = 0\f$.
+Since we prescribe no tangential traction, the weak formulation drops that boundary term and thus enforces that the
+traction is really 0.
+
+### Implementation
+
+\note See \ref terra::fe::strong_algebraic_freeslip_enforcement_in_place for a helper function that sets up the 
+right-hand side.
+
+We implement the free-slip condition by only strongly imposing zero normal flow at the boundary.
+To do this, the implementation follows the idea of Engelman (1982): "The implementation of normal and/or tangential
+boundary conditions in finite element codes for incompressible fluid flow".
+The imposition is accomplished by pre- and post-multiplication of the entire linear system with rotation matrices
+that transform between the canonical and a local normal-tangential coordinate system.
+In that latter coordinate system, we can modify the normal velocity component directly.
+Let \f$R\f$ be the rotation matrix that transforms from the canonical to the local normal-tangential coordinate system,
+and \f$R^{-1} = R^T\f$ the inverse. Then, the modified Stokes system reads
+\f[
+\begin{pmatrix}
+RAR^T & RB^T \\
+BR^T & 0
+\end{pmatrix}
+\begin{pmatrix}
+Ru \\
+p
+\end{pmatrix} =
+\begin{pmatrix}
+Rf_u \\
+f_p
+\end{pmatrix}
+\f]
+Note that this system is equivalent to the original Stokes system. However, we can now easily access the normal velocity
+components of the vectors and therefore eliminate them strongly, just as in the sections above.
+Particularly, we want to set them to zero.
+
+For efficiency, the rotations are only executed at the boundary nodes. So, technically \f$R\f$ is a block-diagonal
+matrix
+with blocks of size \f$3\times 3\f$ that are either the local rotation matrices or identity matrices.
+
+To enhance usability, the rotation of \f$ u \f$ is executed on-the-fly in a matrix-free context, such that before and
+after the solution step, the solution vector \f$ u \f$ is stored in canonical coordinates.
 
 

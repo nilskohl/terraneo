@@ -6,9 +6,19 @@
 
 namespace terra::fe {
 
-/// TODO: Function that
-///         1. rotates the passed "Neumann" RHS Stokes vector at the freeslip boundary (in place would be great)
-///         2. zeroes all normal components of the velocity part
+/// @brief Helper function to modify the right-hand side vector accordingly for strong free-slip boundary condition
+/// enforcement.
+///
+/// \note The framework documentation features [a detailed description](#boundary-conditions)
+/// of the strong imposition of free-slip boundary conditions.
+///
+/// @param b [in/out] RHS coefficient vector before boundary elimination (but including forcing etc.) - will be modified
+/// in this function to impose the free-slip BCs (after the function returns, this is what is called \f$b_\mathrm{elim}\f$
+/// in the documentation)
+/// @param coords_shell the coordinates of the unit shell, obtained e.g. via
+/// @ref terra::grid::shell::subdomain_unit_sphere_single_shell_coords
+/// @param mask_data the boundary mask data
+/// @param freeslip_boundary_mask the flag that indicates where to apply the conditions
 template < typename ScalarType, typename ScalarTypeGrid, util::FlagLike FlagType >
 void strong_algebraic_freeslip_enforcement_in_place(
     linalg::VectorQ1IsoQ2Q1< ScalarType >&          b,

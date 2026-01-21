@@ -648,7 +648,7 @@ class XDMFOutput
         {
             if ( !host_data_mirror_scalar_double_.has_value() )
             {
-                host_data_mirror_scalar_double_ = Kokkos::create_mirror_view( Kokkos::HostSpace{}, device_data );
+                host_data_mirror_scalar_double_ = Kokkos::create_mirror( Kokkos::HostSpace{}, device_data );
             }
 
             Kokkos::deep_copy( host_data_mirror_scalar_double_.value(), device_data );
@@ -674,7 +674,7 @@ class XDMFOutput
         {
             if ( !host_data_mirror_scalar_float_.has_value() )
             {
-                host_data_mirror_scalar_float_ = Kokkos::create_mirror_view( Kokkos::HostSpace{}, device_data );
+                host_data_mirror_scalar_float_ = Kokkos::create_mirror( Kokkos::HostSpace{}, device_data );
             }
 
             Kokkos::deep_copy( host_data_mirror_scalar_float_.value(), device_data );
@@ -765,7 +765,7 @@ class XDMFOutput
         {
             if ( !host_data_mirror_vec_double_.has_value() )
             {
-                host_data_mirror_vec_double_ = Kokkos::create_mirror_view( Kokkos::HostSpace{}, device_data );
+                host_data_mirror_vec_double_ = Kokkos::create_mirror( Kokkos::HostSpace{}, device_data );
             }
 
             Kokkos::deep_copy( host_data_mirror_vec_double_.value(), device_data );
@@ -795,7 +795,7 @@ class XDMFOutput
         {
             if ( !host_data_mirror_vec_float_.has_value() )
             {
-                host_data_mirror_vec_float_ = Kokkos::create_mirror_view( Kokkos::HostSpace{}, device_data );
+                host_data_mirror_vec_float_ = Kokkos::create_mirror( Kokkos::HostSpace{}, device_data );
             }
 
             Kokkos::deep_copy( host_data_mirror_vec_float_.value(), device_data );
@@ -1372,8 +1372,7 @@ template < typename GridDataType >
 
     // Now write from buffer to grid.
 
-    typename GridDataType::HostMirror grid_data_host =
-        Kokkos::create_mirror_view( Kokkos::HostSpace{}, grid_data_device );
+    typename GridDataType::HostMirror grid_data_host = Kokkos::create_mirror( Kokkos::HostSpace{}, grid_data_device );
 
     const auto checkpoint_is_float =
         requested_grid_data_file.value().scalar_data_type == 2 && requested_grid_data_file.value().scalar_bytes == 4;
