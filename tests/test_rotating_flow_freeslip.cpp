@@ -110,7 +110,7 @@ struct SolutionVelocityInterpolator
             data_u_( local_subdomain_id, x, y, r, 1 ) = 8 * Kokkos::cos( 8 * cx );
             data_u_( local_subdomain_id, x, y, r, 2 ) = -2 * Kokkos::cos( 2 * cy );
 
-            /*
+           /* 
             data_u_( local_subdomain_id, x, y, r, 0 ) =
                 -cy *
                 ( Kokkos::pow(
@@ -155,7 +155,7 @@ struct SolutionPressureInterpolator
         const double cz = coords( 2 );
         if ( !only_boundary_ || ( r == 0 || r == radii_.extent( 1 ) - 1 ) )
         {
-            // data_p_( local_subdomain_id, x, y, r ) = 0.0;
+            //data_p_( local_subdomain_id, x, y, r ) = 0.0;
 
             data_p_( local_subdomain_id, x, y, r ) =
                 Kokkos::sin( 4 * cx ) * Kokkos::sin( 8 * cy ) * Kokkos::sin( 2 * cz );
@@ -193,6 +193,7 @@ struct RHSVelocityInterpolator
         const double cy = coords( 1 );
         const double cz = coords( 2 );
 
+        
         const double x0 = 4 * coords( 2 );
 
         data_( local_subdomain_id, x, y, r, 0 ) =
@@ -207,7 +208,7 @@ struct RHSVelocityInterpolator
             -8.0 * ( Kokkos::sin( coords( 2 ) ) + 2 ) * Kokkos::cos( 2 * coords( 1 ) ) +
             2 * Kokkos::sin( 4 * coords( 0 ) ) * Kokkos::sin( 8 * coords( 1 ) ) * Kokkos::cos( 2 * coords( 2 ) );
 
-        /*
+/*        
         {
             const double x0  = Kokkos::pow( cy, 3 );
             const double x1  = Kokkos::pow( cx, 2 );
@@ -236,7 +237,7 @@ struct RHSVelocityInterpolator
                    2.0 * x3 * x4 + 2.0 * x4 * x7 * x8;
         }
         data_( local_subdomain_id, x, y, r, 2 ) = 0;
-        */
+     */   
     }
 };
 
@@ -786,7 +787,7 @@ int main( int argc, char** argv )
 
     std::cout << "minlevel = " << minlevel << std::endl;
 
-    for ( int level = max_level; level <= max_level; ++level )
+    for ( int level = minlevel + 1; level <= max_level; ++level )
     {
         std::cout << "level = " << level << std::endl;
         Kokkos::Timer timer;

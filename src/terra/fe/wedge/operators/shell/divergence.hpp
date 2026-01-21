@@ -261,10 +261,7 @@ class Divergence
                             r_cell + ( at_cmb ? 0 : 1 ),
                             grid_fine_,
                             radii_ );
-                        if ( at_cmb )
-                        {
-                            normal = { -normal( 0 ), -normal( 1 ), -normal( 2 ) };
-                        }
+                      
 
                         // compute rotation matrix for DoFs on current node
                         auto R_i = trafo_mat_cartesian_to_normal_tangential( normal );
