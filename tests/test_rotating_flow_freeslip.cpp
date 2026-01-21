@@ -58,6 +58,7 @@ using grid::shell::BoundaryConditionFlag::NEUMANN;
 using grid::shell::ShellBoundaryFlag::BOUNDARY;
 using grid::shell::ShellBoundaryFlag::CMB;
 using grid::shell::ShellBoundaryFlag::SURFACE;
+using terra::grid::shell::BoundaryConditions;
 using linalg::DiagonallyScaledOperator;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
@@ -65,7 +66,6 @@ using linalg::VectorQ1Vec;
 using linalg::solvers::DiagonalSolver;
 using linalg::solvers::power_iteration;
 using linalg::solvers::TwoGridGCA;
-using terra::grid::shell::BoundaryConditions;
 
 struct SolutionVelocityInterpolator
 {
