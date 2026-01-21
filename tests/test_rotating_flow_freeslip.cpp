@@ -412,7 +412,6 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         boundary_mask_data[velocity_level],
         k.grid_data(),
         bcs,
-        true,
         false );
 
     Stokes K_neumann(
@@ -423,7 +422,6 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         boundary_mask_data[velocity_level],
         k.grid_data(),
         bcs_neumann,
-        false,
         false );
 
     Stokes K_neumann_diag(
@@ -434,7 +432,6 @@ std::tuple< double, double, int > test( int min_level, int max_level, const std:
         boundary_mask_data[velocity_level],
         k.grid_data(),
         bcs_neumann,
-        false,
         true );
 
     ViscousMass M( domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], false );

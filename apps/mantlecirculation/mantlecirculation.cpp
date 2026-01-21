@@ -57,6 +57,13 @@ using util::logroot;
 using util::Ok;
 using util::Result;
 
+using grid::shell::BoundaryConditions;
+using grid::shell::BoundaryConditionFlag::DIRICHLET;
+using grid::shell::BoundaryConditionFlag::FREESLIP;
+using grid::shell::BoundaryConditionFlag::NEUMANN;
+using grid::shell::ShellBoundaryFlag::BOUNDARY;
+using grid::shell::ShellBoundaryFlag::CMB;
+using grid::shell::ShellBoundaryFlag::SURFACE;
 struct InitialConditionInterpolator
 {
     ScalarType                                         r_min_;
@@ -388,6 +395,15 @@ Result<> run( const Parameters& prm )
     using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
     using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
 
+    BoundaryConditions bcs = {
+        { CMB, DIRICHLET },
+        { SURFACE, DIRICHLET },
+    };
+    BoundaryConditions bcs_neumann = {
+        { CMB, NEUMANN },
+        { SURFACE, NEUMANN },
+    };
+
     Stokes K(
         domains[velocity_level],
         domains[pressure_level],
@@ -395,7 +411,7 @@ Result<> run( const Parameters& prm )
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         eta[velocity_level].grid_data(),
-        true,
+        bcs,
         false );
 
     Stokes K_neumann(
@@ -405,7 +421,7 @@ Result<> run( const Parameters& prm )
         coords_radii[velocity_level],
         boundary_mask_data[velocity_level],
         eta[velocity_level].grid_data(),
-        false,
+        bcs_neumann,
         false );
 
     ViscousMass M( domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], false );
@@ -426,7 +442,7 @@ Result<> run( const Parameters& prm )
             coords_radii[level],
             boundary_mask_data[level],
             eta[level].grid_data(),
-            true,
+            bcs,
             false );
         if ( gca == 2 )
         {

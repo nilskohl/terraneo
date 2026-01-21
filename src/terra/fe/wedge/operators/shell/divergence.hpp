@@ -11,6 +11,7 @@
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 #include "util/timer.hpp"
+#include "linalg/trafo/local_basis_trafo_normal_tangential.hpp"
 
 namespace terra::fe::wedge::operators::shell {
 

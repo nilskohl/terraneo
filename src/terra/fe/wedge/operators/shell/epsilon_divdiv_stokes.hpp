@@ -45,7 +45,6 @@ class EpsDivDivStokes
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
         const grid::Grid4DDataScalar< ScalarType >&                     k,
         BoundaryConditions                                              bcs,
-        bool                                                            treat_boundary,
         bool                                                            diagonal )
     : A_( domain_fine, grid, radii, mask, k, bcs, diagonal )
     , B_T_( domain_fine, domain_coarse, grid, radii, mask, bcs )
