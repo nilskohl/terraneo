@@ -85,13 +85,10 @@ class EpsilonDivDivKerngen
     , radii_( radii )
     , mask_( mask )
     , k_( k )
-    //, treat_boundary_( treat_boundary )
-    // , bcs_( bcs )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
     , operator_stored_matrix_mode_( operator_stored_matrix_mode )
-    // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain )
     , recv_buffers_( domain )
     {
