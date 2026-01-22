@@ -26,6 +26,12 @@ using fe::wedge::operators::shell::Laplace;
 using fe::wedge::operators::shell::LaplaceSimple;
 using fe::wedge::operators::shell::Stokes;
 using fe::wedge::operators::shell::VectorLaplaceSimple;
+using grid::shell::BoundaryConditionFlag::DIRICHLET;
+using grid::shell::BoundaryConditionFlag::FREESLIP;
+using grid::shell::BoundaryConditionFlag::NEUMANN;
+using grid::shell::ShellBoundaryFlag::BOUNDARY;
+using grid::shell::ShellBoundaryFlag::CMB;
+using grid::shell::ShellBoundaryFlag::SURFACE;
 using linalg::apply;
 using linalg::DstOf;
 using linalg::OperatorLike;
@@ -33,6 +39,7 @@ using linalg::SrcOf;
 using linalg::VectorQ1IsoQ2Q1;
 using linalg::VectorQ1Scalar;
 using linalg::VectorQ1Vec;
+using terra::grid::shell::BoundaryConditions;
 using util::logroot;
 
 enum class BenchmarkType : int
@@ -174,7 +181,10 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     linalg::randomize( src_vec_float );
     linalg::randomize( src_stokes_double );
     linalg::randomize( src_stokes_float );
-
+    BoundaryConditions bcs = {
+        { CMB, DIRICHLET },
+        { SURFACE, DIRICHLET },
+    };
     double duration = 0.0;
     long   dofs     = 0;
     if ( benchmark == BenchmarkType::LaplaceFloat )
@@ -246,7 +256,7 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
             coords_radii_double,
             boundary_mask_data,
             coeff_double.grid_data(),
-            true,
+            bcs,
             false );
         util::Timer t( "EpsDivDiv - double" );
         duration = measure_run_time( executions, A, src_vec_double, dst_vec_double );
@@ -255,7 +265,7 @@ BenchmarkData run( const BenchmarkType benchmark, const int level, const int exe
     else if ( benchmark == BenchmarkType::StokesDouble )
     {
         Stokes< double > A(
-            domain, domain_coarse, coords_shell_double, coords_radii_double, boundary_mask_data, true, false );
+            domain, domain_coarse, coords_shell_double, coords_radii_double, boundary_mask_data, bcs, false );
         duration = measure_run_time( executions, A, src_stokes_double, dst_stokes_double );
         dofs     = dofs_stokes;
     }

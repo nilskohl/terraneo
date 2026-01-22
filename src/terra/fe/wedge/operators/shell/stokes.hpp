@@ -41,11 +41,11 @@ class Stokes
         const grid::Grid3DDataVec< ScalarType, 3 >&                     grid,
         const grid::Grid2DDataScalar< ScalarType >&                     radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& boundary_mask_data_fine,
-        bool                                                            treat_boundary,
+        BoundaryConditions                                              bcs,
         bool                                                            diagonal )
-    : A_( domain_fine, grid, radii, boundary_mask_data_fine, treat_boundary, diagonal )
-    , B_T_( domain_fine, domain_coarse, grid, radii, boundary_mask_data_fine, treat_boundary )
-    , B_( domain_fine, domain_coarse, grid, radii, boundary_mask_data_fine, treat_boundary )
+     : A_( domain_fine, grid, radii, boundary_mask_data_fine, bcs, diagonal )
+    , B_T_( domain_fine, domain_coarse, grid, radii, boundary_mask_data_fine, bcs )
+    , B_( domain_fine, domain_coarse, grid, radii, boundary_mask_data_fine, bcs )
     , diagonal_( diagonal )
     {}
 

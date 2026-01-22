@@ -12,6 +12,7 @@
 #include "util/timer.hpp"
 #include "zero.hpp"
 
+using terra::grid::shell::BoundaryConditions;
 namespace terra::fe::wedge::operators::shell {
 
 template < typename ScalarT, int VecDim = 3 >
@@ -43,11 +44,11 @@ class EpsDivDivStokes
         const grid::Grid2DDataScalar< ScalarType >&                     radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
         const grid::Grid4DDataScalar< ScalarType >&                     k,
-        bool                                                            treat_boundary,
+        BoundaryConditions                                              bcs,
         bool                                                            diagonal )
-    : A_( domain_fine, grid, radii, mask, k, treat_boundary, diagonal )
-    , B_T_( domain_fine, domain_coarse, grid, radii, mask, treat_boundary )
-    , B_( domain_fine, domain_coarse, grid, radii, mask, treat_boundary )
+    : A_( domain_fine, grid, radii, mask, k, bcs, diagonal )
+    , B_T_( domain_fine, domain_coarse, grid, radii, mask, bcs )
+    , B_( domain_fine, domain_coarse, grid, radii, mask, bcs )
     , diagonal_( diagonal )
     {}
 

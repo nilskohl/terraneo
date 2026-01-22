@@ -8,11 +8,25 @@
 #include "fe/wedge/kernel_helpers.hpp"
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/operator.hpp"
+#include "terra/grid/grid_types.hpp"
+#include "grid/shell/bit_masks.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
 #include "util/timer.hpp"
 
+
 namespace terra::fe::wedge::operators::shell {
+
+
+using grid::shell::BoundaryConditions;
+using grid::shell::BoundaryConditionFlag::DIRICHLET;
+using grid::shell::BoundaryConditionFlag::FREESLIP;
+using grid::shell::BoundaryConditionFlag::NEUMANN;
+using grid::shell::ShellBoundaryFlag::BOUNDARY;
+using grid::shell::ShellBoundaryFlag::CMB;
+using grid::shell::ShellBoundaryFlag::SURFACE;
+using grid::shell::ShellBoundaryFlag;
+using grid::shell::BoundaryConditionFlag;
 
 template < typename ScalarT, int VecDim = 3 >
 class VectorLaplace
@@ -29,8 +43,8 @@ class VectorLaplace
     grid::Grid2DDataScalar< ScalarT >                        radii_;
     grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > boundary_mask_data_;
 
-    bool treat_boundary_;
-    bool diagonal_;
+    BoundaryConditions bcs_;
+    bool               diagonal_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
@@ -47,7 +61,7 @@ class VectorLaplace
         const grid::Grid3DDataVec< ScalarT, 3 >&                        grid,
         const grid::Grid2DDataScalar< ScalarT >&                        radii,
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& boundary_mask_data,
-        bool                                                            treat_boundary,
+        BoundaryConditions                                              bcs,
         bool                                                            diagonal,
         linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
         linalg::OperatorCommunicationMode operator_communication_mode =
@@ -56,14 +70,16 @@ class VectorLaplace
     , grid_( grid )
     , radii_( radii )
     , boundary_mask_data_( boundary_mask_data )
-    , treat_boundary_( treat_boundary )
     , diagonal_( diagonal )
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
     // TODO: we can reuse the send and recv buffers and pass in from the outside somehow
     , send_buffers_( domain )
     , recv_buffers_( domain )
-    {}
+    {
+        bcs_[0] = bcs[0];
+        bcs_[1] = bcs[1];
+    }
 
     void set_operator_apply_and_communication_modes(
         const linalg::OperatorApplyMode         operator_apply_mode,
@@ -174,29 +190,34 @@ class VectorLaplace
                     grad_phy[k] = J_inv_transposed * grad_shape( k, quad_point );
                 }
 
+                ShellBoundaryFlag     sbf = util::has_flag(
+                                            boundary_mask_data_( local_subdomain_id, x_cell, y_cell, r_cell ),
+                                            grid::shell::ShellBoundaryFlag::CMB ) ?
+                                                CMB :
+                                                SURFACE;
+                BoundaryConditionFlag bcf = get_boundary_condition_flag( bcs_, sbf );
+
                 if ( diagonal_ )
                 {
                     diagonal( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else if (
-                    treat_boundary_ && util::has_flag(
-                                           boundary_mask_data_( local_subdomain_id, x_cell, y_cell, r_cell ),
-                                           grid::shell::ShellBoundaryFlag::CMB ) )
+                else if ( sbf == CMB && bcf == DIRICHLET )
                 {
                     // Bottom boundary dirichlet
                     dirichlet_bot( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else if (
-                    treat_boundary_ && util::has_flag(
-                                           boundary_mask_data_( local_subdomain_id, x_cell, y_cell, r_cell + 1 ),
-                                           grid::shell::ShellBoundaryFlag::SURFACE ) )
+                else if ( sbf == SURFACE && bcf == DIRICHLET )
                 {
                     // Top boundary dirichlet
                     dirichlet_top( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
                 }
-                else
+                else if ( bcf == NEUMANN )
                 {
                     neumann( src_local_hex, dst_local_hex, wedge, quad_weight, abs_det, grad_phy );
+                }
+                else
+                {
+                    Kokkos::abort( "Unexpected." );
                 }
             }
         }
