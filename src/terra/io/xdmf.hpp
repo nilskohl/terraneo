@@ -104,6 +104,7 @@ namespace terra::io {
 /// subdomain_size_y:                             i32
 /// subdomain_size_r:                             i32
 /// radii:                                        array: f64, entries: num_subdomains_per_diamond_radial_direction * (subdomain_size_r - 1) + 1
+/// grid_scalar_bytes                             i32 // new in checkpoint version 1, number of float bytes for writing the grid (4 or 8 byte float)
 /// num_grid_data_files:                          i32
 /// list (size = num_grid_data_files)
 /// [
@@ -899,7 +900,7 @@ class XDMFOutput
             checkpoint_metadata_stream.write( reinterpret_cast< const char* >( &value ), sizeof( double ) );
         };
 
-        write_i32( 0 ); // version
+        write_i32( 1 ); // version
         write_i32( distributed_domain_.domain_info().num_subdomains_per_diamond_side() );
         write_i32( distributed_domain_.domain_info().num_subdomains_in_radial_direction() );
 
@@ -911,6 +912,8 @@ class XDMFOutput
         {
             write_f64( static_cast< double >( r ) );
         }
+
+        write_i32( static_cast< int32_t >( output_type_points_ ) );
 
         write_i32(
             device_data_views_scalar_float_.size() + device_data_views_scalar_double_.size() +
@@ -1099,6 +1102,8 @@ struct CheckpointMetadata
 
     std::vector< double > radii;
 
+    int32_t grid_scalar_bytes{};
+
     struct GridDataFile
     {
         std::string grid_name_string;
@@ -1199,6 +1204,13 @@ struct CheckpointMetadata
         metadata.radii.push_back( r );
     }
 
+    if ( metadata.version > 0 )
+    {
+        // new in version 1: number of bytes for grid points data
+        if ( read_i32( metadata.grid_scalar_bytes ) )
+            return read_error;
+    }
+
     int32_t num_grid_data_files;
     if ( read_i32( num_grid_data_files ) )
         return read_error;
@@ -1270,9 +1282,11 @@ template < typename GridDataType >
 
     const auto& checkpoint_metadata = checkpoint_metadata_result.unwrap();
 
-    if ( checkpoint_metadata.version != 0 )
+    if ( !( checkpoint_metadata.version == 0 || checkpoint_metadata.version == 1 ) )
     {
-        return { "Checkpoint version other than 0 is not supported." };
+        return {
+            "Supported checkpoint verions: 0, 1. This checkpoint has version " +
+            std::to_string( checkpoint_metadata.version ) + "." };
     }
 
     // Check whether we have checkpoint metadata for the requested data label.
