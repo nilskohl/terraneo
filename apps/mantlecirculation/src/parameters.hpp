@@ -59,9 +59,9 @@ struct EnergySolverParameters
 struct TimeSteppingParameters
 {
     double pseudo_cfl = 0.5;
-    double t_end      = 1.0;
+    double t_end      = 5.0;
 
-    int max_timesteps = 10;
+    int max_timesteps = 50;
 
     int energy_substeps = 1;
 };

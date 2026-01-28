@@ -14,7 +14,9 @@ set(CMAKE_VERBOSE_MAKEFILE OFF)
 # Find Kokkos
 # find_package(Kokkos REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall ")
+
+option ( TERRANEO_BUILD_WITH_PYTHON3        "Build with PYTHON3"                                                        ON )
 
 find_package(MPI REQUIRED)
 if (MPI_FOUND)
@@ -59,3 +61,8 @@ add_custom_target(ci-subset
         test_laplace_multigrid
         test_epsilon_divdiv_stokes
         test_unsteady_advection_diffusion_supg)
+
+
+if( TERRANEO_BUILD_WITH_PYTHON3 )
+   find_package (Python3 COMPONENTS Interpreter Development)
+endif()
