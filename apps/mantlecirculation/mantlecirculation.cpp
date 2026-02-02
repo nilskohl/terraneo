@@ -310,7 +310,7 @@ Result<> run( const Parameters& prm )
 
     // determine AGCA elements
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], ownership_mask_data[0] );
-    int                          gca = 1;
+    int                          gca = 0;
     if ( gca == 2 )
     {
         linalg::assign( GCAElements, 0 );
