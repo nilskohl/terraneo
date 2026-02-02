@@ -43,7 +43,8 @@ struct StokesSolverParameters
     double krylov_relative_tolerance = 1e-6;
     double krylov_absolute_tolerance = 1e-12;
 
-    int viscous_pc_num_vcycles                 = 2;
+    int viscous_pc_num_vcycles                 = 1;
+    int viscous_pc_chebyshev_order             = 2;
     int viscous_pc_num_smoothing_steps_prepost = 2;
     int viscous_pc_num_power_iterations        = 10;
 };
@@ -201,6 +202,9 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
         ->group( "Stokes Solver" );
     add_option_with_default(
         app, "--stokes-viscous-pc-num-vcycles", parameters.stokes_solver_parameters.viscous_pc_num_vcycles )
+        ->group( "Stokes Solver" );
+    add_option_with_default(
+        app, "--stokes-viscous-pc-cheby-order", parameters.stokes_solver_parameters.viscous_pc_chebyshev_order )
         ->group( "Stokes Solver" );
     add_option_with_default(
         app,

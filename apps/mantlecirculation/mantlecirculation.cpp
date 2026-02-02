@@ -21,6 +21,7 @@
 #include "kokkos/kokkos_wrapper.hpp"
 #include "linalg/diagonally_scaled_operator.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
+#include "linalg/solvers/chebyshev.hpp"
 #include "linalg/solvers/diagonal_solver.hpp"
 #include "linalg/solvers/fgmres.hpp"
 #include "linalg/solvers/gca/gca.hpp"
@@ -344,12 +345,14 @@ Result<> run( const Parameters& prm )
     // Set up tmp vecs for multigrid preconditioner.
 
     std::vector< VectorQ1Vec< ScalarType > > tmp_mg;
+    std::vector< VectorQ1Vec< ScalarType > > tmp_mg_2;
     std::vector< VectorQ1Vec< ScalarType > > tmp_mg_r;
     std::vector< VectorQ1Vec< ScalarType > > tmp_mg_e;
 
     for ( int level = 0; level < num_levels; level++ )
     {
         tmp_mg.emplace_back( "tmp_mg_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
+        tmp_mg_2.emplace_back( "tmp_mg_2_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
         if ( level < num_levels - 1 )
         {
             tmp_mg_r.emplace_back( "tmp_mg_r_" + std::to_string( level ), domains[level], ownership_mask_data[level] );
@@ -466,7 +469,7 @@ Result<> run( const Parameters& prm )
     {
         for ( int level = num_levels - 2; level >= 0; level-- )
         {
-            logroot << "Assembling GCA on level " << level << std::endl;
+            logroot << "Assembling GCA on level " << prm.mesh_parameters.refinement_level_mesh_min + level << std::endl;
 
             TwoGridGCA< ScalarType, Viscous >(
                 ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1],
@@ -506,41 +509,25 @@ Result<> run( const Parameters& prm )
 
     // Multigrid preconditioner.
 
-    using Smoother = linalg::solvers::Jacobi< Viscous >;
+    logroot << "Setting up multigrid smoother ..." << std::endl;
+
+    using Smoother = linalg::solvers::Chebyshev< Viscous >;
 
     std::vector< Smoother > smoothers;
     smoothers.reserve( num_levels );
 
-    // Estimate relaxation rates on every level.
-    logroot << "Estimating ralaxation rates for Jacobi smoother for the viscous block on each level." << std::endl;
     for ( int level = 0; level < num_levels; level++ )
     {
-        VectorQ1Vec< ScalarType > tmp_pi_0(
-            "tmp_pi_0" + std::to_string( level ), domains[level], ownership_mask_data[level] );
-        VectorQ1Vec< ScalarType > tmp_pi_1(
-            "tmp_pi_1" + std::to_string( level ), domains[level], ownership_mask_data[level] );
-        double max_ev = 0.0;
-        if ( level == num_levels - 1 )
-        {
-            linalg::DiagonallyScaledOperator inv_diag_A( K.block_11(), inverse_diagonals[level] );
-            max_ev = linalg::solvers::power_iteration(
-                inv_diag_A, tmp_pi_0, tmp_pi_1, prm.stokes_solver_parameters.viscous_pc_num_power_iterations );
-        }
-        else
-        {
-            linalg::DiagonallyScaledOperator inv_diag_A( A_c[level], inverse_diagonals[level] );
-            max_ev = linalg::solvers::power_iteration(
-                inv_diag_A, tmp_pi_0, tmp_pi_1, prm.stokes_solver_parameters.viscous_pc_num_power_iterations );
-        }
-        const auto omega_opt = 2.0 / ( 1.1 * max_ev );
-
-        logroot << " + level " << level << ": " << omega_opt << std::endl;
+        std::vector< VectorQ1Vec< ScalarType > > smoother_tmps;
+        smoother_tmps.push_back( tmp_mg[level] );
+        smoother_tmps.push_back( tmp_mg_2[level] );
 
         smoothers.emplace_back(
+            prm.stokes_solver_parameters.viscous_pc_chebyshev_order,
             inverse_diagonals[level],
+            smoother_tmps,
             prm.stokes_solver_parameters.viscous_pc_num_smoothing_steps_prepost,
-            tmp_mg[level],
-            omega_opt );
+            prm.stokes_solver_parameters.viscous_pc_num_power_iterations );
     }
 
     logroot << "Setting up multigrid coarse grid solver ..." << std::endl;
@@ -729,8 +716,8 @@ Result<> run( const Parameters& prm )
         { "dofs_velocity", num_dofs_velocity },
         { "dofs_temperature", num_dofs_temperature },
         { "dofs_pressure", num_dofs_pressure },
-        { "level_velocity", velocity_level },
-        { "level_pressure", pressure_level },
+        { "level_velocity", prm.mesh_parameters.refinement_level_mesh_max },
+        { "level_pressure", prm.mesh_parameters.refinement_level_mesh_max - 1 },
     } );
 
     table->print_pretty();
