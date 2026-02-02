@@ -75,6 +75,9 @@ struct IOParameters
     std::string xdmf_dir                = "xdmf";
     std::string radial_profiles_out_dir = "radial_profiles";
     std::string timer_trees_dir         = "timer_trees";
+
+    std::string checkpoint_dir;
+    int         checkpoint_step = -1;
 };
 
 struct Parameters
@@ -223,6 +226,9 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
 
     add_option_with_default( app, "--outdir", parameters.io_parameters.outdir )->group( "I/O" );
     add_flag_with_default( app, "--outdir-overwrite", parameters.io_parameters.overwrite )->group( "I/O" );
+
+    add_option_with_default( app, "--checkpoint-dir", parameters.io_parameters.checkpoint_dir )->group( "I/O" );
+    add_option_with_default( app, "--checkpoint-step", parameters.io_parameters.checkpoint_step )->group( "I/O" );
 
     try
     {
