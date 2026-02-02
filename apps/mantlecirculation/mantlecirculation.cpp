@@ -241,7 +241,7 @@ Result<> run( const Parameters& prm )
 
     // Set up Stokes vectors for the finest grid.
 
-    constexpr std::string label_stokes = "u";
+    const std::string label_stokes = "u";
 
     std::map< std::string, VectorQ1IsoQ2Q1< ScalarType > > stok_vecs;
     std::vector< std::string >                             stok_vec_names = { label_stokes, "f", "tmp" };
@@ -363,7 +363,7 @@ Result<> run( const Parameters& prm )
 
     // Set up temperature and viscosity vectors.
 
-    constexpr std::string label_temperature = "T";
+    const std::string label_temperature = "T";
 
     std::map< std::string, VectorQ1Scalar< ScalarType > > temp_vecs;
     std::vector< std::string >                            temp_vec_names = { label_temperature, "q" };
