@@ -184,7 +184,11 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
     add_option_with_default( app, "--t-end", parameters.time_stepping_parameters.t_end )
         ->group( "Time Discretization" );
     add_option_with_default( app, "--max-timesteps", parameters.time_stepping_parameters.max_timesteps )
-        ->group( "Time Discretization" );
+        ->group( "Time Discretization" )
+        ->description(
+            "Simulation aborts when this time step index is reached. "
+            "If a checkpoint is loaded, the simulation will start at the next step after the loaded checkpoint. "
+            "This means the number of time steps executed might be smaller than what is passed in here." );
     add_option_with_default( app, "--energy-substeps", parameters.time_stepping_parameters.energy_substeps )
         ->group( "Time Discretization" );
 

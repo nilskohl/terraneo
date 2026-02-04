@@ -723,7 +723,21 @@ Result<> run( const Parameters& prm )
     table->print_pretty();
     table->clear();
 
-    if ( !prm.io_parameters.checkpoint_dir.empty() && prm.io_parameters.checkpoint_step >= 0 )
+    io::XDMFOutput xdmf_output(
+        prm.io_parameters.outdir + "/" + prm.io_parameters.xdmf_dir,
+        domains[velocity_level],
+        coords_shell[velocity_level],
+        coords_radii[velocity_level] );
+
+    xdmf_output.add( T.grid_data() );
+    xdmf_output.add( u.block_1().grid_data() );
+    xdmf_output.add( eta[velocity_level].grid_data() );
+
+    int timestep_start = 0;
+
+    const bool loading_checkpoint = !prm.io_parameters.checkpoint_dir.empty() && prm.io_parameters.checkpoint_step >= 0;
+
+    if ( loading_checkpoint )
     {
         logroot << "Loading checkpoint from " << prm.io_parameters.checkpoint_dir << " at step "
                 << prm.io_parameters.checkpoint_step << std::endl;
@@ -751,17 +765,18 @@ Result<> run( const Parameters& prm )
         {
             Kokkos::abort( success_temp.error().c_str() );
         }
+
+        if ( loading_checkpoint )
+        {
+            // Starting the time stepping from the next step after the loaded step.
+            timestep_start = prm.io_parameters.checkpoint_step + 1;
+
+            // Setting XDMF to the same step as we have loaded.
+            // Thus, we will now re-write the loaded data.
+            // Maybe a good sanity check.
+            xdmf_output.set_write_counter( prm.io_parameters.checkpoint_step );
+        }
     }
-
-    io::XDMFOutput xdmf_output(
-        prm.io_parameters.outdir + "/" + prm.io_parameters.xdmf_dir,
-        domains[velocity_level],
-        coords_shell[velocity_level],
-        coords_radii[velocity_level] );
-
-    xdmf_output.add( T.grid_data() );
-    xdmf_output.add( u.block_1().grid_data() );
-    xdmf_output.add( eta[velocity_level].grid_data() );
 
     logroot << "Writing initial XDMF ..." << std::endl;
 
@@ -783,7 +798,7 @@ Result<> run( const Parameters& prm )
 
     logroot << "Starting time stepping!" << std::endl;
 
-    for ( int timestep = 1; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
+    for ( int timestep = timestep_start; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
     {
         logroot << "\n### Timestep " << timestep << " ###" << std::endl;
 
