@@ -195,6 +195,12 @@ class XDMFOutput
         }
     }
 
+    /// @brief Set the write counter manually.
+    ///
+    /// This will only affect the step number attached to the file names. The geometry is still written once during the
+    /// first write() call.
+    void set_write_counter( int write_counter ) { write_counter_ = write_counter; }
+
     /// @brief Adds a new scalar data grid to be written out.
     ///
     /// Does not write any data to file yet - call write() for writing the next time step.
@@ -203,7 +209,7 @@ class XDMFOutput
         add( const grid::Grid4DDataScalar< InputScalarDataType >& data,
              const OutputTypeFloat                                output_type = OutputTypeFloat::Float32 )
     {
-        if ( write_counter_ != 0 )
+        if ( first_write_happened_ )
         {
             Kokkos::abort( "XDMF::add(): Cannot add data after write() has been called." );
         }
@@ -239,7 +245,7 @@ class XDMFOutput
         add( const grid::Grid4DDataVec< InputScalarDataType, VecDim >& data,
              const OutputTypeFloat                                     output_type = OutputTypeFloat::Float32 )
     {
-        if ( write_counter_ != 0 )
+        if ( first_write_happened_ )
         {
             Kokkos::abort( "XDMF::add(): Cannot add data after write() has been called." );
         }
@@ -301,7 +307,7 @@ class XDMFOutput
         const auto number_of_nodes_local    = num_subdomains * nodes_x * nodes_y * nodes_r;
         const auto number_of_elements_local = num_subdomains * ( nodes_x - 1 ) * ( nodes_y - 1 ) * ( nodes_r - 1 ) * 2;
 
-        if ( write_counter_ == 0 )
+        if ( !first_write_happened_ )
         {
             // Number of global nodes and elements.
 
@@ -498,6 +504,7 @@ class XDMFOutput
         }
 
         write_counter_++;
+        first_write_happened_ = true;
     }
 
   private:
@@ -1078,7 +1085,8 @@ class XDMFOutput
     std::optional< grid::Grid4DDataVec< double, 3 >::HostMirror > host_data_mirror_vec_double_;
     std::optional< grid::Grid4DDataVec< float, 3 >::HostMirror >  host_data_mirror_vec_float_;
 
-    int write_counter_ = 0;
+    int  write_counter_        = 0;
+    bool first_write_happened_ = false;
 
     int number_of_nodes_offset_      = -1;
     int number_of_elements_offset_   = -1;
