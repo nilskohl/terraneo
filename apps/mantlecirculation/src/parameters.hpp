@@ -19,6 +19,18 @@ struct MeshParameters
     double radius_max = 1.0;
 };
 
+struct BoundaryConditionsParameters
+{
+    enum class VelocityBC
+    {
+        NO_SLIP,
+        FREE_SLIP,
+    };
+
+    VelocityBC velocity_bc_cmb     = VelocityBC::NO_SLIP;
+    VelocityBC velocity_bc_surface = VelocityBC::NO_SLIP;
+};
+
 struct ViscosityParameters
 {
     bool        radial_profile_enabled       = false;
@@ -82,12 +94,13 @@ struct IOParameters
 
 struct Parameters
 {
-    MeshParameters         mesh_parameters;
-    StokesSolverParameters stokes_solver_parameters;
-    EnergySolverParameters energy_solver_parameters;
-    PhysicsParameters      physics_parameters;
-    TimeSteppingParameters time_stepping_parameters;
-    IOParameters           io_parameters;
+    MeshParameters               mesh_parameters;
+    BoundaryConditionsParameters boundary_conditions_parameters;
+    StokesSolverParameters       stokes_solver_parameters;
+    EnergySolverParameters       energy_solver_parameters;
+    PhysicsParameters            physics_parameters;
+    TimeSteppingParameters       time_stepping_parameters;
+    IOParameters                 io_parameters;
 
     std::string output_config_file;
 };
@@ -134,6 +147,31 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
 
     add_option_with_default( app, "--radius-min", parameters.mesh_parameters.radius_min )->group( "Domain" );
     add_option_with_default( app, "--radius-max", parameters.mesh_parameters.radius_max )->group( "Domain" );
+
+    ///////////////////////////
+    /// Boundary conditions ///
+    ///////////////////////////
+
+    std::map< std::string, BoundaryConditionsParameters::VelocityBC > velocity_bc_cmb_map{
+        { "noslip", BoundaryConditionsParameters::VelocityBC::NO_SLIP },
+        { "freeslip", BoundaryConditionsParameters::VelocityBC::FREE_SLIP },
+    };
+
+    std::map< std::string, BoundaryConditionsParameters::VelocityBC > velocity_bc_surface_map{
+        { "noslip", BoundaryConditionsParameters::VelocityBC::NO_SLIP },
+        { "freeslip", BoundaryConditionsParameters::VelocityBC::FREE_SLIP },
+    };
+
+    add_option_with_default( app, "--velocity-bc-cmb", parameters.boundary_conditions_parameters.velocity_bc_cmb )
+        ->transform( CLI::CheckedTransformer( velocity_bc_cmb_map, CLI::ignore_case ) )
+        ->default_val( "noslip" )
+        ->group( "Boundary Conditions" );
+
+    add_option_with_default(
+        app, "--velocity-bc-surface", parameters.boundary_conditions_parameters.velocity_bc_surface )
+        ->transform( CLI::CheckedTransformer( velocity_bc_surface_map, CLI::ignore_case ) )
+        ->default_val( "noslip" )
+        ->group( "Boundary Conditions" );
 
     //////////////////////////////
     /// Geophysical parameters ///
