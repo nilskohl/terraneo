@@ -14,7 +14,7 @@ set(CMAKE_VERBOSE_MAKEFILE OFF)
 # Find Kokkos
 # find_package(Kokkos REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall ")
 
 find_package(MPI REQUIRED)
 if (MPI_FOUND)

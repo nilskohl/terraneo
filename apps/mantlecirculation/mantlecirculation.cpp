@@ -3,6 +3,7 @@
 
 #include "communication/shell/communication.hpp"
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
+#include "fe/strong_algebraic_freeslip_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/operators/shell/epsilon_divdiv_stokes.hpp"
 #include "fe/wedge/operators/shell/kmass.hpp"
@@ -384,13 +385,16 @@ Result<> run( const Parameters& prm )
     auto& q = temp_vecs["q"];
 
     // Counting DoFs.
-
+    int world_size = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size); // total number of MPI processes
+   
     const auto num_dofs_temperature =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 1], grid::NodeOwnershipFlag::OWNED );
     const auto num_dofs_velocity = 3 * num_dofs_temperature;
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
-
+    logroot << "Degrees of freedom in (T,u,p) = (" << num_dofs_temperature << ", " << num_dofs_velocity << ", " << num_dofs_pressure << ")" << std::endl;
+    logroot << "DoFs/process in (T,u,p) = (" << num_dofs_temperature/world_size << ", " << num_dofs_velocity/world_size << ", " << num_dofs_pressure/world_size << ")" << std::endl;
     // Set up operators.
 
     using Stokes      = fe::wedge::operators::shell::EpsDivDivStokes< ScalarType >;
@@ -833,7 +837,8 @@ Result<> run( const Parameters& prm )
 
         fe::strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
             stok_vecs["f"], boundary_mask_data[velocity_level], grid::shell::ShellBoundaryFlag::BOUNDARY );
-
+     
+        
         logroot << "Solving Stokes ..." << std::endl;
 
         // Solve Stokes.
