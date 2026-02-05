@@ -40,7 +40,6 @@
 #include "terra/shell/radial_profiles.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
-#include "geophysics/spherical_harmonics/python_caller.hpp"
 
 using namespace terra;
 
