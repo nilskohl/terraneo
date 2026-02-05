@@ -63,12 +63,7 @@ inline void print_general_info( int argc, char** argv, std::ostream& out = logro
     char hostname[256];
     if ( gethostname( hostname, sizeof( hostname ) ) == 0 )
     {
-        //out << "Hostname        : " << hostname << "\n";
-
-    mpi::barrier();
-    logall << "Rank " << mpi_rank << ": device id = " << Kokkos::device_id() << ", node = " << hostname << std::endl;
-    mpi::barrier();
-
+        logall << "Rank " << mpi_rank << ": device id = " << Kokkos::device_id() << ", node = " << hostname << std::endl;
     }
 #endif
 
