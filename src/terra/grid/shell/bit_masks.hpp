@@ -39,7 +39,7 @@ using BoundaryConditions = BoundaryConditionMapping[2];
 /// @brief Retrieve the boundary condition flag that is associated with a location in the shell
 ///        e.g. SURFACE -> DIRICHLET
 KOKKOS_INLINE_FUNCTION
-BoundaryConditionFlag get_boundary_condition_flag(const BoundaryConditions bcs, ShellBoundaryFlag sbf ) 
+BoundaryConditionFlag get_boundary_condition_flag( const BoundaryConditions bcs, ShellBoundaryFlag sbf )
 {
     for ( int i = 0; i < 2; ++i ) // might become larger for more bc types
     {
@@ -49,10 +49,23 @@ BoundaryConditionFlag get_boundary_condition_flag(const BoundaryConditions bcs, 
     return BoundaryConditionFlag::NEUMANN;
 }
 
+/// @brief Set the boundary condition flag that is associated with a location in the shell
+///        e.g. SURFACE -> DIRICHLET
+KOKKOS_INLINE_FUNCTION
+void set_boundary_condition_flag( BoundaryConditions& bcs, ShellBoundaryFlag sbf, BoundaryConditionFlag bcf )
+{
+    for ( auto& [_sbf, _bcf] : bcs ) // might become larger for more bc types
+    {
+        if ( _sbf == sbf )
+        {
+            _bcf = bcf;
+        }
+    }
+}
 
 /// @brief Retrieve the ShellBoundary flag associated with a certain boundary condition type/flag
 KOKKOS_INLINE_FUNCTION
-ShellBoundaryFlag get_shell_boundary_flag(const BoundaryConditions bcs, BoundaryConditionFlag bcf ) 
+ShellBoundaryFlag get_shell_boundary_flag( const BoundaryConditions bcs, BoundaryConditionFlag bcf )
 {
     for ( int i = 0; i < 2; ++i ) // might become larger for more bc types
     {
@@ -61,7 +74,6 @@ ShellBoundaryFlag get_shell_boundary_flag(const BoundaryConditions bcs, Boundary
     }
     return ShellBoundaryFlag::NO_FLAG;
 }
-
 
 /// @brief Set up mask data for a distributed shell domain.
 /// The mask encodes boundary information for each grid node.

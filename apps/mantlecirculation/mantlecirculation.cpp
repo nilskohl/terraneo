@@ -242,8 +242,10 @@ Result<> run( const Parameters& prm )
 
     // Set up Stokes vectors for the finest grid.
 
+    const std::string label_stokes = "u";
+
     std::map< std::string, VectorQ1IsoQ2Q1< ScalarType > > stok_vecs;
-    std::vector< std::string >                             stok_vec_names = { "u", "f", "tmp" };
+    std::vector< std::string >                             stok_vec_names = { label_stokes, "f", "tmp" };
 
     for ( const auto& name : stok_vec_names )
     {
@@ -362,8 +364,10 @@ Result<> run( const Parameters& prm )
 
     // Set up temperature and viscosity vectors.
 
+    const std::string label_temperature = "T";
+
     std::map< std::string, VectorQ1Scalar< ScalarType > > temp_vecs;
-    std::vector< std::string >                            temp_vec_names = { "T", "q" };
+    std::vector< std::string >                            temp_vec_names = { label_temperature, "q" };
     constexpr int                                         num_temp_tmps  = 8;
 
     for ( int i = 0; i < num_temp_tmps; i++ )
@@ -406,6 +410,17 @@ Result<> run( const Parameters& prm )
         { CMB, FREESLIP },
         { SURFACE, DIRICHLET },
     };
+
+    if ( prm.boundary_conditions_parameters.velocity_bc_cmb == BoundaryConditionsParameters::VelocityBC::FREE_SLIP )
+    {
+        grid::shell::set_boundary_condition_flag( bcs, CMB, FREESLIP );
+    }
+
+    if ( prm.boundary_conditions_parameters.velocity_bc_surface == BoundaryConditionsParameters::VelocityBC::FREE_SLIP )
+    {
+        grid::shell::set_boundary_condition_flag( bcs, SURFACE, FREESLIP );
+    }
+
     BoundaryConditions bcs_neumann = {
         { CMB, NEUMANN },
         { SURFACE, NEUMANN },
@@ -733,6 +748,51 @@ Result<> run( const Parameters& prm )
     xdmf_output.add( u.block_1().grid_data() );
     xdmf_output.add( eta[velocity_level].grid_data() );
 
+    int timestep_start = 0;
+
+    const bool loading_checkpoint = !prm.io_parameters.checkpoint_dir.empty() && prm.io_parameters.checkpoint_step >= 0;
+
+    if ( loading_checkpoint )
+    {
+        logroot << "Loading checkpoint from " << prm.io_parameters.checkpoint_dir << " at step "
+                << prm.io_parameters.checkpoint_step << std::endl;
+
+        auto success_vel = io::read_xdmf_checkpoint_grid(
+            prm.io_parameters.checkpoint_dir,
+            label_stokes + "_u",
+            prm.io_parameters.checkpoint_step,
+            domains[velocity_level],
+            u.block_1().grid_data() );
+
+        if ( success_vel.is_err() )
+        {
+            Kokkos::abort( success_vel.error().c_str() );
+        }
+
+        auto success_temp = io::read_xdmf_checkpoint_grid(
+            prm.io_parameters.checkpoint_dir,
+            label_temperature,
+            prm.io_parameters.checkpoint_step,
+            domains[velocity_level],
+            T.grid_data() );
+
+        if ( success_temp.is_err() )
+        {
+            Kokkos::abort( success_temp.error().c_str() );
+        }
+
+        if ( loading_checkpoint )
+        {
+            // Starting the time stepping from the next step after the loaded step.
+            timestep_start = prm.io_parameters.checkpoint_step + 1;
+
+            // Setting XDMF to the same step as we have loaded.
+            // Thus, we will now re-write the loaded data.
+            // Maybe a good sanity check.
+            xdmf_output.set_write_counter( prm.io_parameters.checkpoint_step );
+        }
+    }
+
     logroot << "Writing initial XDMF ..." << std::endl;
 
     xdmf_output.write();
@@ -753,7 +813,7 @@ Result<> run( const Parameters& prm )
 
     logroot << "Starting time stepping!" << std::endl;
 
-    for ( int timestep = 1; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
+    for ( int timestep = timestep_start; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
     {
         logroot << "\n### Timestep " << timestep << " ###" << std::endl;
 
