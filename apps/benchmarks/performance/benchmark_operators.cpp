@@ -60,8 +60,7 @@ enum class BenchmarkType : int
 };
 
 constexpr auto all_benchmark_types = {
- //   BenchmarkType::EpsDivDivKerngenDouble,
-    BenchmarkType::EpsDivDivStokesDouble,
+    BenchmarkType::EpsDivDivKerngenDouble,
 };
 
 const std::map< BenchmarkType, std::string > benchmark_description = {
@@ -87,7 +86,7 @@ struct BenchmarkData
 struct Parameters
 {
     int min_level  = 1;
-    int max_level  = 9;
+    int max_level  = 6;
     int executions = 5;
     int refinement_level_subdomains = 0;
 };
@@ -333,8 +332,9 @@ void run_all( const int min_level, const int max_level, const int executions, co
         }
 
         table.print_pretty();
+
+        // output a csv table of results
         std::ofstream out("./csv/bo_ml" + std::to_string(max_level) + "_sdr" +  std::to_string(refinement_level_subdomains) + "_np" + std::to_string(world_size) + ".csv" );
-    
         table.print_csv(out);
 
         logroot << std::endl;
