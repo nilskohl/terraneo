@@ -21,6 +21,11 @@ inline int num_processes()
     return num_processes;
 }
 
+inline void barrier()
+{  
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
 namespace detail {
 class MPIContext
 {
