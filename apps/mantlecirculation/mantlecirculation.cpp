@@ -313,7 +313,7 @@ Result<> run( const Parameters& prm )
 
     // determine AGCA elements
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], ownership_mask_data[0] );
-    int                          gca = 0;
+    int                          gca = 1;
     if ( gca == 2 )
     {
         linalg::assign( GCAElements, 0 );
@@ -407,7 +407,7 @@ Result<> run( const Parameters& prm )
     using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
 
     BoundaryConditions bcs = {
-        { CMB, FREESLIP },
+        { CMB, DIRICHLET },
         { SURFACE, DIRICHLET },
     };
 
@@ -836,13 +836,9 @@ Result<> run( const Parameters& prm )
         linalg::apply( M, stok_vecs["tmp"].block_1(), stok_vecs["f"].block_1() );
 
         fe::strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
-            stok_vecs["f"], boundary_mask_data[velocity_level], grid::shell::ShellBoundaryFlag::SURFACE );
-        fe::strong_algebraic_freeslip_enforcement_in_place(
-            stok_vecs["f"],
-            coords_shell[velocity_level],
-            boundary_mask_data[velocity_level],
-            grid::shell::ShellBoundaryFlag::CMB );
-
+            stok_vecs["f"], boundary_mask_data[velocity_level], grid::shell::ShellBoundaryFlag::BOUNDARY );
+     
+        
         logroot << "Solving Stokes ..." << std::endl;
 
         // Solve Stokes.
