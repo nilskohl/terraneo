@@ -97,19 +97,20 @@ int main( int argc, char** argv )
     logroot << " - max:   " << subdomain_distr.max << "\n\n";*/
 
     // send/receive buffers
-    /*
-    grid::Grid3DDataScalar< double > send_data(
-            "send",
-            parameters.cube_size,
-            parameters.cube_size,
-            parameters.cube_size);
     
-     grid::Grid3DDataScalar< double > receive_data(
+    grid::Grid3DDataScalar< unsigned char > send_data(
+            "send",
+            parameters.msg_size,
+            parameters.msg_size,
+            parameters.msg_size);
+    
+     grid::Grid3DDataScalar< unsigned char > receive_data(
             "receive",
-            parameters.cube_size,
-            parameters.cube_size,
-            parameters.cube_size);
-            */
+            parameters.msg_size,
+            parameters.msg_size,
+            parameters.msg_size);
+            
+    /*
     grid::Grid1DDataScalar< unsigned char > send_data(
             "send",
             parameters.msg_size
@@ -118,7 +119,7 @@ int main( int argc, char** argv )
      grid::Grid1DDataScalar< unsigned char > receive_data(
             "receive",
             parameters.msg_size);
-        
+    */
 
     const int buffer_size = receive_data.span();
     logroot << "Buffer_size = " << buffer_size << std::endl;
