@@ -86,31 +86,8 @@ int main( int argc, char** argv )
     const int next = ( rank + 1 ) % num_processes;
     const int prev = ( rank - 1 + num_processes ) % num_processes;
 
-    // assemble domain
-    /*const auto domain = grid::shell::DistributedDomain::create_uniform(
-        parameters.level, parameters.level, 0.5, 1.0, parameters.refinement_level_subdomains, parameters.refinement_level_subdomains );
-    const auto subdomain_distr = grid::shell::subdomain_distribution( domain );
-    logroot << "Subdomain distribution: \n";
-    logroot << " - total: " << subdomain_distr.total << "\n";
-    logroot << " - min:   " << subdomain_distr.min << "\n";
-    logroot << " - avg:   " << subdomain_distr.avg << "\n";
-    logroot << " - max:   " << subdomain_distr.max << "\n\n";*/
-
+ 
     // send/receive buffers
-    
-    grid::Grid3DDataScalar< unsigned char > send_data(
-            "send",
-            parameters.msg_size,
-            parameters.msg_size,
-            parameters.msg_size);
-    
-     grid::Grid3DDataScalar< unsigned char > receive_data(
-            "receive",
-            parameters.msg_size,
-            parameters.msg_size,
-            parameters.msg_size);
-            
-    /*
     grid::Grid1DDataScalar< unsigned char > send_data(
             "send",
             parameters.msg_size
@@ -119,7 +96,7 @@ int main( int argc, char** argv )
      grid::Grid1DDataScalar< unsigned char > receive_data(
             "receive",
             parameters.msg_size);
-    */
+    
 
     const int buffer_size = receive_data.span();
     logroot << "Buffer_size = " << buffer_size << std::endl;
