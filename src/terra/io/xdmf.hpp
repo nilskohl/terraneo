@@ -65,6 +65,11 @@ namespace terra::io {
 /// (if the amount of main memory permits) read a checkpoint from a large parallel simulation with only one or a few
 /// processes (possibly useful for post-processing).
 ///
+/// ## Picking the last step during checkpoint recovery
+///
+/// The .xmf file for each write() call is written last (after the binary data).
+/// Thus, if the corresponding .xmf step has been written, the parallel binary data output should be completed.
+///
 /// # Checkpoint data binary format
 ///
 /// All data is written to a single binary file per grid data item and per time step.
