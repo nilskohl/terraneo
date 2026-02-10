@@ -108,8 +108,8 @@ class Chebyshev
         auto& d = tmps_[0];
         auto& z = tmps_[1];
 
-        const auto lambda_max = 1.2 * max_ev_estimate_;
-        const auto lambda_min = 0.3 * max_ev_estimate_;
+        const auto lambda_max = 1.5 * max_ev_estimate_;
+        const auto lambda_min = 0.1 * max_ev_estimate_;
 
         const auto theta = 0.5 * ( lambda_max + lambda_min );
         const auto delta = 0.5 * ( lambda_max - lambda_min );
