@@ -200,6 +200,8 @@ class UnsteadyAdvectionDiffusionSUPG
 
     void apply_impl( const SrcVectorType& src, DstVectorType& dst )
     {
+        util::Timer timer_apply( "ad_supg_apply" );
+
         if ( operator_apply_mode_ == linalg::OperatorApplyMode::Replace )
         {
             assign( dst, 0 );
@@ -209,10 +211,15 @@ class UnsteadyAdvectionDiffusionSUPG
         dst_      = dst.grid_data();
         vel_grid_ = velocity_.grid_data();
 
+        util::Timer timer_kernel( "ad_supg_kernel" );
         Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
+        Kokkos::fence();
+        timer_kernel.stop();
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
+            util::Timer timer_comm( "ad_supg_comm" );
+
             communication::shell::pack_send_and_recv_local_subdomain_boundaries(
                 domain_, dst_, send_buffers_, recv_buffers_ );
             communication::shell::unpack_and_reduce_local_subdomain_boundaries( domain_, dst_, recv_buffers_ );
