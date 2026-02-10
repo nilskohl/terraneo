@@ -58,8 +58,8 @@ class EpsilonDivDivKerngen
     communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, VecDim > send_buffers_;
     communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, VecDim > recv_buffers_;
 
-    grid::Grid4DDataVec< ScalarType, VecDim > src_;
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
+    grid::Grid4DDataVec< ScalarType, VecDim > src_;
 
     // Quadrature points.
     const int num_quad_points = quadrature::quad_felippa_1x1_num_quad_points;
@@ -113,7 +113,7 @@ class EpsilonDivDivKerngen
         hex_rad_                                   = domain_info.subdomain_num_nodes_radially() - 1;
         lat_refinement_level_                      = domain_info.diamond_lateral_refinement_level();
         const int threads_per_column               = hex_rad_;
-        block_size_                                = std::min( 128, threads_per_column );
+        block_size_                                = std::min( 256, threads_per_column );
         blocks_per_column_                         = ( threads_per_column + block_size_ - 1 ) / block_size_;
         blocks_                                    = local_subdomains_ * hex_lat_ * hex_lat_ * blocks_per_column_;
         r_min_                                     = domain_info.radii()[0];
@@ -224,19 +224,8 @@ class EpsilonDivDivKerngen
             assign( dst, 0 );
         }
 
-        src_ = src.grid_data();
         dst_ = dst.grid_data();
-
-        if ( src_.extent( 0 ) != dst_.extent( 0 ) || src_.extent( 1 ) != dst_.extent( 1 ) ||
-             src_.extent( 2 ) != dst_.extent( 2 ) || src_.extent( 3 ) != dst_.extent( 3 ) )
-        {
-            throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
-        }
-
-        if ( src_.extent( 1 ) != grid_.extent( 1 ) || src_.extent( 2 ) != grid_.extent( 2 ) )
-        {
-            throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
-        }
+        src_ = src.grid_data();
 
         util::Timer          timer_kernel( "epsilon_divdiv_kernel" );
         Kokkos::TeamPolicy<> policy( blocks_, block_size_ );
@@ -313,10 +302,10 @@ class EpsilonDivDivKerngen
     using Team = Kokkos::TeamPolicy<>::member_type;
 
     KOKKOS_INLINE_FUNCTION
-    static size_t team_shmem_size( const int ts/*team_size*/ )
+    static size_t team_shmem_size( const int ts /*team_size*/ )
     {
         // We store wedge_surf_phy_coords[2][3][3], src, k
-        return sizeof( double ) * (2 * 3 * 3 + (ts + 1) * (12 + 4));
+        return sizeof( double ) * ( 2 * 3 * 3 + ( ts + 1 ) * ( 12 + 4 + 1 ) );
     }
 
     KOKKOS_INLINE_FUNCTION
@@ -324,9 +313,10 @@ class EpsilonDivDivKerngen
     {
         int local_subdomain_id, x_cell, y_cell, r_cell;
 
+        int r_block_index = 0;
         {
-            int       tmp           = team.league_rank();
-            const int r_block_index = tmp % blocks_per_column_;
+            int tmp       = team.league_rank();
+            r_block_index = tmp % blocks_per_column_;
             tmp /= blocks_per_column_;
             y_cell = tmp & ( hex_lat_ - 1 );
             tmp >>= lat_refinement_level_;
@@ -346,7 +336,7 @@ class EpsilonDivDivKerngen
         //
         // Team covers radial levels: r_base ... r_base + team_size
         // (need team_size+1 levels because each thread needs r and r+1).
-        //
+
         static constexpr int WEDGE_NODE_OFF[2][6][3] = {
             { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 0, 1, 1 } },
             { { 1, 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 1, 1, 1 }, { 0, 1, 1 }, { 1, 0, 1 } } };
@@ -372,35 +362,40 @@ class EpsilonDivDivKerngen
             { 0.0, 0.5, ONE_SIXTH } };
 
         // ---------------------------------------------------------
-        // TEAM SCRATCH LAYOUT
+        // TEAM SCRATCH LAYOUT (UPDATED FOR BANK CONFLICTS):
         //   wedge_surf_phy_coords: [2][3][3]
-        //   src_sh:                [team_size+1][4][3]   (levels, xy, dim)
-        //   k_sh:                  [team_size+1][4]      (levels, xy)
-        // ---------------------------------------------------------
+        //   src_sh:                [4][3][team_size+1]   (xy, dim, level)   <-- level LAST (contiguous across threads)
+        //   k_sh:                  [4][team_size+1]      (xy, level)        <-- level LAST
+        //
         double* shmem =
             reinterpret_cast< double* >( team.team_shmem().get_shmem( team_shmem_size( team.team_size() ) ) );
 
-        using Scratch3D = Kokkos::
+        using ScratchCoords = Kokkos::
             View< double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
-        using Scratch3DLevels = Kokkos::
+        using ScratchSrc = Kokkos::
             View< double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
-        using Scratch2DLevels =
+        using ScratchK =
             Kokkos::View< double**, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
 
         // wedge coords
-        Scratch3D wedge_surf_phy_coords( shmem, 2, 3, 3 );
+        ScratchCoords wedge_surf_phy_coords( shmem, 2, 3, 3 );
         shmem += 2 * 3 * 3;
 
         const int ts   = team.team_size();
         const int nlev = ts + 1;
 
-        // src_sh(level, xy, dim)
-        Scratch3DLevels src_sh( shmem, nlev, 4, 3 );
-        shmem += nlev * 4 * 3;
+        // src_sh(xy, dim, level)
+        ScratchSrc src_sh( shmem, 4, 3, nlev );
+        shmem += 4 * 3 * nlev;
 
-        // k_sh(level, xy)
-        Scratch2DLevels k_sh( shmem, nlev, 4 );
-        shmem += nlev * 4;
+        // k_sh(xy, level)
+        ScratchK k_sh( shmem, 4, nlev );
+        shmem += 4 * nlev;
+
+        auto r_sh =
+            Kokkos::View< double*, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >(
+                shmem, nlev );
+        shmem += nlev;
 
         // ---------------------------------------------------------
         // (1) Load surface xy geometry (once per team) as before
@@ -455,15 +450,14 @@ class EpsilonDivDivKerngen
         // Each thread loads its own level = team_rank
         // and the last thread additionally loads level = team_size.
         // ---------------------------------------------------------
-        const int r_base = ( ( team.league_rank() % blocks_per_column_ ) * ts ); // same as r_block_index * ts
+        const int r_base = r_block_index * ts;
 
         auto load_level = [&]( const int level ) {
             const int r_abs = r_base + level;
+            r_sh(level) = radii_( local_subdomain_id, r_abs );
 
-#pragma unroll
             for ( int dy = 0; dy <= 1; ++dy )
             {
-#pragma unroll
                 for ( int dx = 0; dx <= 1; ++dx )
                 {
                     const int xy = dx + 2 * dy;
@@ -471,11 +465,10 @@ class EpsilonDivDivKerngen
                     const int xi = x_cell + dx;
                     const int yi = y_cell + dy;
 
-                    k_sh( level, xy ) = k_( local_subdomain_id, xi, yi, r_abs );
-
-                    src_sh( level, xy, 0 ) = src_( local_subdomain_id, xi, yi, r_abs, 0 );
-                    src_sh( level, xy, 1 ) = src_( local_subdomain_id, xi, yi, r_abs, 1 );
-                    src_sh( level, xy, 2 ) = src_( local_subdomain_id, xi, yi, r_abs, 2 );
+                    k_sh( xy, level )      = k_( local_subdomain_id, xi, yi, r_abs );
+                    src_sh( xy, 0, level ) = src_( local_subdomain_id, xi, yi, r_abs, 0 );
+                    src_sh( xy, 1, level ) = src_( local_subdomain_id, xi, yi, r_abs, 1 );
+                    src_sh( xy, 2, level ) = src_( local_subdomain_id, xi, yi, r_abs, 2 );
                 }
             }
         };
@@ -494,8 +487,10 @@ class EpsilonDivDivKerngen
         // ---------------------------------------------------------
         // Thread-private radii (depends on r_cell)
         // ---------------------------------------------------------
-        const double r_0 = radii_( local_subdomain_id, r_cell );
-        const double r_1 = radii_( local_subdomain_id, r_cell + 1 );
+        const int lvl0 = team.team_rank(); // corresponds to r_cell
+        const double r_0 = r_sh(lvl0);
+        const double r_1 = r_sh(lvl0 + 1);
+
 
         // Boundary treatment flags (guard the BC query)
         const bool at_boundary    = at_cmb || at_surface;
@@ -513,10 +508,7 @@ class EpsilonDivDivKerngen
         double dst8[3][8] = { 0.0 };
 
         // Local level index for this thread
-        const int lvl0 = team.team_rank(); // corresponds to r_cell
-        // lvl1 = lvl0 + 1 corresponds to r_cell+1, always valid because we loaded nlev = ts+1
 
-#pragma unroll
         for ( int w = 0; w < 2; ++w )
         {
             // -------------------------
@@ -533,7 +525,7 @@ class EpsilonDivDivKerngen
                 const int xy  = dx + 2 * dy;
                 const int lvl = lvl0 + dr;
 
-                k_sum += k_sh( lvl, xy );
+                k_sum += k_sh( xy, lvl );
             }
             const double k_eval = ONE_SIXTH * k_sum;
 
@@ -594,78 +586,79 @@ class EpsilonDivDivKerngen
             // -------------------------
             // (C) grad_u + div_u as scalars (src from shared memory)
             // -------------------------
-            double gu00 = 0.0;
-            double gu10 = 0.0, gu11 = 0.0;
-            double gu20 = 0.0, gu21 = 0.0, gu22 = 0.0;
-            double div_u = 0.0;
-
-            if ( !diagonal_ )
             {
-                // Assemble gu** and div_u
-#pragma unroll
-                for ( int dimj = 0; dimj < 3; ++dimj )
+                double gu00 = 0.0;
+                double gu10 = 0.0, gu11 = 0.0;
+                double gu20 = 0.0, gu21 = 0.0, gu22 = 0.0;
+                double div_u = 0.0;
+
+                if ( !diagonal_ )
                 {
-#pragma unroll
-                    for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                    // Assemble gu** and div_u
+                    for ( int dimj = 0; dimj < 3; ++dimj )
                     {
-                        const double gx = dN_ref[node_idx][0];
-                        const double gy = dN_ref[node_idx][1];
-                        const double gz = dN_ref[node_idx][2];
+#pragma unroll
+                        for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                        {
+                            const double gx = dN_ref[node_idx][0];
+                            const double gy = dN_ref[node_idx][1];
+                            const double gz = dN_ref[node_idx][2];
 
-                        const double g0 = i00 * gx + i01 * gy + i02 * gz;
-                        const double g1 = i10 * gx + i11 * gy + i12 * gz;
-                        const double g2 = i20 * gx + i21 * gy + i22 * gz;
+                            const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                            const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                            const double g2 = i20 * gx + i21 * gy + i22 * gz;
 
-                        double E00, E11, E22, sym01, sym02, sym12, gdd;
-                        column_grad_to_sym( dimj, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+                            double E00, E11, E22, sym01, sym02, sym12, gdd;
+                            column_grad_to_sym( dimj, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
 
-                        const int dx = WEDGE_NODE_OFF[w][node_idx][0];
-                        const int dy = WEDGE_NODE_OFF[w][node_idx][1];
-                        const int dr = WEDGE_NODE_OFF[w][node_idx][2];
+                            const int dx = WEDGE_NODE_OFF[w][node_idx][0];
+                            const int dy = WEDGE_NODE_OFF[w][node_idx][1];
+                            const int dr = WEDGE_NODE_OFF[w][node_idx][2];
 
-                        const int xy  = dx + 2 * dy;
-                        const int lvl = lvl0 + dr;
+                            const int xy  = dx + 2 * dy;
+                            const int lvl = lvl0 + dr;
 
-                        const double s = src_sh( lvl, xy, dimj );
+                            // UPDATED INDEXING: src_sh(xy, dim, level)
+                            const double s = src_sh( xy, dimj, lvl );
 
-                        gu00 += E00 * s;
-                        gu10 += sym01 * s;
-                        gu11 += E11 * s;
-                        gu20 += sym02 * s;
-                        gu21 += sym12 * s;
-                        gu22 += E22 * s;
+                            gu00 += E00 * s;
+                            gu10 += sym01 * s;
+                            gu11 += E11 * s;
+                            gu20 += sym02 * s;
+                            gu21 += sym12 * s;
+                            gu22 += E22 * s;
 
-                        div_u += gdd * s;
+                            div_u += gdd * s;
+                        }
                     }
-                }
 
-                // Pairing -> accumulate into unique-node array dst8
-#pragma unroll
-                for ( int dimi = 0; dimi < 3; ++dimi )
-                {
-#pragma unroll
-                    for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                    // Pairing -> accumulate into unique-node array dst8
+                    for ( int dimi = 0; dimi < 3; ++dimi )
                     {
-                        const double gx = dN_ref[node_idx][0];
-                        const double gy = dN_ref[node_idx][1];
-                        const double gz = dN_ref[node_idx][2];
+#pragma unroll
+                        for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                        {
+                            const double gx = dN_ref[node_idx][0];
+                            const double gy = dN_ref[node_idx][1];
+                            const double gz = dN_ref[node_idx][2];
 
-                        const double g0 = i00 * gx + i01 * gy + i02 * gz;
-                        const double g1 = i10 * gx + i11 * gy + i12 * gz;
-                        const double g2 = i20 * gx + i21 * gy + i22 * gz;
+                            const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                            const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                            const double g2 = i20 * gx + i21 * gy + i22 * gz;
 
-                        double E00, E11, E22, sym01, sym02, sym12, gdd;
-                        column_grad_to_sym( dimi, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+                            double E00, E11, E22, sym01, sym02, sym12, gdd;
+                            column_grad_to_sym( dimi, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
 
-                        const double pairing0 = 2.0 * sym01;
-                        const double pairing1 = 2.0 * sym02;
-                        const double pairing2 = 2.0 * sym12;
+                            const double pairing0 = 2.0 * sym01;
+                            const double pairing1 = 2.0 * sym02;
+                            const double pairing2 = 2.0 * sym12;
 
-                        const int u = WEDGE_TO_UNIQUE[w][node_idx];
+                            const int u = WEDGE_TO_UNIQUE[w][node_idx];
 
-                        dst8[dimi][u] += kwJ * ( NEG_TWO_THIRDS * div_u * gdd + pairing0 * gu10 + pairing0 * gu10 +
-                                                 pairing1 * gu20 + pairing1 * gu20 + pairing2 * gu21 + pairing2 * gu21 +
-                                                 2.0 * E00 * gu00 + 2.0 * E11 * gu11 + 2.0 * E22 * gu22 );
+                            dst8[dimi][u] += kwJ * ( NEG_TWO_THIRDS * div_u * gdd + 2.0 * pairing0 * gu10 +
+                                                     2.0 * pairing1 * gu20 + 2.0 * pairing2 * gu21 + 2.0 * E00 * gu00 +
+                                                     2.0 * E11 * gu11 + 2.0 * E22 * gu22 );
+                        }
                     }
                 }
             }
@@ -673,7 +666,6 @@ class EpsilonDivDivKerngen
             // Diagonal / BC loop -> also accumulate into dst8
             if ( diagonal_ || ( treat_boundary && at_boundary ) )
             {
-#pragma unroll
                 for ( int dim_diagBC = 0; dim_diagBC < 3; ++dim_diagBC )
                 {
 #pragma unroll
@@ -697,7 +689,8 @@ class EpsilonDivDivKerngen
                         const int xy  = dx + 2 * dy;
                         const int lvl = lvl0 + dr;
 
-                        const double s = src_sh( lvl, xy, dim_diagBC );
+                        // UPDATED INDEXING: src_sh(xy, dim, level)
+                        const double s = src_sh( xy, dim_diagBC, lvl );
 
                         const double pairing0 = 4.0 * s;
                         const double pairing1 = 2.0 * s;
@@ -714,6 +707,7 @@ class EpsilonDivDivKerngen
         } // w
 
         // Final scatter: 8 unique nodes per dim (same result as original merged scatter)
+
         for ( int dim_add = 0; dim_add < 3; ++dim_add )
         {
             Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell, dim_add ), dst8[dim_add][0] );
