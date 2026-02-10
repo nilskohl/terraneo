@@ -386,15 +386,17 @@ Result<> run( const Parameters& prm )
 
     // Counting DoFs.
     int world_size = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size); // total number of MPI processes
-   
+    MPI_Comm_size( MPI_COMM_WORLD, &world_size ); // total number of MPI processes
+
     const auto num_dofs_temperature =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 1], grid::NodeOwnershipFlag::OWNED );
     const auto num_dofs_velocity = 3 * num_dofs_temperature;
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
-    logroot << "Degrees of freedom in (T,u,p) = (" << num_dofs_temperature << ", " << num_dofs_velocity << ", " << num_dofs_pressure << ")" << std::endl;
-    logroot << "DoFs/process in (T,u,p) = (" << num_dofs_temperature/world_size << ", " << num_dofs_velocity/world_size << ", " << num_dofs_pressure/world_size << ")" << std::endl;
+    logroot << "Degrees of freedom in (T,u,p) = (" << num_dofs_temperature << ", " << num_dofs_velocity << ", "
+            << num_dofs_pressure << ")" << std::endl;
+    logroot << "DoFs/process in (T,u,p) = (" << num_dofs_temperature / world_size << ", "
+            << num_dofs_velocity / world_size << ", " << num_dofs_pressure / world_size << ")" << std::endl;
     // Set up operators.
 
     using Stokes      = fe::wedge::operators::shell::EpsDivDivStokes< ScalarType >;
@@ -974,6 +976,18 @@ Result<> run( const Parameters& prm )
 
         if ( simulated_time >= prm.time_stepping_parameters.t_end )
         {
+            break;
+        }
+
+        if ( has_nan_or_inf( T ) )
+        {
+            logroot << "\nDETECTED NAN OR INF.\n\n"
+                       "For some reason the temperature vector contains NaN or inf values.\n"
+                       "Those might come from anywhere (not necessarily the energy solve).\n"
+                       "To avoid burning compute time, the simulation will exit now.\n\n"
+                       "You may be able to recover the simulation from an earlier checkpoint.\n\n"
+                       "Good luck and bye."
+                    << std::endl;
             break;
         }
     }

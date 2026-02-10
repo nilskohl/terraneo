@@ -204,4 +204,10 @@ inline MPI_Datatype mpi_datatype< long double >()
     return MPI_LONG_DOUBLE;
 }
 
+template <>
+inline MPI_Datatype mpi_datatype< bool >()
+{
+    return MPI_CXX_BOOL;
+}
+
 } // namespace terra::mpi

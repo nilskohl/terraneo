@@ -739,23 +739,46 @@ ScalarType masked_dot_product(
 }
 
 template < typename ScalarType >
-bool has_nan( const grid::Grid4DDataScalar< ScalarType >& x )
+bool has_nan_or_inf( const grid::Grid4DDataScalar< ScalarType >& x )
 {
-    bool has_nan = false;
+    bool has_nan_or_inf = false;
 
     Kokkos::parallel_reduce(
         "masked_dot_product",
         Kokkos::MDRangePolicy( { 0, 0, 0, 0 }, { x.extent( 0 ), x.extent( 1 ), x.extent( 2 ), x.extent( 3 ) } ),
-        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, bool& local_has_nan ) {
-            local_has_nan = local_has_nan || Kokkos::isnan( x( local_subdomain, i, j, k ) );
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, bool& local_has_nan_or_inf ) {
+            local_has_nan_or_inf = local_has_nan_or_inf || ( Kokkos::isnan( x( local_subdomain, i, j, k ) ) ||
+                                                             Kokkos::isinf( x( local_subdomain, i, j, k ) ) );
         },
-        Kokkos::LOr< bool >( has_nan ) );
+        Kokkos::LOr< bool >( has_nan_or_inf ) );
 
     Kokkos::fence();
 
-    MPI_Allreduce( MPI_IN_PLACE, &has_nan, 1, mpi::mpi_datatype< bool >(), MPI_LOR, MPI_COMM_WORLD );
+    MPI_Allreduce( MPI_IN_PLACE, &has_nan_or_inf, 1, mpi::mpi_datatype< bool >(), MPI_LOR, MPI_COMM_WORLD );
 
-    return has_nan;
+    return has_nan_or_inf;
+}
+
+template < typename ScalarType, int VecDim >
+bool has_nan_or_inf( const grid::Grid4DDataVec< ScalarType, VecDim >& x )
+{
+    bool has_nan_or_inf = false;
+
+    Kokkos::parallel_reduce(
+        "masked_dot_product",
+        Kokkos::MDRangePolicy(
+            { 0, 0, 0, 0, 0 }, { x.extent( 0 ), x.extent( 1 ), x.extent( 2 ), x.extent( 3 ), x.extent( 4 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, int d, bool& local_has_nan_or_inf ) {
+            local_has_nan_or_inf = local_has_nan_or_inf || ( Kokkos::isnan( x( local_subdomain, i, j, k, d ) ) ||
+                                                             Kokkos::isinf( x( local_subdomain, i, j, k, d ) ) );
+        },
+        Kokkos::LOr< bool >( has_nan_or_inf ) );
+
+    Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &has_nan_or_inf, 1, mpi::mpi_datatype< bool >(), MPI_LOR, MPI_COMM_WORLD );
+
+    return has_nan_or_inf;
 }
 
 template < typename ScalarTypeDst, typename ScalarTypeSrc >
