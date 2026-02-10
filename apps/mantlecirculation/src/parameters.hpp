@@ -262,6 +262,22 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
         parameters.stokes_solver_parameters.viscous_pc_num_power_iterations )
         ->group( "Stokes Solver" );
 
+    /////////////////////
+    /// Energy solver ///
+    /////////////////////
+
+    add_option_with_default( app, "--energy-krylov-restart", parameters.energy_solver_parameters.krylov_restart )
+        ->group( "Energy Solver" );
+    add_option_with_default(
+        app, "--energy-krylov-max-iterations", parameters.energy_solver_parameters.krylov_max_iterations )
+        ->group( "Energy Solver" );
+    add_option_with_default(
+        app, "--energy-krylov-relative-tolerance", parameters.energy_solver_parameters.krylov_relative_tolerance )
+        ->group( "Energy Solver" );
+    add_option_with_default(
+        app, "--energy-krylov-absolute-tolerance", parameters.energy_solver_parameters.krylov_absolute_tolerance )
+        ->group( "Energy Solver" );
+
     //////////////////////
     /// Input / output ///
     //////////////////////
