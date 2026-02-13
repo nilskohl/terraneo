@@ -17,6 +17,17 @@ namespace terra::fe::wedge::operators::shell {
 
 using grid::shell::ShellBoundaryFlag::CMB;
 using grid::shell::ShellBoundaryFlag::SURFACE;
+using grid::shell::get_boundary_condition_flag;
+using grid::shell::BoundaryConditionFlag::DIRICHLET;
+using grid::shell::BoundaryConditionFlag::FREESLIP;
+using grid::shell::BoundaryConditionFlag::NEUMANN;
+using grid::shell::ShellBoundaryFlag::CMB;
+using grid::shell::ShellBoundaryFlag::SURFACE;
+using terra::grid::shell::BoundaryConditionFlag;
+using terra::grid::shell::BoundaryConditions;
+using terra::grid::shell::ShellBoundaryFlag;
+using terra::linalg::trafo::trafo_mat_cartesian_to_normal_tangential;
+
 template < typename ScalarT, int VecDim = 3 >
 class EpsilonDivDivKerngen
 {
@@ -37,6 +48,7 @@ class EpsilonDivDivKerngen
     grid::Grid2DDataScalar< ScalarT >                        radii_;
     grid::Grid4DDataScalar< ScalarType >                     k_;
     grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
+    BoundaryConditions                                       bcs_;
 
     bool treat_boundary_;
     bool diagonal_;
@@ -56,6 +68,17 @@ class EpsilonDivDivKerngen
 
     dense::Vec< ScalarT, 3 > quad_points[quadrature::quad_felippa_1x1_num_quad_points];
     ScalarT                  quad_weights[quadrature::quad_felippa_1x1_num_quad_points];
+
+    int local_subdomains_;
+    int hex_lat_;
+    int hex_rad_;
+    int lat_refinement_level_;
+    int block_size_;
+    int blocks_per_column_;
+    int blocks_;
+
+    ScalarT r_max_;
+    ScalarT r_min_;
 
   public:
     EpsilonDivDivKerngen(
@@ -84,8 +107,23 @@ class EpsilonDivDivKerngen
     , send_buffers_( domain )
     , recv_buffers_( domain )
     {
+        bcs_[0] = bcs[0];
+        bcs_[1] = bcs[1];
         quadrature::quad_felippa_1x1_quad_points( quad_points );
         quadrature::quad_felippa_1x1_quad_weights( quad_weights );
+        const grid::shell::DomainInfo& domain_info = domain_.domain_info();
+        local_subdomains_                          = domain_.subdomains().size();
+        hex_lat_                                   = domain_info.subdomain_num_nodes_per_side_laterally() - 1;
+        hex_rad_                                   = domain_info.subdomain_num_nodes_radially() - 1;
+        lat_refinement_level_                      = domain_info.diamond_lateral_refinement_level();
+        const int threads_per_column               = hex_rad_;
+        block_size_                                = std::min( 256, threads_per_column );
+        blocks_per_column_                         = ( threads_per_column + block_size_ - 1 ) / block_size_;
+        blocks_                                    = local_subdomains_ * hex_lat_ * hex_lat_ * blocks_per_column_;
+        r_min_                                     = domain_info.radii()[0];
+        r_max_                                     = domain_info.radii()[domain_info.radii().size() - 1];
+        util::logroot << "[EpsilonDivDiv] (threads_per_column, block_size_, blocks_per_column_) = "
+                      << threads_per_column << ", " << block_size_ << ", " << blocks_per_column_ << ")" << std::endl;
     }
 
     void set_operator_apply_and_communication_modes(
@@ -204,8 +242,9 @@ class EpsilonDivDivKerngen
             throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
         }
 
-        util::Timer timer_kernel( "epsilon_divdiv_kernel" );
-        Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
+        util::Timer          timer_kernel( "epsilon_divdiv_kernel" );
+        Kokkos::TeamPolicy<> policy( blocks_, block_size_ );
+        Kokkos::parallel_for( "matvec", policy, *this );
         Kokkos::fence();
         timer_kernel.stop();
 
@@ -219,12 +258,90 @@ class EpsilonDivDivKerngen
         }
     }
 
+    KOKKOS_INLINE_FUNCTION
+    void column_grad_to_sym(
+        const int    dim,
+        const double g0,
+        const double g1,
+        const double g2,
+        double&      E00,
+        double&      E11,
+        double&      E22,
+        double&      sym01,
+        double&      sym02,
+        double&      sym12,
+        double&      gdd ) const
+    {
+        E00   = 0.0;
+        E11   = 0.0;
+        E22   = 0.0;
+        sym01 = 0.0;
+        sym02 = 0.0;
+        sym12 = 0.0;
+        gdd   = 0.0;
+
+        // dim selects which COLUMN is populated:
+        // dim==0: E[0][0]=g0, E[1][0]=g1, E[2][0]=g2
+        // dim==1: E[0][1]=g0, E[1][1]=g1, E[2][1]=g2
+        // dim==2: E[0][2]=g0, E[1][2]=g1, E[2][2]=g2
+        switch ( dim )
+        {
+        case 0:
+            E00   = g0;
+            gdd   = g0;       // E[0][0]
+            sym01 = 0.5 * g1; // 0.5*(E[0][1]=0 + E[1][0]=g1)
+            sym02 = 0.5 * g2; // 0.5*(E[0][2]=0 + E[2][0]=g2)
+            sym12 = 0.0;
+            break;
+
+        case 1:
+            E11   = g1;
+            gdd   = g1;       // E[1][1]
+            sym01 = 0.5 * g0; // 0.5*(E[0][1]=g0 + E[1][0]=0)
+            sym02 = 0.0;
+            sym12 = 0.5 * g2; // 0.5*(E[1][2]=0 + E[2][1]=g2)
+            break;
+
+        default: // case 2
+            E22   = g2;
+            gdd   = g2; // E[2][2]
+            sym01 = 0.0;
+            sym02 = 0.5 * g0; // 0.5*(E[0][2]=g0 + E[2][0]=0)
+            sym12 = 0.5 * g1; // 0.5*(E[1][2]=g1 + E[2][1]=0)
+            break;
+        }
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    static size_t team_shmem_size( const int ts /*team_size*/ )
+    {
+        // We store wedge_surf_phy_coords[2][3][3], src, k
+        return sizeof( ScalarType ) * ( 2 * 3 * 3 + ( ts + 1 ) * ( 12 + 4 + 1 ) );
+    }
+
     using Team = Kokkos::TeamPolicy<>::member_type;
 
-    KOKKOS_INLINE_FUNCTION void
-        operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
+    KOKKOS_INLINE_FUNCTION void operator()( const Team& team ) const
     {
-        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off )
+        int local_subdomain_id, x_cell, y_cell, r_cell;
+
+        int r_block_index = 0;
+        {
+            int tmp       = team.league_rank();
+            r_block_index = tmp % blocks_per_column_;
+            tmp /= blocks_per_column_;
+            y_cell = tmp & ( hex_lat_ - 1 );
+            tmp >>= lat_refinement_level_;
+            x_cell = tmp & ( hex_lat_ - 1 );
+            tmp >>= lat_refinement_level_;
+            local_subdomain_id = tmp;
+
+            r_cell = r_block_index * team.team_size() + team.team_rank();
+        }
+
+        const bool at_cmb     = has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB );
+        const bool at_surface = has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE );
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off || at_cmb || at_surface )
         {
             dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = { 0 };
 
@@ -275,8 +392,7 @@ class EpsilonDivDivKerngen
                             }
                         }
 
-                        if ( has_flag(
-                                 local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE ) )
+                        if ( has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE ) )
                         {
                             // Outer boundary (surface).
                             for ( int i = 0; i < num_nodes_per_wedge; i++ )
@@ -340,322 +456,407 @@ class EpsilonDivDivKerngen
         }
         else
         {
-            double wedge_surf_phy_coords[2][3][3];
-            {
-                double quad_surface_coords[2][2][3];
-                ;
-                quad_surface_coords[0][0][0]   = grid_( local_subdomain_id, x_cell, y_cell, 0 );
-                quad_surface_coords[0][0][1]   = grid_( local_subdomain_id, x_cell, y_cell, 1 );
-                quad_surface_coords[0][0][2]   = grid_( local_subdomain_id, x_cell, y_cell, 2 );
-                quad_surface_coords[0][1][0]   = grid_( local_subdomain_id, x_cell, y_cell + 1, 0 );
-                quad_surface_coords[0][1][1]   = grid_( local_subdomain_id, x_cell, y_cell + 1, 1 );
-                quad_surface_coords[0][1][2]   = grid_( local_subdomain_id, x_cell, y_cell + 1, 2 );
-                quad_surface_coords[1][0][0]   = grid_( local_subdomain_id, x_cell + 1, y_cell, 0 );
-                quad_surface_coords[1][0][1]   = grid_( local_subdomain_id, x_cell + 1, y_cell, 1 );
-                quad_surface_coords[1][0][2]   = grid_( local_subdomain_id, x_cell + 1, y_cell, 2 );
-                quad_surface_coords[1][1][0]   = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 0 );
-                quad_surface_coords[1][1][1]   = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 1 );
-                quad_surface_coords[1][1][2]   = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 2 );
-                wedge_surf_phy_coords[0][0][0] = quad_surface_coords[0][0][0];
-                wedge_surf_phy_coords[0][0][1] = quad_surface_coords[0][0][1];
-                wedge_surf_phy_coords[0][0][2] = quad_surface_coords[0][0][2];
-                wedge_surf_phy_coords[0][1][0] = quad_surface_coords[1][0][0];
-                wedge_surf_phy_coords[0][1][1] = quad_surface_coords[1][0][1];
-                wedge_surf_phy_coords[0][1][2] = quad_surface_coords[1][0][2];
-                wedge_surf_phy_coords[0][2][0] = quad_surface_coords[0][1][0];
-                wedge_surf_phy_coords[0][2][1] = quad_surface_coords[0][1][1];
-                wedge_surf_phy_coords[0][2][2] = quad_surface_coords[0][1][2];
-                wedge_surf_phy_coords[1][0][0] = quad_surface_coords[1][1][0];
-                wedge_surf_phy_coords[1][0][1] = quad_surface_coords[1][1][1];
-                wedge_surf_phy_coords[1][0][2] = quad_surface_coords[1][1][2];
-                wedge_surf_phy_coords[1][1][0] = quad_surface_coords[0][1][0];
-                wedge_surf_phy_coords[1][1][1] = quad_surface_coords[0][1][1];
-                wedge_surf_phy_coords[1][1][2] = quad_surface_coords[0][1][2];
-                wedge_surf_phy_coords[1][2][0] = quad_surface_coords[1][0][0];
-                wedge_surf_phy_coords[1][2][1] = quad_surface_coords[1][0][1];
-                wedge_surf_phy_coords[1][2][2] = quad_surface_coords[1][0][2];
-            }
-            double r_0 = radii_( local_subdomain_id, r_cell );
-            double r_1 = radii_( local_subdomain_id, r_cell + 1 );
-            double src_local_hex[3][2][6];
-            int    dim;
-            for ( dim = 0; dim < 3; dim += 1 )
-            {
-                src_local_hex[dim][0][0] = src_( local_subdomain_id, x_cell, y_cell, r_cell, dim );
-                src_local_hex[dim][0][1] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell, dim );
-                src_local_hex[dim][0][2] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell, dim );
-                src_local_hex[dim][0][3] = src_( local_subdomain_id, x_cell, y_cell, r_cell + 1, dim );
-                src_local_hex[dim][0][4] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, dim );
-                src_local_hex[dim][0][5] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, dim );
-                src_local_hex[dim][1][0] = src_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, dim );
-                src_local_hex[dim][1][1] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell, dim );
-                src_local_hex[dim][1][2] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell, dim );
-                src_local_hex[dim][1][3] = src_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, dim );
-                src_local_hex[dim][1][4] = src_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, dim );
-                src_local_hex[dim][1][5] = src_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, dim );
+            // ----- FAST PATH (DCA) -----
+            //   - Load ALL source dofs (and k) for the team's r-slab into TEAM SHARED MEMORY once.
+            //   - Each thread then reads the dofs for its corresponding r_cell (team_rank) from the shared arrays.
+            //
+            // Team covers radial levels: r_base ... r_base + team_size
+            // (need team_size+1 levels because each thread needs r and r+1).
+
+            static constexpr int WEDGE_NODE_OFF[2][6][3] = {
+                { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 0, 1, 1 } },
+                { { 1, 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 1, 1, 1 }, { 0, 1, 1 }, { 1, 0, 1 } } };
+
+            // Map wedge-local node (w, node) -> unique node id in [0..7] that matches your final scatter pattern
+            static constexpr int WEDGE_TO_UNIQUE[2][6] = {
+                { 0, 1, 2, 3, 4, 5 }, // wedge 0
+                { 6, 2, 1, 7, 5, 4 }  // wedge 1
             };
-            double k_local_hex[2][6];
-            k_local_hex[0][0] = k_( local_subdomain_id, x_cell, y_cell, r_cell );
-            k_local_hex[0][1] = k_( local_subdomain_id, x_cell + 1, y_cell, r_cell );
-            k_local_hex[0][2] = k_( local_subdomain_id, x_cell, y_cell + 1, r_cell );
-            k_local_hex[0][3] = k_( local_subdomain_id, x_cell, y_cell, r_cell + 1 );
-            k_local_hex[0][4] = k_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 );
-            k_local_hex[0][5] = k_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1 );
-            k_local_hex[1][0] = k_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell );
-            k_local_hex[1][1] = k_( local_subdomain_id, x_cell, y_cell + 1, r_cell );
-            k_local_hex[1][2] = k_( local_subdomain_id, x_cell + 1, y_cell, r_cell );
-            k_local_hex[1][3] = k_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1 );
-            k_local_hex[1][4] = k_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1 );
-            k_local_hex[1][5] = k_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1 );
-            double qp_array[1][3];
-            double qw_array[1];
-            qp_array[0][0]          = 0.33333333333333331;
-            qp_array[0][1]          = 0.33333333333333331;
-            qp_array[0][2]          = 0.0;
-            qw_array[0]             = 1.0;
-            int at_cmb_boundary     = has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB );
-            int at_surface_boundary = has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE );
-            int cmb_shift = ( ( treat_boundary_ && diagonal_ == false && at_cmb_boundary != 0 ) ? ( 3 ) : ( 0 ) );
-            int max_rad   = radii_.extent( 1 ) - 1;
-            int surface_shift =
-                ( ( treat_boundary_ && diagonal_ == false && at_surface_boundary != 0 ) ? ( 3 ) : ( 0 ) );
-            double dst_array[3][2][6] = { 0 };
-            int    w                  = 0;
-            /* Apply local matrix for both wedges and accumulated for all quadrature points. */;
-            for ( w = 0; w < 2; w += 1 )
-            {
-                int q = 0;
-                for ( q = 0; q < 1; q += 1 )
+
+            // ---- single quadrature point collapsed: qp0=qp1=1/3, qp2=0, qw=1 ----
+            constexpr double ONE_THIRD      = 1.0 / 3.0;
+            constexpr double ONE_SIXTH      = 1.0 / 6.0;
+            constexpr double NEG_TWO_THIRDS = -0.66666666666666663;
+
+            // Reference gradients at qp0=qp1=1/3, qp2=0 (constexpr)
+            static constexpr double dN_ref[6][3] = {
+                { -0.5, -0.5, -ONE_SIXTH },
+                { 0.5, 0.0, -ONE_SIXTH },
+                { 0.0, 0.5, -ONE_SIXTH },
+                { -0.5, -0.5, ONE_SIXTH },
+                { 0.5, 0.0, ONE_SIXTH },
+                { 0.0, 0.5, ONE_SIXTH } };
+
+            // ---------------------------------------------------------
+            // TEAM SCRATCH LAYOUT (UPDATED FOR BANK CONFLICTS):
+            //   wedge_surf_phy_coords: [2][3][3]
+            //   src_sh:                [4][3][team_size+1]   (xy, dim, level)   <-- level LAST (contiguous across threads)
+            //   k_sh:                  [4][team_size+1]      (xy, level)        <-- level LAST
+            //
+            double* shmem =
+                reinterpret_cast< double* >( team.team_shmem().get_shmem( team_shmem_size( team.team_size() ) ) );
+
+            using ScratchCoords = Kokkos::
+                View< double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
+            using ScratchSrc = Kokkos::
+                View< double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
+            using ScratchK = Kokkos::
+                View< double**, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
+
+            // wedge coords
+            ScratchCoords wedge_surf_phy_coords( shmem, 2, 3, 3 );
+            shmem += 2 * 3 * 3;
+
+            const int ts   = team.team_size();
+            const int nlev = ts + 1;
+
+            // src_sh(xy, dim, level)
+            ScratchSrc src_sh( shmem, 4, 3, nlev );
+            shmem += 4 * 3 * nlev;
+
+            // k_sh(xy, level)
+            ScratchK k_sh( shmem, 4, nlev );
+            shmem += 4 * nlev;
+
+            auto r_sh = Kokkos::
+                View< double*, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >(
+                    shmem, nlev );
+            shmem += nlev;
+
+            // ---------------------------------------------------------
+            // (1) Load surface xy geometry (once per team) as before
+            // ---------------------------------------------------------
+            Kokkos::single( Kokkos::PerTeam( team ), [&]() {
+                const double q00x = grid_( local_subdomain_id, x_cell, y_cell, 0 );
+                const double q00y = grid_( local_subdomain_id, x_cell, y_cell, 1 );
+                const double q00z = grid_( local_subdomain_id, x_cell, y_cell, 2 );
+
+                const double q01x = grid_( local_subdomain_id, x_cell, y_cell + 1, 0 );
+                const double q01y = grid_( local_subdomain_id, x_cell, y_cell + 1, 1 );
+                const double q01z = grid_( local_subdomain_id, x_cell, y_cell + 1, 2 );
+
+                const double q10x = grid_( local_subdomain_id, x_cell + 1, y_cell, 0 );
+                const double q10y = grid_( local_subdomain_id, x_cell + 1, y_cell, 1 );
+                const double q10z = grid_( local_subdomain_id, x_cell + 1, y_cell, 2 );
+
+                const double q11x = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 0 );
+                const double q11y = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 1 );
+                const double q11z = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 2 );
+
+                // wedge 0: (q00,q10,q01)
+                wedge_surf_phy_coords( 0, 0, 0 ) = q00x;
+                wedge_surf_phy_coords( 0, 0, 1 ) = q00y;
+                wedge_surf_phy_coords( 0, 0, 2 ) = q00z;
+                wedge_surf_phy_coords( 0, 1, 0 ) = q10x;
+                wedge_surf_phy_coords( 0, 1, 1 ) = q10y;
+                wedge_surf_phy_coords( 0, 1, 2 ) = q10z;
+                wedge_surf_phy_coords( 0, 2, 0 ) = q01x;
+                wedge_surf_phy_coords( 0, 2, 1 ) = q01y;
+                wedge_surf_phy_coords( 0, 2, 2 ) = q01z;
+
+                // wedge 1: (q11,q01,q10)
+                wedge_surf_phy_coords( 1, 0, 0 ) = q11x;
+                wedge_surf_phy_coords( 1, 0, 1 ) = q11y;
+                wedge_surf_phy_coords( 1, 0, 2 ) = q11z;
+                wedge_surf_phy_coords( 1, 1, 0 ) = q01x;
+                wedge_surf_phy_coords( 1, 1, 1 ) = q01y;
+                wedge_surf_phy_coords( 1, 1, 2 ) = q01z;
+                wedge_surf_phy_coords( 1, 2, 0 ) = q10x;
+                wedge_surf_phy_coords( 1, 2, 1 ) = q10y;
+                wedge_surf_phy_coords( 1, 2, 2 ) = q10z;
+            } );
+
+            // ---------------------------------------------------------
+            // (2) Load ALL k/src dofs for the team's radial slab into shared memory
+            //
+            // Layout:
+            //   level = 0..team_size  (absolute r = r_base + level)
+            //   xy    = 0..3 mapped by (dx + 2*dy)
+            //
+            // Each thread loads its own level = team_rank
+            // and the last thread additionally loads level = team_size.
+            // ---------------------------------------------------------
+            const int r_base = r_block_index * ts;
+
+            auto load_level = [&]( const int level ) {
+                const int r_abs = r_base + level;
+                r_sh( level )   = radii_( local_subdomain_id, r_abs );
+
+                for ( int dy = 0; dy <= 1; ++dy )
                 {
-                    /* Coefficient evaluation on current wedge w */;
-                    double tmpcse_k_eval_0 = ( 1.0 / 2.0 ) * qp_array[q][2];
-                    double tmpcse_k_eval_1 = 1.0 / 2.0 - tmpcse_k_eval_0;
-                    double tmpcse_k_eval_2 = tmpcse_k_eval_0 + 1.0 / 2.0;
-                    double tmpcse_k_eval_3 = -qp_array[q][0] - qp_array[q][1] + 1;
-                    double k_eval          = tmpcse_k_eval_1 * tmpcse_k_eval_3 * k_local_hex[w][0] +
-                                    tmpcse_k_eval_1 * k_local_hex[w][1] * qp_array[q][0] +
-                                    tmpcse_k_eval_1 * k_local_hex[w][2] * qp_array[q][1] +
-                                    tmpcse_k_eval_2 * tmpcse_k_eval_3 * k_local_hex[w][3] +
-                                    tmpcse_k_eval_2 * k_local_hex[w][4] * qp_array[q][0] +
-                                    tmpcse_k_eval_2 * k_local_hex[w][5] * qp_array[q][1];
-
-                    double scalar_grad[6][3] = { 0 };
-                    /* Computation + Inversion of the Jacobian */;
-                    double tmpcse_J_0 = -1.0 / 2.0 * r_0 + ( 1.0 / 2.0 ) * r_1;
-                    double tmpcse_J_1 = r_0 + tmpcse_J_0 * ( qp_array[q][2] + 1 );
-                    double tmpcse_J_2 = -qp_array[q][0] - qp_array[q][1] + 1;
-                    double J_0_0 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][0] + wedge_surf_phy_coords[w][1][0] );
-                    double J_0_1 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][0] + wedge_surf_phy_coords[w][2][0] );
-                    double J_0_2 = tmpcse_J_0 * ( tmpcse_J_2 * wedge_surf_phy_coords[w][0][0] +
-                                                  qp_array[q][0] * wedge_surf_phy_coords[w][1][0] +
-                                                  qp_array[q][1] * wedge_surf_phy_coords[w][2][0] );
-                    double J_1_0 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][1] + wedge_surf_phy_coords[w][1][1] );
-                    double J_1_1 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][1] + wedge_surf_phy_coords[w][2][1] );
-                    double J_1_2 = tmpcse_J_0 * ( tmpcse_J_2 * wedge_surf_phy_coords[w][0][1] +
-                                                  qp_array[q][0] * wedge_surf_phy_coords[w][1][1] +
-                                                  qp_array[q][1] * wedge_surf_phy_coords[w][2][1] );
-                    double J_2_0 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][2] + wedge_surf_phy_coords[w][1][2] );
-                    double J_2_1 = tmpcse_J_1 * ( -wedge_surf_phy_coords[w][0][2] + wedge_surf_phy_coords[w][2][2] );
-                    double J_2_2 = tmpcse_J_0 * ( tmpcse_J_2 * wedge_surf_phy_coords[w][0][2] +
-                                                  qp_array[q][0] * wedge_surf_phy_coords[w][1][2] +
-                                                  qp_array[q][1] * wedge_surf_phy_coords[w][2][2] );
-                    double J_det = J_0_0 * J_1_1 * J_2_2 - J_0_0 * J_1_2 * J_2_1 - J_0_1 * J_1_0 * J_2_2 +
-                                   J_0_1 * J_1_2 * J_2_0 + J_0_2 * J_1_0 * J_2_1 - J_0_2 * J_1_1 * J_2_0;
-                    double tmpcse_J_invT_0 = 1.0 / J_det;
-                    double J_invT_cse_0_0  = tmpcse_J_invT_0 * ( J_1_1 * J_2_2 - J_1_2 * J_2_1 );
-                    double J_invT_cse_0_1  = tmpcse_J_invT_0 * ( -J_1_0 * J_2_2 + J_1_2 * J_2_0 );
-                    double J_invT_cse_0_2  = tmpcse_J_invT_0 * ( J_1_0 * J_2_1 - J_1_1 * J_2_0 );
-                    double J_invT_cse_1_0  = tmpcse_J_invT_0 * ( -J_0_1 * J_2_2 + J_0_2 * J_2_1 );
-                    double J_invT_cse_1_1  = tmpcse_J_invT_0 * ( J_0_0 * J_2_2 - J_0_2 * J_2_0 );
-                    double J_invT_cse_1_2  = tmpcse_J_invT_0 * ( -J_0_0 * J_2_1 + J_0_1 * J_2_0 );
-                    double J_invT_cse_2_0  = tmpcse_J_invT_0 * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
-                    double J_invT_cse_2_1  = tmpcse_J_invT_0 * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
-                    double J_invT_cse_2_2  = tmpcse_J_invT_0 * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
-                    /* Computation of the gradient of the scalar shape functions belonging to each DoF.
-      In the Eps-component-loops, we insert the gradient at the entry of the
-      vectorial gradient matrix corresponding to the Eps-component. */
-                    ;
-                    double tmpcse_grad_i_0  = ( 1.0 / 2.0 ) * qp_array[q][2];
-                    double tmpcse_grad_i_1  = tmpcse_grad_i_0 - 1.0 / 2.0;
-                    double tmpcse_grad_i_2  = ( 1.0 / 2.0 ) * qp_array[q][0];
-                    double tmpcse_grad_i_3  = ( 1.0 / 2.0 ) * qp_array[q][1];
-                    double tmpcse_grad_i_4  = tmpcse_grad_i_2 + tmpcse_grad_i_3 - 1.0 / 2.0;
-                    double tmpcse_grad_i_5  = J_invT_cse_0_2 * tmpcse_grad_i_2;
-                    double tmpcse_grad_i_6  = -tmpcse_grad_i_1;
-                    double tmpcse_grad_i_7  = J_invT_cse_1_2 * tmpcse_grad_i_2;
-                    double tmpcse_grad_i_8  = J_invT_cse_2_2 * tmpcse_grad_i_2;
-                    double tmpcse_grad_i_9  = J_invT_cse_0_2 * tmpcse_grad_i_3;
-                    double tmpcse_grad_i_10 = J_invT_cse_1_2 * tmpcse_grad_i_3;
-                    double tmpcse_grad_i_11 = J_invT_cse_2_2 * tmpcse_grad_i_3;
-                    double tmpcse_grad_i_12 = tmpcse_grad_i_0 + 1.0 / 2.0;
-                    double tmpcse_grad_i_13 = -tmpcse_grad_i_12;
-                    double tmpcse_grad_i_14 = -tmpcse_grad_i_4;
-                    scalar_grad[0][0]       = J_invT_cse_0_0 * tmpcse_grad_i_1 + J_invT_cse_0_1 * tmpcse_grad_i_1 +
-                                        J_invT_cse_0_2 * tmpcse_grad_i_4;
-                    scalar_grad[0][1] = J_invT_cse_1_0 * tmpcse_grad_i_1 + J_invT_cse_1_1 * tmpcse_grad_i_1 +
-                                        J_invT_cse_1_2 * tmpcse_grad_i_4;
-                    scalar_grad[0][2] = J_invT_cse_2_0 * tmpcse_grad_i_1 + J_invT_cse_2_1 * tmpcse_grad_i_1 +
-                                        J_invT_cse_2_2 * tmpcse_grad_i_4;
-                    scalar_grad[1][0] = J_invT_cse_0_0 * tmpcse_grad_i_6 - tmpcse_grad_i_5;
-                    scalar_grad[1][1] = J_invT_cse_1_0 * tmpcse_grad_i_6 - tmpcse_grad_i_7;
-                    scalar_grad[1][2] = J_invT_cse_2_0 * tmpcse_grad_i_6 - tmpcse_grad_i_8;
-                    scalar_grad[2][0] = J_invT_cse_0_1 * tmpcse_grad_i_6 - tmpcse_grad_i_9;
-                    scalar_grad[2][1] = J_invT_cse_1_1 * tmpcse_grad_i_6 - tmpcse_grad_i_10;
-                    scalar_grad[2][2] = J_invT_cse_2_1 * tmpcse_grad_i_6 - tmpcse_grad_i_11;
-                    scalar_grad[3][0] = J_invT_cse_0_0 * tmpcse_grad_i_13 + J_invT_cse_0_1 * tmpcse_grad_i_13 +
-                                        J_invT_cse_0_2 * tmpcse_grad_i_14;
-                    scalar_grad[3][1] = J_invT_cse_1_0 * tmpcse_grad_i_13 + J_invT_cse_1_1 * tmpcse_grad_i_13 +
-                                        J_invT_cse_1_2 * tmpcse_grad_i_14;
-                    scalar_grad[3][2] = J_invT_cse_2_0 * tmpcse_grad_i_13 + J_invT_cse_2_1 * tmpcse_grad_i_13 +
-                                        J_invT_cse_2_2 * tmpcse_grad_i_14;
-                    scalar_grad[4][0] = J_invT_cse_0_0 * tmpcse_grad_i_12 + tmpcse_grad_i_5;
-                    scalar_grad[4][1] = J_invT_cse_1_0 * tmpcse_grad_i_12 + tmpcse_grad_i_7;
-                    scalar_grad[4][2] = J_invT_cse_2_0 * tmpcse_grad_i_12 + tmpcse_grad_i_8;
-                    scalar_grad[5][0] = J_invT_cse_0_1 * tmpcse_grad_i_12 + tmpcse_grad_i_9;
-                    scalar_grad[5][1] = J_invT_cse_1_1 * tmpcse_grad_i_12 + tmpcse_grad_i_10;
-                    scalar_grad[5][2] = J_invT_cse_2_1 * tmpcse_grad_i_12 + tmpcse_grad_i_11;
-                    int dimj;
-
-                    double grad_u[3][3] = { 0 };
-                    double div_u        = 0.0;
-                    /* In the following, we exploit the outer-product-structure of the local MV both in 
-      the components of the Epsilon operators and in the local DoFs. */
-                    ;
-                    /* Loop to assemble the trial gradient. */;
-                    for ( dimj = 0; dimj < 3; dimj += 1 )
+                    for ( int dx = 0; dx <= 1; ++dx )
                     {
-                        if ( diagonal_ == false )
-                        {
-                            int node_idx;
-                            for ( node_idx = cmb_shift; node_idx < 6 - surface_shift; node_idx += 1 )
-                            {
-                                double E_grad_trial[3][3]     = { 0 };
-                                E_grad_trial[0][dimj]         = scalar_grad[node_idx][0];
-                                E_grad_trial[1][dimj]         = scalar_grad[node_idx][1];
-                                E_grad_trial[2][dimj]         = scalar_grad[node_idx][2];
-                                double tmpcse_symgrad_trial_0 = 0.5 * E_grad_trial[0][1] + 0.5 * E_grad_trial[1][0];
-                                double tmpcse_symgrad_trial_1 = 0.5 * E_grad_trial[0][2] + 0.5 * E_grad_trial[2][0];
-                                double tmpcse_symgrad_trial_2 = 0.5 * E_grad_trial[1][2] + 0.5 * E_grad_trial[2][1];
-                                grad_u[0][0] =
-                                    1.0 * E_grad_trial[0][0] * src_local_hex[dimj][w][node_idx] + grad_u[0][0];
-                                grad_u[0][1] = tmpcse_symgrad_trial_0 * src_local_hex[dimj][w][node_idx] + grad_u[0][1];
-                                grad_u[0][2] = tmpcse_symgrad_trial_1 * src_local_hex[dimj][w][node_idx] + grad_u[0][2];
-                                grad_u[1][0] = tmpcse_symgrad_trial_0 * src_local_hex[dimj][w][node_idx] + grad_u[1][0];
-                                grad_u[1][1] =
-                                    1.0 * E_grad_trial[1][1] * src_local_hex[dimj][w][node_idx] + grad_u[1][1];
-                                grad_u[1][2] = tmpcse_symgrad_trial_2 * src_local_hex[dimj][w][node_idx] + grad_u[1][2];
-                                grad_u[2][0] = tmpcse_symgrad_trial_1 * src_local_hex[dimj][w][node_idx] + grad_u[2][0];
-                                grad_u[2][1] = tmpcse_symgrad_trial_2 * src_local_hex[dimj][w][node_idx] + grad_u[2][1];
-                                grad_u[2][2] =
-                                    1.0 * E_grad_trial[2][2] * src_local_hex[dimj][w][node_idx] + grad_u[2][2];
-                                div_u = div_u + E_grad_trial[dimj][dimj] * src_local_hex[dimj][w][node_idx];
-                            };
-                        };
-                    };
-                    int dimi;
-                    /* Loop to pair the assembled trial gradient with the test gradients. */;
-                    for ( dimi = 0; dimi < 3; dimi += 1 )
-                    {
-                        if ( diagonal_ == false )
-                        {
-                            int node_idx;
-                            for ( node_idx = cmb_shift; node_idx < 6 - surface_shift; node_idx += 1 )
-                            {
-                                double E_grad_test[3][3]     = { 0 };
-                                E_grad_test[0][dimi]         = scalar_grad[node_idx][0];
-                                E_grad_test[1][dimi]         = scalar_grad[node_idx][1];
-                                E_grad_test[2][dimi]         = scalar_grad[node_idx][2];
-                                double tmpcse_symgrad_test_0 = 0.5 * E_grad_test[0][1] + 0.5 * E_grad_test[1][0];
-                                double tmpcse_symgrad_test_1 = 0.5 * E_grad_test[0][2] + 0.5 * E_grad_test[2][0];
-                                double tmpcse_symgrad_test_2 = 0.5 * E_grad_test[1][2] + 0.5 * E_grad_test[2][1];
-                                double tmpcse_pairing_0      = 2 * tmpcse_symgrad_test_0;
-                                double tmpcse_pairing_1      = 2 * tmpcse_symgrad_test_1;
-                                double tmpcse_pairing_2      = 2 * tmpcse_symgrad_test_2;
-                                dst_array[dimi][w][node_idx] =
-                                    k_eval *
-                                        ( -0.66666666666666663 * div_u * E_grad_test[dimi][dimi] +
-                                          tmpcse_pairing_0 * grad_u[0][1] + tmpcse_pairing_0 * grad_u[1][0] +
-                                          tmpcse_pairing_1 * grad_u[0][2] + tmpcse_pairing_1 * grad_u[2][0] +
-                                          tmpcse_pairing_2 * grad_u[1][2] + tmpcse_pairing_2 * grad_u[2][1] +
-                                          2.0 * E_grad_test[0][0] * grad_u[0][0] +
-                                          2.0 * E_grad_test[1][1] * grad_u[1][1] +
-                                          2.0 * E_grad_test[2][2] * grad_u[2][2] ) *
-                                        fabs( J_det ) * qw_array[q] +
-                                    dst_array[dimi][w][node_idx];
-                            };
-                        };
-                    };
-                    int dim_diagBC;
-                    /* Loop to apply BCs or only the diagonal of the operator. */;
-                    for ( dim_diagBC = 0; dim_diagBC < 3; dim_diagBC += 1 )
-                    {
-                        if ( diagonal_ || treat_boundary_ && ( at_cmb_boundary != 0 || at_surface_boundary != 0 ) )
-                        {
-                            int node_idx;
-                            for ( node_idx = surface_shift; node_idx < 6 - cmb_shift; node_idx += 1 )
-                            {
-                                double E_grad_test[3][3]   = { 0 };
-                                E_grad_test[0][dim_diagBC] = scalar_grad[node_idx][0];
-                                E_grad_test[1][dim_diagBC] = scalar_grad[node_idx][1];
-                                E_grad_test[2][dim_diagBC] = scalar_grad[node_idx][2];
+                        const int xy = dx + 2 * dy;
 
-                                double grad_u_diag[3][3]     = { 0 };
-                                double tmpcse_symgrad_test_0 = 0.5 * E_grad_test[0][1] + 0.5 * E_grad_test[1][0];
-                                double tmpcse_symgrad_test_1 = 0.5 * E_grad_test[0][2] + 0.5 * E_grad_test[2][0];
-                                double tmpcse_symgrad_test_2 = 0.5 * E_grad_test[1][2] + 0.5 * E_grad_test[2][1];
-                                grad_u_diag[0][0] = 1.0 * E_grad_test[0][0] * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[0][1] = tmpcse_symgrad_test_0 * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[0][2] = tmpcse_symgrad_test_1 * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[1][0] = tmpcse_symgrad_test_0 * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[1][1] = 1.0 * E_grad_test[1][1] * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[1][2] = tmpcse_symgrad_test_2 * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[2][0] = tmpcse_symgrad_test_1 * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[2][1] = tmpcse_symgrad_test_2 * src_local_hex[dim_diagBC][w][node_idx];
-                                grad_u_diag[2][2] = 1.0 * E_grad_test[2][2] * src_local_hex[dim_diagBC][w][node_idx];
-                                double tmpcse_pairing_0 = 4 * src_local_hex[dim_diagBC][w][node_idx];
-                                double tmpcse_pairing_1 = 2.0 * src_local_hex[dim_diagBC][w][node_idx];
-                                dst_array[dim_diagBC][w][node_idx] =
-                                    k_eval *
-                                        ( tmpcse_pairing_0 * pow( tmpcse_symgrad_test_0, 2 ) +
-                                          tmpcse_pairing_0 * pow( tmpcse_symgrad_test_1, 2 ) +
-                                          tmpcse_pairing_0 * pow( tmpcse_symgrad_test_2, 2 ) +
-                                          tmpcse_pairing_1 * pow( E_grad_test[0][0], 2 ) +
-                                          tmpcse_pairing_1 * pow( E_grad_test[1][1], 2 ) +
-                                          tmpcse_pairing_1 * pow( E_grad_test[2][2], 2 ) -
-                                          0.66666666666666663 * pow( E_grad_test[dim_diagBC][dim_diagBC], 2 ) *
-                                              src_local_hex[dim_diagBC][w][node_idx] ) *
-                                        fabs( J_det ) * qw_array[q] +
-                                    dst_array[dim_diagBC][w][node_idx];
-                            };
-                        };
-                    };
-                };
+                        const int xi = x_cell + dx;
+                        const int yi = y_cell + dy;
+
+                        k_sh( xy, level )      = k_( local_subdomain_id, xi, yi, r_abs );
+                        src_sh( xy, 0, level ) = src_( local_subdomain_id, xi, yi, r_abs, 0 );
+                        src_sh( xy, 1, level ) = src_( local_subdomain_id, xi, yi, r_abs, 1 );
+                        src_sh( xy, 2, level ) = src_( local_subdomain_id, xi, yi, r_abs, 2 );
+                    }
+                }
             };
-            int dim_add;
-            for ( dim_add = 0; dim_add < 3; dim_add += 1 )
+
+            // each thread loads its own level
+            load_level( team.team_rank() );
+
+            // one extra level (team_size) needed for r+1 of last thread
+            if ( team.team_rank() == ts - 1 )
             {
+                load_level( ts );
+            }
+
+            team.team_barrier();
+
+            // ---------------------------------------------------------
+            // Thread-private radii (depends on r_cell)
+            // ---------------------------------------------------------
+            const int    lvl0 = team.team_rank(); // corresponds to r_cell
+            const double r_0  = r_sh( lvl0 );
+            const double r_1  = r_sh( lvl0 + 1 );
+
+            // Boundary treatment flags (guard the BC query)
+            const bool at_boundary    = at_cmb || at_surface;
+            bool       treat_boundary = false;
+            if ( at_boundary )
+            {
+                const ShellBoundaryFlag sbf = at_cmb ? CMB : SURFACE;
+                treat_boundary              = ( get_boundary_condition_flag( bcs_, sbf ) == DIRICHLET );
+            }
+
+            const int cmb_shift     = ( ( at_boundary && treat_boundary && ( !diagonal_ ) && at_cmb ) ? 3 : 0 );
+            const int surface_shift = ( ( at_boundary && treat_boundary && ( !diagonal_ ) && at_surface ) ? 3 : 0 );
+
+            // (1a) unique-node accumulation: 8 nodes per dim
+            double dst8[3][8] = { 0.0 };
+
+            // Local level index for this thread
+
+            for ( int w = 0; w < 2; ++w )
+            {
+                // -------------------------
+                // (A) k_eval collapsed from shared memory
+                // -------------------------
+                double k_sum = 0.0;
+#pragma unroll
+                for ( int node = 0; node < 6; ++node )
+                {
+                    const int dx = WEDGE_NODE_OFF[w][node][0];
+                    const int dy = WEDGE_NODE_OFF[w][node][1];
+                    const int dr = WEDGE_NODE_OFF[w][node][2];
+
+                    const int xy  = dx + 2 * dy;
+                    const int lvl = lvl0 + dr;
+
+                    k_sum += k_sh( xy, lvl );
+                }
+                const double k_eval = ONE_SIXTH * k_sum;
+
+                // -------------------------
+                // (B) Jacobian + inv(J)^T
+                // -------------------------
+                double wJ = 0.0;
+
+                double i00, i01, i02;
+                double i10, i11, i12;
+                double i20, i21, i22;
+
+                {
+                    const double half_dr = 0.5 * ( r_1 - r_0 );
+                    const double r_mid   = 0.5 * ( r_0 + r_1 );
+
+                    const double J_0_0 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 0 ) + wedge_surf_phy_coords( w, 1, 0 ) );
+                    const double J_0_1 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 0 ) + wedge_surf_phy_coords( w, 2, 0 ) );
+                    const double J_0_2 =
+                        half_dr * ( ONE_THIRD * ( wedge_surf_phy_coords( w, 0, 0 ) + wedge_surf_phy_coords( w, 1, 0 ) +
+                                                  wedge_surf_phy_coords( w, 2, 0 ) ) );
+
+                    const double J_1_0 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 1 ) + wedge_surf_phy_coords( w, 1, 1 ) );
+                    const double J_1_1 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 1 ) + wedge_surf_phy_coords( w, 2, 1 ) );
+                    const double J_1_2 =
+                        half_dr * ( ONE_THIRD * ( wedge_surf_phy_coords( w, 0, 1 ) + wedge_surf_phy_coords( w, 1, 1 ) +
+                                                  wedge_surf_phy_coords( w, 2, 1 ) ) );
+
+                    const double J_2_0 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 2 ) + wedge_surf_phy_coords( w, 1, 2 ) );
+                    const double J_2_1 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 2 ) + wedge_surf_phy_coords( w, 2, 2 ) );
+                    const double J_2_2 =
+                        half_dr * ( ONE_THIRD * ( wedge_surf_phy_coords( w, 0, 2 ) + wedge_surf_phy_coords( w, 1, 2 ) +
+                                                  wedge_surf_phy_coords( w, 2, 2 ) ) );
+
+                    const double J_det = J_0_0 * J_1_1 * J_2_2 - J_0_0 * J_1_2 * J_2_1 - J_0_1 * J_1_0 * J_2_2 +
+                                         J_0_1 * J_1_2 * J_2_0 + J_0_2 * J_1_0 * J_2_1 - J_0_2 * J_1_1 * J_2_0;
+
+                    const double invJ = 1.0 / J_det;
+
+                    // inv(J)^T
+                    i00 = invJ * ( J_1_1 * J_2_2 - J_1_2 * J_2_1 );
+                    i01 = invJ * ( -J_1_0 * J_2_2 + J_1_2 * J_2_0 );
+                    i02 = invJ * ( J_1_0 * J_2_1 - J_1_1 * J_2_0 );
+
+                    i10 = invJ * ( -J_0_1 * J_2_2 + J_0_2 * J_2_1 );
+                    i11 = invJ * ( J_0_0 * J_2_2 - J_0_2 * J_2_0 );
+                    i12 = invJ * ( -J_0_0 * J_2_1 + J_0_1 * J_2_0 );
+
+                    i20 = invJ * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
+                    i21 = invJ * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
+                    i22 = invJ * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
+
+                    wJ = Kokkos::abs( J_det ); // qw=1
+                }
+
+                const double kwJ = k_eval * wJ;
+
+                // -------------------------
+                // (C) grad_u + div_u as scalars (src from shared memory)
+                // -------------------------
+                {
+                    double gu00 = 0.0;
+                    double gu10 = 0.0, gu11 = 0.0;
+                    double gu20 = 0.0, gu21 = 0.0, gu22 = 0.0;
+                    double div_u = 0.0;
+
+                    if ( !diagonal_ )
+                    {
+                        // Assemble gu** and div_u
+                        for ( int dimj = 0; dimj < 3; ++dimj )
+                        {
+#pragma unroll
+                            for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                            {
+                                const double gx = dN_ref[node_idx][0];
+                                const double gy = dN_ref[node_idx][1];
+                                const double gz = dN_ref[node_idx][2];
+
+                                const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                                const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                                const double g2 = i20 * gx + i21 * gy + i22 * gz;
+
+                                double E00, E11, E22, sym01, sym02, sym12, gdd;
+                                column_grad_to_sym( dimj, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+
+                                const int dx = WEDGE_NODE_OFF[w][node_idx][0];
+                                const int dy = WEDGE_NODE_OFF[w][node_idx][1];
+                                const int dr = WEDGE_NODE_OFF[w][node_idx][2];
+
+                                const int xy  = dx + 2 * dy;
+                                const int lvl = lvl0 + dr;
+
+                                // UPDATED INDEXING: src_sh(xy, dim, level)
+                                const double s = src_sh( xy, dimj, lvl );
+
+                                gu00 += E00 * s;
+                                gu10 += sym01 * s;
+                                gu11 += E11 * s;
+                                gu20 += sym02 * s;
+                                gu21 += sym12 * s;
+                                gu22 += E22 * s;
+
+                                div_u += gdd * s;
+                            }
+                        }
+
+                        // Pairing -> accumulate into unique-node array dst8
+                        for ( int dimi = 0; dimi < 3; ++dimi )
+                        {
+#pragma unroll
+                            for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                            {
+                                const double gx = dN_ref[node_idx][0];
+                                const double gy = dN_ref[node_idx][1];
+                                const double gz = dN_ref[node_idx][2];
+
+                                const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                                const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                                const double g2 = i20 * gx + i21 * gy + i22 * gz;
+
+                                double E00, E11, E22, sym01, sym02, sym12, gdd;
+                                column_grad_to_sym( dimi, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+
+                                const double pairing0 = 2.0 * sym01;
+                                const double pairing1 = 2.0 * sym02;
+                                const double pairing2 = 2.0 * sym12;
+
+                                const int u = WEDGE_TO_UNIQUE[w][node_idx];
+
+                                dst8[dimi][u] += kwJ * ( NEG_TWO_THIRDS * div_u * gdd + 2.0 * pairing0 * gu10 +
+                                                         2.0 * pairing1 * gu20 + 2.0 * pairing2 * gu21 +
+                                                         2.0 * E00 * gu00 + 2.0 * E11 * gu11 + 2.0 * E22 * gu22 );
+                            }
+                        }
+                    }
+                }
+
+                // Diagonal / BC loop -> also accumulate into dst8
+                if ( diagonal_ || ( treat_boundary && at_boundary ) )
+                {
+                    for ( int dim_diagBC = 0; dim_diagBC < 3; ++dim_diagBC )
+                    {
+#pragma unroll
+                        for ( int node_idx = surface_shift; node_idx < 6 - cmb_shift; ++node_idx )
+                        {
+                            const double gx = dN_ref[node_idx][0];
+                            const double gy = dN_ref[node_idx][1];
+                            const double gz = dN_ref[node_idx][2];
+
+                            const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                            const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                            const double g2 = i20 * gx + i21 * gy + i22 * gz;
+
+                            double E00, E11, E22, sym01, sym02, sym12, gdd;
+                            column_grad_to_sym( dim_diagBC, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+
+                            const int dx = WEDGE_NODE_OFF[w][node_idx][0];
+                            const int dy = WEDGE_NODE_OFF[w][node_idx][1];
+                            const int dr = WEDGE_NODE_OFF[w][node_idx][2];
+
+                            const int xy  = dx + 2 * dy;
+                            const int lvl = lvl0 + dr;
+
+                            // UPDATED INDEXING: src_sh(xy, dim, level)
+                            const double s = src_sh( xy, dim_diagBC, lvl );
+
+                            const double pairing0 = 4.0 * s;
+                            const double pairing1 = 2.0 * s;
+
+                            const int u = WEDGE_TO_UNIQUE[w][node_idx];
+
+                            dst8[dim_diagBC][u] += kwJ * ( pairing0 * ( sym01 * sym01 ) + pairing0 * ( sym02 * sym02 ) +
+                                                           pairing0 * ( sym12 * sym12 ) + pairing1 * ( E00 * E00 ) +
+                                                           pairing1 * ( E11 * E11 ) + pairing1 * ( E22 * E22 ) +
+                                                           NEG_TWO_THIRDS * ( gdd * gdd ) * s );
+                        }
+                    }
+                }
+            } // w
+
+            // Final scatter: 8 unique nodes per dim (same result as original merged scatter)
+
+            for ( int dim_add = 0; dim_add < 3; ++dim_add )
+            {
+                Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell, dim_add ), dst8[dim_add][0] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell, y_cell, r_cell, dim_add ), dst_array[dim_add][0][0] );
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell, dim_add ), dst8[dim_add][1] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell, dim_add ),
-                    dst_array[dim_add][0][1] + dst_array[dim_add][1][2] );
+                    &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell, dim_add ), dst8[dim_add][2] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell, dim_add ),
-                    dst_array[dim_add][0][2] + dst_array[dim_add][1][1] );
+                    &dst_( local_subdomain_id, x_cell, y_cell, r_cell + 1, dim_add ), dst8[dim_add][3] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell, y_cell, r_cell + 1, dim_add ), dst_array[dim_add][0][3] );
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, dim_add ), dst8[dim_add][4] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, dim_add ),
-                    dst_array[dim_add][0][4] + dst_array[dim_add][1][5] );
+                    &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, dim_add ), dst8[dim_add][5] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, dim_add ),
-                    dst_array[dim_add][0][5] + dst_array[dim_add][1][4] );
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, dim_add ), dst8[dim_add][6] );
                 Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, dim_add ), dst_array[dim_add][1][0] );
-                Kokkos::atomic_add(
-                    &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, dim_add ),
-                    dst_array[dim_add][1][3] );
-            };
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, dim_add ), dst8[dim_add][7] );
+            }
         }
     }
 
