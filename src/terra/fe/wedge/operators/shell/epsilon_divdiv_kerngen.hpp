@@ -2,6 +2,7 @@
 
 #include "../../quadrature/quadrature.hpp"
 #include "communication/shell/communication.hpp"
+#include "communication/shell/communication_plan.hpp"
 #include "dense/vec.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/kernel_helpers.hpp"
@@ -55,8 +56,10 @@ class EpsilonDivDivKerngen
     linalg::OperatorCommunicationMode operator_communication_mode_;
     linalg::OperatorStoredMatrixMode  operator_stored_matrix_mode_;
 
-    communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, VecDim > send_buffers_;
+    //communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, VecDim > send_buffers_;
     communication::shell::SubdomainNeighborhoodSendRecvBuffer< ScalarT, VecDim > recv_buffers_;
+    terra::communication::shell::ShellBoundaryCommPlan<grid::Grid4DDataVec< ScalarType, VecDim >> comm_plan_; // builds once
+
 
     grid::Grid4DDataVec< ScalarType, VecDim > dst_;
     grid::Grid4DDataVec< ScalarType, VecDim > src_;
@@ -106,8 +109,9 @@ class EpsilonDivDivKerngen
     , operator_apply_mode_( operator_apply_mode )
     , operator_communication_mode_( operator_communication_mode )
     , operator_stored_matrix_mode_( operator_stored_matrix_mode )
-    , send_buffers_( domain )
+    //, send_buffers_( domain )
     , recv_buffers_( domain )
+    , comm_plan_(domain)
     {
              bcs_[0] = bcs[0];
         bcs_[1] = bcs[1];
@@ -258,9 +262,10 @@ class EpsilonDivDivKerngen
         {
             util::Timer timer_comm( "epsilon_divdiv_comm" );
 
-            communication::shell::pack_send_and_recv_local_subdomain_boundaries(
-                domain_, dst_, send_buffers_, recv_buffers_ );
-            communication::shell::unpack_and_reduce_local_subdomain_boundaries( domain_, dst_, recv_buffers_ );
+            terra::communication::shell::send_recv_with_plan(comm_plan_, dst_, recv_buffers_);
+            //communication::shell::pack_send_and_recv_local_subdomain_boundaries(
+            //    domain_, dst_, send_buffers_, recv_buffers_ );
+            //communication::shell::unpack_and_reduce_local_subdomain_boundaries( domain_, dst_, recv_buffers_ );
         }
     }
 

@@ -16,6 +16,32 @@ namespace terra::communication::shell {
 
 constexpr int MPI_TAG_BOUNDARY_DATA = 100;
 
+namespace detail {
+
+// Build an unmanaged view with the *same* data_type/layout/device as a Grid*DDataVec,
+// pointing into a raw pointer slice.
+template < class GridViewT >
+auto make_unmanaged_like( typename GridViewT::value_type* ptr, int n0 = 0, int n1 = 0, int n2 = 0 )
+{
+    using data_type    = typename GridViewT::data_type;
+    using array_layout = typename GridViewT::array_layout;
+    using device_type  = typename GridViewT::device_type;
+
+    using unmanaged_view =
+        Kokkos::View< data_type, array_layout, device_type, Kokkos::MemoryTraits< Kokkos::Unmanaged > >;
+
+    if constexpr ( GridViewT::rank == 1 )
+        return unmanaged_view( ptr, n0 );
+    else if constexpr ( GridViewT::rank == 2 )
+        return unmanaged_view( ptr, n0, n1 );
+    else if constexpr ( GridViewT::rank == 3 )
+        return unmanaged_view( ptr, n0, n1, n2 );
+    else
+        static_assert( GridViewT::rank >= 1 && GridViewT::rank <= 3, "Unsupported rank for unmanaged-like helper." );
+}
+
+} // namespace detail
+
 /// @brief Send and receive buffers for all process-local subdomain boundaries.
 ///
 /// Allocates views for all boundaries of local subdomains. Those are the nodes that overlap with values from
@@ -160,41 +186,6 @@ class SubdomainNeighborhoodSendRecvBuffer
         buffers_face_;
 };
 
-namespace detail {
-
-// Build an unmanaged view with the *same* data_type/layout/device as a Grid*DDataVec,
-// pointing into a raw pointer slice.
-// This lets us reuse copy_to_buffer(...) and still pack into a contiguous rank buffer.
-
-template < class GridViewT >
-auto make_unmanaged_like( typename GridViewT::value_type* ptr, int n0 = 0, int n1 = 0, int n2 = 0 )
-{
-    using data_type    = typename GridViewT::data_type;
-    using array_layout = typename GridViewT::array_layout;
-    using device_type  = typename GridViewT::device_type;
-
-    using unmanaged_view =
-        Kokkos::View< data_type, array_layout, device_type, Kokkos::MemoryTraits< Kokkos::Unmanaged > >;
-
-    if constexpr ( GridViewT::rank == 1 )
-    {
-        return unmanaged_view( ptr, n0 );
-    }
-    else if constexpr ( GridViewT::rank == 2 )
-    {
-        return unmanaged_view( ptr, n0, n1 );
-    }
-    else if constexpr ( GridViewT::rank == 3 )
-    {
-        return unmanaged_view( ptr, n0, n1, n2 );
-    }
-    else
-    {
-        static_assert( GridViewT::rank >= 1 && GridViewT::rank <= 3, "Unsupported rank for unmanaged-like helper." );
-    }
-}
-
-} // namespace detail
 
 /// @brief Packs, sends and recvs local subdomain boundaries using two sets of buffers.
 ///
