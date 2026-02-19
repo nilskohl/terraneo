@@ -25,6 +25,7 @@
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/solvers/pminres.hpp"
+#include "util/info.hpp"
 #include "linalg/solvers/richardson.hpp"
 #include "linalg/vector_q1isoq2_q1.hpp"
 #include "terra/dense/mat.hpp"
@@ -284,7 +285,7 @@ std::tuple< double, double, int >
 
     ScalarType r_min = 0.5;
     ScalarType r_max = 1.0;
-    std::cout << "Allocating domains ... " << std::endl;
+    terra::util::logroot << "Allocating domains ... " << std::endl;
     for ( int level = min_level; level <= max_level; level++ )
     {
         const int idx = level - min_level;
@@ -307,7 +308,7 @@ std::tuple< double, double, int >
     std::vector< std::string >                             stok_vec_names = { "u", "f", "solution", "error" };
     constexpr int                                          num_stok_tmps  = 8;
 
-    std::cout << "Allocating temps ... " << std::endl;
+    terra::util::logroot << "Allocating temps ... " << std::endl;
     for ( int i = 0; i < num_stok_tmps; i++ )
     {
         stok_vec_names.push_back( "tmp_" + std::to_string( i ) );
@@ -363,7 +364,7 @@ std::tuple< double, double, int >
     };
 
     // Set up operators.
-    std::cout << "Setting operators ... " << std::endl;
+    terra::util::logroot << "Setting operators ... " << std::endl;
     using Stokes      = fe::wedge::operators::shell::EpsDivDivStokes< ScalarType >;
     using Viscous     = Stokes::Block11Type;
     using Gradient    = Stokes::Block12Type;
@@ -378,7 +379,7 @@ std::tuple< double, double, int >
 
     VectorQ1Scalar< ScalarType > k( "k", domains[velocity_level], mask_data[velocity_level] );
 
-    std::cout << "Interpolating k " << std::endl;
+    terra::util::logroot << "Interpolating k " << std::endl;
     Kokkos::parallel_for(
         "coefficient interpolation",
         local_domain_md_range_policy_nodes( domains[velocity_level] ),
@@ -390,13 +391,13 @@ std::tuple< double, double, int >
     {
         // gca on all elements for now
         linalg::assign( GCAElements, 0 );
-        std::cout << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
+        terra::util::logroot << "Adaptive GCA: determining GCA elements on level " << velocity_level << std::endl;
         terra::linalg::solvers::GCAElementsCollector< ScalarType >(
             domains[velocity_level], k.grid_data(), velocity_level, GCAElements.grid_data() );
     }
     else if ( gca == 1 )
     {
-        std::cout << "GCA on all elements " << std::endl;
+        terra::util::logroot << "GCA on all elements " << std::endl;
         assign( GCAElements, 1 );
     }
 
@@ -441,7 +442,7 @@ std::tuple< double, double, int >
 
     std::vector< VectorQ1Vec< ScalarType > > inverse_diagonals;
 
-    std::cout << "MG hierarchy ... " << std::endl;
+    terra::util::logroot << "MG hierarchy ... " << std::endl;
 
     for ( int level = 0; level < num_levels; level++ )
     {
@@ -545,7 +546,7 @@ std::tuple< double, double, int >
     {
         for ( int level = num_levels - 2; level >= 0; level-- )
         {
-            std::cout << "Assembling GCA on level " << level << std::endl;
+            terra::util::logroot << "Assembling GCA on level " << level << std::endl;
 
             TwoGridGCA< ScalarType, Viscous >(
                 ( level == num_levels - 2 ) ? K_neumann.block_11() : A_c[level + 1],
@@ -598,7 +599,7 @@ std::tuple< double, double, int >
         const auto omega_opt = 2.0 / ( 1.3 * max_ev );
         smoothers.emplace_back( inverse_diagonals[level], smoother_prepost, tmp_mg[level], omega_opt );
 
-        std::cout << "Optimal omega on level " << level << ": " << omega_opt << std::endl;
+        terra::util::logroot << "Optimal omega on level " << level << ": " << omega_opt << std::endl;
     }
 
     using CoarseGridSolver = linalg::solvers::PCG< Viscous >;
@@ -705,7 +706,7 @@ std::tuple< double, double, int >
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, fgmres_options, solver_table );
     //linalg::solvers::FGMRES< Stokes > fgmres( tmp_fgmres, {}, table );
 
-    std::cout << "Solve ... " << std::endl;
+    terra::util::logroot << "Solve ... " << std::endl;
     assign( u, 0 );
     linalg::solvers::solve( fgmres, K, u, f );
     solver_table->query_rows_equals( "tag", "fgmres_solver" )
@@ -778,8 +779,10 @@ std::tuple< double, double, int >
 
 int main( int argc, char** argv )
 {
-    util::terra_initialize( &argc, &argv );
+    MPI_Init( &argc, &argv );
+    Kokkos::ScopeGuard scope_guard( argc, argv );
 
+    util::print_general_info( argc, argv );
     const int max_level = 5;
     auto      table     = std::make_shared< util::Table >();
 
@@ -796,7 +799,7 @@ int main( int argc, char** argv )
 
     for ( int minlevel = 1; minlevel <= 1; ++minlevel )
     {
-        std::cout << "minlevel = " << minlevel << std::endl;
+        terra::util::logroot << "minlevel = " << minlevel << std::endl;
 
         for ( int gca : gcas )
         {
@@ -805,8 +808,8 @@ int main( int argc, char** argv )
             {
                 for ( int level = minlevel + 1; level <= max_level; ++level )
                 {
-                    std::cout << "k_max = " << kmax << ", gca = " << gca << std::endl;
-                    std::cout << "level = " << level << std::endl;
+                    terra::util::logroot << "k_max = " << kmax << ", gca = " << gca << std::endl;
+                    terra::util::logroot << "level = " << level << std::endl;
                     Kokkos::Timer timer;
                     timer.reset();
                     const auto [l2_error_vel, l2_error_pre, iterations] = test( kmax, gca, minlevel, level, table );
@@ -818,9 +821,9 @@ int main( int argc, char** argv )
                         const double order_vel = prev_l2_error_vel / l2_error_vel;
                         const double order_pre = prev_l2_error_pre / l2_error_pre;
 
-                        std::cout << "Level " << level << ": order_vel = " << order_vel
+                        terra::util::logroot << "Level " << level << ": order_vel = " << order_vel
                                   << ", l2_error_vel = " << l2_error_vel << std::endl;
-                        std::cout << "Level " << level << ": order_pre = " << order_pre
+                        terra::util::logroot << "Level " << level << ": order_pre = " << order_pre
                                   << ", l2_error_pre = " << l2_error_pre << std::endl;
 
                         table->add_row(
@@ -832,7 +835,7 @@ int main( int argc, char** argv )
                     prev_l2_error_vel = l2_error_vel;
                     prev_l2_error_pre = l2_error_pre;
 
-                    std::cout << "Iters: " << iterations << std::endl;
+                    terra::util::logroot << "Iters: " << iterations << std::endl;
                     cycles[std::string( "k_max=" ) + std::to_string( kmax )] = iterations;
 
                     if ( gca == 1 )
@@ -857,11 +860,12 @@ int main( int argc, char** argv )
             .select_columns( { "level", "order_pre", "order_vel" } )
             .print_pretty();
     }
-    std::cout << "DCA: " << std::endl;
+    terra::util::logroot << "DCA: " << std::endl;
     table_dca->print_pretty();
-    std::cout << "GCA: " << std::endl;
+    terra::util::logroot << "GCA: " << std::endl;
     table_gca->print_pretty();
-    std::cout << "AGCA: " << std::endl;
+    terra::util::logroot << "AGCA: " << std::endl;
     table_agca->print_pretty();
+    MPI_Finalize();
     return 0;
 }

@@ -337,10 +337,11 @@ void run_all( const int min_level, const int max_level, const int executions, co
 
         // output a csv table of results
         if (mpi::rank() == 0) {
-            std::ofstream out("./csv/bo_ml" + std::to_string(max_level) + "_sdr" +  std::to_string(refinement_level_subdomains) + "_np" + std::to_string(world_size) + ".csv" );
+            std::ofstream out("./csv/bo_np" + std::to_string(world_size) + "_sdr" +  std::to_string(refinement_level_subdomains)  + "_ml" + std::to_string(max_level) + ".csv" );
             table.print_csv(out);
         }
         table.print_csv(logroot);
+        
 
         logroot << std::endl;
         logroot << std::endl;
@@ -349,8 +350,7 @@ void run_all( const int min_level, const int max_level, const int executions, co
     util::TimerTree::instance().aggregate_mpi();
     if ( mpi::rank() == 0 )
     {
-        auto          timer_tree_file = "benchmark_operators_timer_tree.json";
-        std::ofstream out( timer_tree_file );
+         std::ofstream out( "./tts/bo_np" + std::to_string(world_size) + "_sdr" +  std::to_string(refinement_level_subdomains)  + "_ml" + std::to_string(max_level) + ".json" );
         out << util::TimerTree::instance().json_aggregate();
         out.close();
     }
