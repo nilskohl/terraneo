@@ -248,7 +248,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     send_recv_pairs.reserve( 1024 );
   
     {
-    util::Timer          timer_kernel( "setup_send_recv_pairs" );
       
     for ( const auto& [local_subdomain_info, idx_and_neighborhood] : domain.subdomains() )
     {
@@ -364,7 +363,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     std::map< mpi::MPIRank, int >                       recv_total_by_rank;
 
     {
-    util::Timer          timer_kernel( "recv_chunks_by_rank" );
     for ( const auto& p : recv_pairs )
     {
         if ( enable_local_comm && p.local_rank == p.neighbor_rank )
@@ -384,7 +382,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     std::vector< MPI_Request >                 data_recv_requests;
     data_recv_requests.reserve( recv_chunks_by_rank.size() );
   {
-    util::Timer          timer_kernel( "recv_rank_buffers" );
   
     for ( const auto& [rank, total_sz] : recv_total_by_rank )
     {
@@ -412,7 +409,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
 
     auto send_pairs = send_recv_pairs;
   {
-    util::Timer          timer_kernel( "sort" );
  
     std::sort( send_pairs.begin(), send_pairs.end(), []( const SendRecvPair& a, const SendRecvPair& b ) {
         // Must match original Isend ordering.
@@ -433,7 +429,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
       std::map< mpi::MPIRank, rank_buffer_view > send_rank_buffers;
 
   {
-    util::Timer          timer_kernel( "send_chunks_by_rank" );
  
     for ( const auto& p : send_pairs )
     {
@@ -463,7 +458,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     // Local communication path stays as before (direct copy into recv buffers)
     // -------------------------------------------------------------------------
      {
-    util::Timer          timer_kernel( "local_comm" );
   for ( const auto& p : send_pairs )
     {
         const auto local_comm = enable_local_comm && p.local_rank == p.neighbor_rank;
@@ -530,7 +524,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     // Pack all remote sends into the per-rank contiguous send buffers
     // -------------------------------------------------------------------------     
     {
-    util::Timer          timer_kernel( "packing" );
 
     for ( const auto& [rank, chunks] : send_chunks_by_rank )
     {
@@ -592,7 +585,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     std::vector< MPI_Request > data_send_requests;
     data_send_requests.reserve( send_rank_buffers.size() );
  {
-    util::Timer          timer_kernel( "posting sends" );
 
     for ( const auto& [rank, buf] : send_rank_buffers )
     {
@@ -624,7 +616,6 @@ void pack_send_and_recv_local_subdomain_boundaries(
     // (so unpack_and_reduce_local_subdomain_boundaries() can remain unchanged)
     // -------------------------------------------------------------------------
      {
-    util::Timer          timer_kernel( "scatter buffers" );
 
     for ( const auto& [rank, chunks] : recv_chunks_by_rank )
     {
@@ -710,7 +701,6 @@ void unpack_and_reduce_local_subdomain_boundaries(
                            boundary_recv_buffers,
     CommunicationReduction reduction = CommunicationReduction::SUM )
 {
-    util::Timer          timer_kernel( "unpacking and reduce" );
 
     static_assert(
         std::is_same_v< GridDataType, grid::Grid4DDataScalar< typename GridDataType::value_type > > ||
