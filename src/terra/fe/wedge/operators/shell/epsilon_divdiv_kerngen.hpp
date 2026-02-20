@@ -49,8 +49,7 @@ class EpsilonDivDivKerngen
     grid::Grid4DDataScalar< ScalarType >                     k_;
     grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag > mask_;
     BoundaryConditions                                       bcs_;
-
-    bool diagonal_;
+    bool                                                     diagonal_;
 
     linalg::OperatorApplyMode         operator_apply_mode_;
     linalg::OperatorCommunicationMode operator_communication_mode_;
@@ -87,6 +86,14 @@ class EpsilonDivDivKerngen
     ScalarT r_max_;
     ScalarT r_min_;
 
+    int local_subdomains_;
+    int hex_lat_;
+    int hex_rad_;
+    int lat_refinement_level_;
+    int block_size_;
+    int blocks_per_column_;
+    int blocks_;
+
   public:
     EpsilonDivDivKerngen(
         const grid::shell::DistributedDomain&                           domain,
@@ -95,6 +102,7 @@ class EpsilonDivDivKerngen
         const grid::Grid4DDataScalar< grid::shell::ShellBoundaryFlag >& mask,
         const grid::Grid4DDataScalar< ScalarT >&                        k,
         BoundaryConditions                                              bcs,
+        bool                                                            diagonal,
         bool                                                            diagonal,
         linalg::OperatorApplyMode         operator_apply_mode = linalg::OperatorApplyMode::Replace,
         linalg::OperatorCommunicationMode operator_communication_mode =
@@ -143,6 +151,17 @@ class EpsilonDivDivKerngen
         util::logroot << "[EpsilonDivDiv] number of tiles (x,y,r)=(" << lat_tiles_ << "," << lat_tiles_ << "," << r_tiles_
                       << "), team_size=" << team_size_ << ", blocks=" << blocks_ << std::endl;
    
+        const grid::shell::DomainInfo& domain_info = domain_.domain_info();
+        local_subdomains_                          = domain_.subdomains().size();
+        hex_lat_                                   = domain_info.subdomain_num_nodes_per_side_laterally() - 1;
+        hex_rad_                                   = domain_info.subdomain_num_nodes_radially() - 1;
+        lat_refinement_level_                      = domain_info.diamond_lateral_refinement_level();
+        const int threads_per_column               = hex_rad_;
+        block_size_                                = std::min( 256, threads_per_column );
+        blocks_per_column_                         = ( threads_per_column + block_size_ - 1 ) / block_size_;
+        blocks_                                    = local_subdomains_ * hex_lat_ * hex_lat_ * blocks_per_column_;
+        util::logroot << "[EpsilonDivDiv] (threads_per_column, block_size_, blocks_per_column_) = "
+                      << threads_per_column << ", " << block_size_ << ", " << blocks_per_column_ << ")" << std::endl;
     }
 
     void set_operator_apply_and_communication_modes(
@@ -255,6 +274,23 @@ class EpsilonDivDivKerngen
         Kokkos::parallel_for( "matvec", policy, *this );
         //   grid::shell::local_domain_md_range_policy_cells( domain_ ),
         //s   *this );
+
+        if ( src_.extent( 0 ) != dst_.extent( 0 ) || src_.extent( 1 ) != dst_.extent( 1 ) ||
+             src_.extent( 2 ) != dst_.extent( 2 ) || src_.extent( 3 ) != dst_.extent( 3 ) )
+        {
+            throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
+        }
+
+        if ( src_.extent( 1 ) != grid_.extent( 1 ) || src_.extent( 2 ) != grid_.extent( 2 ) )
+        {
+            throw std::runtime_error( "EpsilonDivDiv: src/dst mismatch" );
+        }
+
+        util::Timer          timer_kernel( "epsilon_divdiv_kernel" );
+        Kokkos::TeamPolicy<> policy( blocks_, block_size_ );
+        Kokkos::parallel_for( "matvec", policy, *this );
+        //  Kokkos::parallel_for( "matvec", grid::shell::local_domain_md_range_policy_cells( domain_ ), *this );
+
         Kokkos::fence();
         timer_kernel.stop();
 
@@ -323,349 +359,554 @@ class EpsilonDivDivKerngen
         }
     }
 
-    using Team = Kokkos::TeamPolicy<>::member_type;
-
-    // scratch size for the WHOLE (x,y,r) tile slab
     KOKKOS_INLINE_FUNCTION
-    size_t team_shmem_size( const int /*ts*/ ) const
+    static size_t team_shmem_size( const int ts /*team_size*/ )
     {
-          const int nlev = r_tile_ + 1;
-    const int n  = lat_tile_ + 1;
-    const int nxy  = n * n;
-
-    // coords_sh: nxy * 3
-    // src_sh:    nxy * 3 * nlev
-    // k_sh:      nxy * nlev
-    // r_sh:      nlev
-    const size_t ndoubles =
-      size_t(nxy) * 3 + size_t(nxy) * 3 * nlev + size_t(nxy) * nlev + size_t(nlev);
-
-    return sizeof(double) * ndoubles;
+        // We store wedge_surf_phy_coords[2][3][3], src, k
+        return sizeof( ScalarType ) * ( 2 * 3 * 3 + ( ts + 1 ) * ( 12 + 4 + 1 ) );
     }
 
-   KOKKOS_INLINE_FUNCTION
-  void operator()(const Team& team) const
-  {
-    // league_rank -> (subdomain, lat_y_id, lat_x_id, r_tile_id)
-    int tmp = team.league_rank();
+    using Team = Kokkos::TeamPolicy<>::member_type;
 
-    const int r_tile_id = tmp % r_tiles_;
-    tmp /= r_tiles_;
+    KOKKOS_INLINE_FUNCTION void operator()( const Team& team ) const
+    {
+        int local_subdomain_id, x_cell, y_cell, r_cell;
 
-    const int lat_y_id = tmp % lat_tiles_;
-    tmp /= lat_tiles_;
+        int r_block_index = 0;
+        {
+            int tmp       = team.league_rank();
+            r_block_index = tmp % blocks_per_column_;
+            tmp /= blocks_per_column_;
+            y_cell = tmp & ( hex_lat_ - 1 );
+            tmp >>= lat_refinement_level_;
+            x_cell = tmp & ( hex_lat_ - 1 );
+            tmp >>= lat_refinement_level_;
+            local_subdomain_id = tmp;
 
-    const int lat_x_id = tmp % lat_tiles_;
-    tmp /= lat_tiles_;
-
-    const int local_subdomain_id = tmp;
-
-    const int x0 = lat_x_id * lat_tile_;
-    const int y0 = lat_y_id * lat_tile_;
-    const int r0 = r_tile_id * r_tile_;
-
-    // team_rank -> (tx, ty, tr) where tx,ty in [0..lat_tile_-1], tr in [0..r_tile_-1]
-    const int tid = team.team_rank();
-    const int tx  = tid % lat_tile_;
-    const int ty  = (tid / lat_tile_) % lat_tile_;
-    const int tr  = tid / (lat_tile_ * lat_tile_);
-
-    if (tr >= r_tile_) return;
-
-    const int x_cell = x0 + tx;
-    const int y_cell = y0 + ty;
-    const int r_cell = r0 + tr;
-
-    // Each element needs x_cell+1, y_cell+1 and r_cell+1
-  
-    // ---- shared slab dims ----
-    const int nlev = r_tile_ + 1;
-    const int nxy  = (lat_tile_ + 1) * (lat_tile_ + 1);
-
-    double* shmem = reinterpret_cast<double*>(
-      team.team_shmem().get_shmem(team_shmem_size(team.team_size())));
-
-    using ScratchCoords =
-      Kokkos::View<double**, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged>;
-    using ScratchSrc =
-      Kokkos::View<double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged>;
-    using ScratchK =
-      Kokkos::View<double**, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged>;
-
-    ScratchCoords coords_sh(shmem, nxy, 3); shmem += nxy * 3;
-    ScratchSrc    src_sh   (shmem, nxy, 3, nlev); shmem += nxy * 3 * nlev;
-    ScratchK      k_sh     (shmem, nxy, nlev);    shmem += nxy * nlev;
-
-    auto r_sh =
-      Kokkos::View<double*, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged>(
-        shmem, nlev);
-
-    auto node_id = [&](int nx, int ny) -> int { return nx + (lat_tile_ + 1) * ny; };
-
-    // ---- cooperative loads for whole tile slab ----
-    // coords
-    Kokkos::parallel_for(Kokkos::TeamThreadRange(team, nxy), [&](int n) {
-      const int dxn = n % (lat_tile_ + 1) ;
-      const int dyn = n / (lat_tile_ + 1) ;
-      const int xi  = x0 + dxn;
-      const int yi  = y0 + dyn;
-
-      if (xi <= hex_lat_ && yi <= hex_lat_) {
-        coords_sh(n,0) = grid_(local_subdomain_id, xi, yi, 0);
-        coords_sh(n,1) = grid_(local_subdomain_id, xi, yi, 1);
-        coords_sh(n,2) = grid_(local_subdomain_id, xi, yi, 2);
-      } else {
-        coords_sh(n,0) = coords_sh(n,1) = coords_sh(n,2) = 0.0;
-      }
-    });
-
-    // radii
-    Kokkos::parallel_for(Kokkos::TeamThreadRange(team, nlev), [&](int lvl) {
-      const int rr = r0 + lvl;
-      r_sh(lvl) = (rr <= hex_rad_) ? radii_(local_subdomain_id, rr) : 0.0;
-    });
-
-    // src/k dofs
-    const int total_pairs = nxy * nlev;
-    Kokkos::parallel_for(Kokkos::TeamThreadRange(team, total_pairs), [&](int t) {
-      const int lvl  = t / nxy;
-      const int node = t - lvl * nxy;
-
-      const int dxn = node % (lat_tile_ + 1) ;
-      const int dyn = node / (lat_tile_ + 1) ;
-
-      const int xi = x0 + dxn;
-      const int yi = y0 + dyn;
-      const int rr = r0 + lvl;
-
-      if (xi <= hex_lat_ && yi <= hex_lat_ && rr <= hex_rad_) {
-        k_sh(node, lvl)      = k_(local_subdomain_id, xi, yi, rr);
-        src_sh(node, 0, lvl) = src_(local_subdomain_id, xi, yi, rr, 0);
-        src_sh(node, 1, lvl) = src_(local_subdomain_id, xi, yi, rr, 1);
-        src_sh(node, 2, lvl) = src_(local_subdomain_id, xi, yi, rr, 2);
-      } else {
-        k_sh(node, lvl) = 0.0;
-        src_sh(node,0,lvl) = src_sh(node,1,lvl) = src_sh(node,2,lvl) = 0.0;
-      }
-    });
-
-    team.team_barrier();
-
-        // ---------------- per-thread element compute (ONE element)
-        // radii for this element's r (local slab index = tr)
-
-          if (x_cell < hex_lat_ && y_cell < hex_lat_ && r_cell < hex_rad_) {
-
-        const int    lvl0 = tr;
-        const double r_0  = r_sh( lvl0 );
-        const double r_1  = r_sh( lvl0 + 1 );
+            r_cell = r_block_index * team.team_size() + team.team_rank();
+        }
 
         const bool at_cmb     = has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB );
         const bool at_surface = has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE );
 
-        const bool at_boundary    = at_cmb || at_surface;
-        bool       treat_boundary = false;
-        if ( at_boundary )
+        
+        if ( operator_stored_matrix_mode_ != linalg::OperatorStoredMatrixMode::Off || at_cmb || at_surface )
         {
-            const ShellBoundaryFlag sbf = at_cmb ? CMB : SURFACE;
-            treat_boundary              = ( get_boundary_condition_flag( bcs_, sbf ) == DIRICHLET );
+            if ( r_cell >= hex_rad_ )
+            {
+                Kokkos::abort( "This should not happen." );
+            }
+
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A[num_wedges_per_hex_cell] = { 0 };
+
+            if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Full )
+            {
+                Kokkos::abort( "This should not happen." );
+                A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+            }
+            else if ( operator_stored_matrix_mode_ == linalg::OperatorStoredMatrixMode::Selective )
+            {
+                Kokkos::abort( "This should not happen." );
+                if ( local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 ) &&
+                     local_matrix_storage_.has_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 ) )
+                {
+                    A[0] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                    A[1] = local_matrix_storage_.get_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+                }
+                else
+                {
+                    A[0] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                    A[1] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+                }
+            }
+            else
+            {
+                A[0] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 0 );
+                A[1] = assemble_local_matrix( local_subdomain_id, x_cell, y_cell, r_cell, 1 );
+            }
+
+            dense::Vec< ScalarT, 18 > src[num_wedges_per_hex_cell];
+            for ( int dimj = 0; dimj < 3; dimj++ )
+            {
+                dense::Vec< ScalarT, 6 > src_d[num_wedges_per_hex_cell];
+                extract_local_wedge_vector_coefficients(
+                    src_d, local_subdomain_id, x_cell, y_cell, r_cell, dimj, src_ );
+
+                for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+                {
+                    for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                    {
+                        src[wedge]( dimj * num_nodes_per_wedge + i ) = src_d[wedge]( i );
+                    }
+                }
+            }
+
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > boundary_mask;
+            boundary_mask.fill( 1.0 );
+
+            bool                                                  freeslip_reorder = false;
+            dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > R[num_wedges_per_hex_cell];
+
+            if ( at_cmb || at_surface )
+            {
+                ShellBoundaryFlag     sbf = at_cmb ? CMB : SURFACE;
+                BoundaryConditionFlag bcf = get_boundary_condition_flag( bcs_, sbf );
+                if ( bcf == DIRICHLET )
+                {
+                    for ( int dimi = 0; dimi < 3; ++dimi )
+                    {
+                        for ( int dimj = 0; dimj < 3; ++dimj )
+                        {
+                            for ( int i = 0; i < num_nodes_per_wedge; i++ )
+                            {
+                                for ( int j = 0; j < num_nodes_per_wedge; j++ )
+                                {
+                                    if ( ( at_cmb && ( ( dimi == dimj && i != j && ( i < 3 || j < 3 ) ) ||
+                                                       ( dimi != dimj && ( i < 3 || j < 3 ) ) ) ) ||
+                                         ( at_surface && ( ( dimi == dimj && i != j && ( i >= 3 || j >= 3 ) ) ||
+                                                           ( dimi != dimj && ( i >= 3 || j >= 3 ) ) ) ) )
+                                    {
+                                        boundary_mask(
+                                            i + dimi * num_nodes_per_wedge, j + dimj * num_nodes_per_wedge ) = 0.0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else if ( bcf == FREESLIP )
+                {
+                    freeslip_reorder                                                                     = true;
+                    dense::Mat< ScalarT, LocalMatrixDim, LocalMatrixDim > A_tmp[num_wedges_per_hex_cell] = { 0 };
+
+                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    {
+                        for ( int dimi = 0; dimi < 3; ++dimi )
+                        {
+                            for ( int node_idxi = 0; node_idxi < num_nodes_per_wedge; node_idxi++ )
+                            {
+                                for ( int dimj = 0; dimj < 3; ++dimj )
+                                {
+                                    for ( int node_idxj = 0; node_idxj < num_nodes_per_wedge; node_idxj++ )
+                                    {
+                                        A_tmp[wedge]( node_idxi * 3 + dimi, node_idxj * 3 + dimj ) = A[wedge](
+                                            node_idxi + dimi * num_nodes_per_wedge,
+                                            node_idxj + dimj * num_nodes_per_wedge );
+                                    }
+                                }
+                            }
+                        }
+                        reorder_local_dofs( DoFOrdering::DIMENSIONWISE, DoFOrdering::NODEWISE, src[wedge] );
+                    }
+
+                    constexpr int layer_hex_offset_x[2][3] = { { 0, 1, 0 }, { 1, 0, 1 } };
+                    constexpr int layer_hex_offset_y[2][3] = { { 0, 0, 1 }, { 1, 1, 0 } };
+
+                    for ( int wedge = 0; wedge < 2; ++wedge )
+                    {
+                        for ( int i = 0; i < LocalMatrixDim; ++i )
+                        {
+                            R[wedge]( i, i ) = 1.0;
+                        }
+
+                        for ( int boundary_node_idx = 0; boundary_node_idx < 3; boundary_node_idx++ )
+                        {
+                            dense::Vec< double, 3 > normal = grid::shell::coords(
+                                local_subdomain_id,
+                                x_cell + layer_hex_offset_x[wedge][boundary_node_idx],
+                                y_cell + layer_hex_offset_y[wedge][boundary_node_idx],
+                                r_cell + ( at_cmb ? 0 : 1 ),
+                                grid_,
+                                radii_ );
+
+                            auto R_i = trafo_mat_cartesian_to_normal_tangential( normal );
+
+                            int offset_in_R = at_cmb ? 0 : 9;
+                            for ( int dimi = 0; dimi < 3; ++dimi )
+                            {
+                                for ( int dimj = 0; dimj < 3; ++dimj )
+                                {
+                                    R[wedge](
+                                        offset_in_R + boundary_node_idx * 3 + dimi,
+                                        offset_in_R + boundary_node_idx * 3 + dimj ) = R_i( dimi, dimj );
+                                }
+                            }
+                        }
+
+                        A[wedge] = R[wedge] * A_tmp[wedge] * R[wedge].transposed();
+
+                        auto src_tmp = R[wedge] * src[wedge];
+                        for ( int i = 0; i < 18; ++i )
+                        {
+                            src[wedge]( i ) = src_tmp( i );
+                        }
+
+                        int node_start = at_surface ? 3 : 0;
+                        int node_end   = at_surface ? 6 : 3;
+
+                        for ( int node_idx = node_start; node_idx < node_end; node_idx++ )
+                        {
+                            int idx = node_idx * 3;
+                            for ( int k = 0; k < 18; ++k )
+                            {
+                                if ( k != idx )
+                                {
+                                    boundary_mask( idx, k ) = 0.0;
+                                    boundary_mask( k, idx ) = 0.0;
+                                }
+                            }
+                        }
+                    }
+                }
+                else if ( bcf == NEUMANN ) {}
+            }
+
+            for ( int wedge = 0; wedge < num_wedges_per_hex_cell; wedge++ )
+            {
+                A[wedge].hadamard_product( boundary_mask );
+            }
+
+            if ( diagonal_ )
+            {
+                A[0] = A[0].diagonal();
+                A[1] = A[1].diagonal();
+            }
+
+            dense::Vec< ScalarT, LocalMatrixDim > dst[num_wedges_per_hex_cell];
+            dst[0] = A[0] * src[0];
+            dst[1] = A[1] * src[1];
+
+            if ( freeslip_reorder )
+            {
+                dense::Vec< ScalarT, LocalMatrixDim > dst_tmp[num_wedges_per_hex_cell];
+                dst_tmp[0] = R[0].transposed() * dst[0];
+                dst_tmp[1] = R[1].transposed() * dst[1];
+                for ( int i = 0; i < 18; ++i )
+                {
+                    dst[0]( i ) = dst_tmp[0]( i );
+                    dst[1]( i ) = dst_tmp[1]( i );
+                }
+
+                reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[0] );
+                reorder_local_dofs( DoFOrdering::NODEWISE, DoFOrdering::DIMENSIONWISE, dst[1] );
+            }
+
+            for ( int dimi = 0; dimi < 3; dimi++ )
+            {
+                dense::Vec< ScalarT, 6 > dst_d[num_wedges_per_hex_cell];
+                dst_d[0] = dst[0].template slice< 6 >( dimi * num_nodes_per_wedge );
+                dst_d[1] = dst[1].template slice< 6 >( dimi * num_nodes_per_wedge );
+
+                atomically_add_local_wedge_vector_coefficients(
+                    dst_, local_subdomain_id, x_cell, y_cell, r_cell, dimi, dst_d );
+            }
         }
-
-        const int cmb_shift     = ( ( at_boundary && treat_boundary && ( !diagonal_ ) && at_cmb ) ? 3 : 0 );
-        const int surface_shift = ( ( at_boundary && treat_boundary && ( !diagonal_ ) && at_surface ) ? 3 : 0 );
-
-        // ---- your existing constants (unchanged) ----
-        static constexpr int WEDGE_NODE_OFF[2][6][3] = {
-            { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 0, 1, 1 } },
-            { { 1, 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 1, 1, 1 }, { 0, 1, 1 }, { 1, 0, 1 } } };
-
-        static constexpr int WEDGE_TO_UNIQUE[2][6] = {
-            { 0, 1, 2, 3, 4, 5 }, // wedge 0
-            { 6, 2, 1, 7, 5, 4 }  // wedge 1
-        };
-
-        constexpr double ONE_THIRD      = 1.0 / 3.0;
-        constexpr double ONE_SIXTH      = 1.0 / 6.0;
-        constexpr double NEG_TWO_THIRDS = -0.66666666666666663;
-
-        static constexpr double dN_ref[6][3] = {
-            { -0.5, -0.5, -ONE_SIXTH },
-            { 0.5, 0.0, -ONE_SIXTH },
-            { 0.0, 0.5, -ONE_SIXTH },
-            { -0.5, -0.5, ONE_SIXTH },
-            { 0.5, 0.0, ONE_SIXTH },
-            { 0.0, 0.5, ONE_SIXTH } };
-
-      
-
-        // 4 surface nodes ids (within tile footprint)
-        const int n00 = node_id( tx, ty );
-        const int n01 = node_id( tx, ty + 1 );
-        const int n10 = node_id( tx + 1, ty );
-        const int n11 = node_id( tx + 1, ty + 1 );
-
-        // wedge surface coords in registers
-        double ws[2][3][3];
-
-        // wedge 0: (q00,q10,q01)
-        ws[0][0][0] = coords_sh( n00, 0 ); ws[0][0][1] = coords_sh( n00, 1 ); ws[0][0][2] = coords_sh( n00, 2 );
-        ws[0][1][0] = coords_sh( n10, 0 ); ws[0][1][1] = coords_sh( n10, 1 ); ws[0][1][2] = coords_sh( n10, 2 );
-        ws[0][2][0] = coords_sh( n01, 0 ); ws[0][2][1] = coords_sh( n01, 1 ); ws[0][2][2] = coords_sh( n01, 2 );
-
-        // wedge 1: (q11,q01,q10)
-        ws[1][0][0] = coords_sh( n11, 0 ); ws[1][0][1] = coords_sh( n11, 1 ); ws[1][0][2] = coords_sh( n11, 2 );
-        ws[1][1][0] = coords_sh( n01, 0 ); ws[1][1][1] = coords_sh( n01, 1 ); ws[1][1][2] = coords_sh( n01, 2 );
-        ws[1][2][0] = coords_sh( n10, 0 ); ws[1][2][1] = coords_sh( n10, 1 ); ws[1][2][2] = coords_sh( n10, 2 );
-
-        // per-thread accumulation (same as your dst8 approach)
-        double dst8[3][8] = { 0.0 };
-
-        for ( int w = 0; w < 2; ++w )
+        else
         {
+            // ----- FAST PATH (DCA) -----
 
-            // k_eval from shared slab
-            double k_sum = 0.0;
-#pragma unroll
-            for ( int node = 0; node < 6; ++node )
-            {
-                const int ddx = WEDGE_NODE_OFF[w][node][0];
-                const int ddy = WEDGE_NODE_OFF[w][node][1];
-                const int ddr = WEDGE_NODE_OFF[w][node][2];
+            static constexpr int WEDGE_NODE_OFF[2][6][3] = {
+                { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 0, 1, 1 } },
+                { { 1, 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 1, 1, 1 }, { 0, 1, 1 }, { 1, 0, 1 } } };
 
-                const int nid = node_id( tx + ddx, ty + ddy );
-                const int lvl = lvl0 + ddr;
+            static constexpr int WEDGE_TO_UNIQUE[2][6] = {
+                { 0, 1, 2, 3, 4, 5 }, // wedge 0
+                { 6, 2, 1, 7, 5, 4 }  // wedge 1
+            };
 
-                k_sum += k_sh( nid, lvl );
-            }
-            const double k_eval = ONE_SIXTH * k_sum;
+            constexpr double ONE_THIRD      = 1.0 / 3.0;
+            constexpr double ONE_SIXTH      = 1.0 / 6.0;
+            constexpr double NEG_TWO_THIRDS = -0.66666666666666663;
 
-            double wJ = 0.0;
+            static constexpr double dN_ref[6][3] = {
+                { -0.5, -0.5, -ONE_SIXTH },
+                { 0.5, 0.0, -ONE_SIXTH },
+                { 0.0, 0.5, -ONE_SIXTH },
+                { -0.5, -0.5, ONE_SIXTH },
+                { 0.5, 0.0, ONE_SIXTH },
+                { 0.0, 0.5, ONE_SIXTH } };
 
-            double i00, i01, i02;
-            double i10, i11, i12;
-            double i20, i21, i22;
+            double* shmem =
+                reinterpret_cast< double* >( team.team_shmem().get_shmem( team_shmem_size( team.team_size() ) ) );
 
-            {
-                const double half_dr = 0.5 * ( r_1 - r_0 );
-                const double r_mid   = 0.5 * ( r_0 + r_1 );
+            using ScratchCoords = Kokkos::
+                View< double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
+            using ScratchSrc = Kokkos::
+                View< double***, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
+            using ScratchK = Kokkos::
+                View< double**, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >;
 
-                const double J_0_0 = r_mid * ( -ws[w][0][0] + ws[w][1][0] );
-                const double J_0_1 = r_mid * ( -ws[w][0][0] + ws[w][2][0] );
-                const double J_0_2 = half_dr * ( ONE_THIRD * ( ws[w][0][0] + ws[w][1][0] + ws[w][2][0] ) );
+            ScratchCoords wedge_surf_phy_coords( shmem, 2, 3, 3 );
+            shmem += 2 * 3 * 3;
 
-                const double J_1_0 = r_mid * ( -ws[w][0][1] + ws[w][1][1] );
-                const double J_1_1 = r_mid * ( -ws[w][0][1] + ws[w][2][1] );
-                const double J_1_2 = half_dr * ( ONE_THIRD * ( ws[w][0][1] + ws[w][1][1] + ws[w][2][1] ) );
+            const int ts   = team.team_size();
+            const int nlev = ts + 1;
 
-                const double J_2_0 = r_mid * ( -ws[w][0][2] + ws[w][1][2] );
-                const double J_2_1 = r_mid * ( -ws[w][0][2] + ws[w][2][2] );
-                const double J_2_2 = half_dr * ( ONE_THIRD * ( ws[w][0][2] + ws[w][1][2] + ws[w][2][2] ) );
+            ScratchSrc src_sh( shmem, 4, 3, nlev );
+            shmem += 4 * 3 * nlev;
 
-                const double J_det = J_0_0 * J_1_1 * J_2_2 - J_0_0 * J_1_2 * J_2_1 -
-                                     J_0_1 * J_1_0 * J_2_2 + J_0_1 * J_1_2 * J_2_0 +
-                                     J_0_2 * J_1_0 * J_2_1 - J_0_2 * J_1_1 * J_2_0;
+            ScratchK k_sh( shmem, 4, nlev );
+            shmem += 4 * nlev;
 
-                const double invJ = 1.0 / J_det;
+            auto r_sh = Kokkos::
+                View< double*, Kokkos::LayoutRight, typename Team::scratch_memory_space, Kokkos::MemoryUnmanaged >(
+                    shmem, nlev );
+            shmem += nlev;
 
-                i00 = invJ * ( J_1_1 * J_2_2 - J_1_2 * J_2_1 );
-                i01 = invJ * ( -J_1_0 * J_2_2 + J_1_2 * J_2_0 );
-                i02 = invJ * ( J_1_0 * J_2_1 - J_1_1 * J_2_0 );
+            const int r_base = r_block_index * ts;
 
-                i10 = invJ * ( -J_0_1 * J_2_2 + J_0_2 * J_2_1 );
-                i11 = invJ * ( J_0_0 * J_2_2 - J_0_2 * J_2_0 );
-                i12 = invJ * ( -J_0_0 * J_2_1 + J_0_1 * J_2_0 );
+            auto load_level = [&]( const int level ) {
+                const int r_abs = r_base + level;
 
-                i20 = invJ * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
-                i21 = invJ * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
-                i22 = invJ * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
+                r_sh( level ) = radii_( local_subdomain_id, r_abs );
 
-                wJ = Kokkos::abs( J_det );
-            }
-
-            const double kwJ = k_eval * wJ;
-
-            double gu00 = 0.0;
-            double gu10 = 0.0, gu11 = 0.0;
-            double gu20 = 0.0, gu21 = 0.0, gu22 = 0.0;
-            double div_u = 0.0;
-
-            if ( !diagonal_ )
-            {
-                for ( int dimj = 0; dimj < 3; ++dimj )
+                for ( int dy = 0; dy <= 1; ++dy )
                 {
-#pragma unroll
-                    for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                    for ( int dx = 0; dx <= 1; ++dx )
                     {
-                        const double gx = dN_ref[node_idx][0];
-                        const double gy = dN_ref[node_idx][1];
-                        const double gz = dN_ref[node_idx][2];
+                        const int xy = dx + 2 * dy;
 
-                        const double g0 = i00 * gx + i01 * gy + i02 * gz;
-                        const double g1 = i10 * gx + i11 * gy + i12 * gz;
-                        const double g2 = i20 * gx + i21 * gy + i22 * gz;
+                        const int xi = x_cell + dx;
+                        const int yi = y_cell + dy;
 
-                        double E00, E11, E22, sym01, sym02, sym12, gdd;
-                        column_grad_to_sym( dimj, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+                        k_sh( xy, level )      = k_( local_subdomain_id, xi, yi, r_abs );
+                        src_sh( xy, 0, level ) = src_( local_subdomain_id, xi, yi, r_abs, 0 );
+                        src_sh( xy, 1, level ) = src_( local_subdomain_id, xi, yi, r_abs, 1 );
+                        src_sh( xy, 2, level ) = src_( local_subdomain_id, xi, yi, r_abs, 2 );
+                    }
+                }
+            };
 
-                        const int ddx = WEDGE_NODE_OFF[w][node_idx][0];
-                        const int ddy = WEDGE_NODE_OFF[w][node_idx][1];
-                        const int ddr = WEDGE_NODE_OFF[w][node_idx][2];
+            // Kokkos::single( Kokkos::PerTeam( team ), [&]() {
+            if ( team.team_rank() == 1 )
+            {
+                const double q00x = grid_( local_subdomain_id, x_cell, y_cell, 0 );
+                const double q00y = grid_( local_subdomain_id, x_cell, y_cell, 1 );
+                const double q00z = grid_( local_subdomain_id, x_cell, y_cell, 2 );
 
-                        const int nid = node_id( tx + ddx, ty + ddy );
-                        const int lvl = lvl0 + ddr;
+                const double q01x = grid_( local_subdomain_id, x_cell, y_cell + 1, 0 );
+                const double q01y = grid_( local_subdomain_id, x_cell, y_cell + 1, 1 );
+                const double q01z = grid_( local_subdomain_id, x_cell, y_cell + 1, 2 );
 
-                        const double s = src_sh( nid, dimj, lvl );
+                const double q10x = grid_( local_subdomain_id, x_cell + 1, y_cell, 0 );
+                const double q10y = grid_( local_subdomain_id, x_cell + 1, y_cell, 1 );
+                const double q10z = grid_( local_subdomain_id, x_cell + 1, y_cell, 2 );
 
-                        gu00 += E00 * s;
-                        gu10 += sym01 * s;
-                        gu11 += E11 * s;
-                        gu20 += sym02 * s;
-                        gu21 += sym12 * s;
-                        gu22 += E22 * s;
+                const double q11x = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 0 );
+                const double q11y = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 1 );
+                const double q11z = grid_( local_subdomain_id, x_cell + 1, y_cell + 1, 2 );
 
-                        div_u += gdd * s;
+                wedge_surf_phy_coords( 0, 0, 0 ) = q00x;
+                wedge_surf_phy_coords( 0, 0, 1 ) = q00y;
+                wedge_surf_phy_coords( 0, 0, 2 ) = q00z;
+                wedge_surf_phy_coords( 0, 1, 0 ) = q10x;
+                wedge_surf_phy_coords( 0, 1, 1 ) = q10y;
+                wedge_surf_phy_coords( 0, 1, 2 ) = q10z;
+                wedge_surf_phy_coords( 0, 2, 0 ) = q01x;
+                wedge_surf_phy_coords( 0, 2, 1 ) = q01y;
+                wedge_surf_phy_coords( 0, 2, 2 ) = q01z;
+
+                wedge_surf_phy_coords( 1, 0, 0 ) = q11x;
+                wedge_surf_phy_coords( 1, 0, 1 ) = q11y;
+                wedge_surf_phy_coords( 1, 0, 2 ) = q11z;
+                wedge_surf_phy_coords( 1, 1, 0 ) = q01x;
+                wedge_surf_phy_coords( 1, 1, 1 ) = q01y;
+                wedge_surf_phy_coords( 1, 1, 2 ) = q01z;
+                wedge_surf_phy_coords( 1, 2, 0 ) = q10x;
+                wedge_surf_phy_coords( 1, 2, 1 ) = q10y;
+                wedge_surf_phy_coords( 1, 2, 2 ) = q10z;
+            }
+            //);
+
+            // each thread loads its own level
+            load_level( team.team_rank() );
+
+            // one extra level (team_size) needed for r+1 of last thread
+            if ( team.team_rank() == ts - 2 )
+            {
+                load_level( ts - 1 );
+            }
+            if ( team.team_rank() == 1 )
+            {
+                load_level( 0 );
+            }
+            team.team_barrier();
+
+            const int    lvl0 = team.team_rank();
+            const double r_0  = r_sh( lvl0 );
+            const double r_1  = r_sh( lvl0 + 1 );
+
+            const bool at_boundary    = at_cmb || at_surface;
+            bool       treat_boundary = false;
+            if ( at_boundary )
+            {
+                const ShellBoundaryFlag sbf = at_cmb ? CMB : SURFACE;
+                treat_boundary              = ( get_boundary_condition_flag( bcs_, sbf ) == DIRICHLET );
+            }
+
+            const int cmb_shift     = ( ( at_boundary && treat_boundary && ( !diagonal_ ) && at_cmb ) ? 3 : 0 );
+            const int surface_shift = ( ( at_boundary && treat_boundary && ( !diagonal_ ) && at_surface ) ? 3 : 0 );
+
+            double dst8[3][8] = { 0.0 };
+
+            for ( int w = 0; w < 2; ++w )
+            {
+                double k_sum = 0.0;
+#pragma unroll
+                for ( int node = 0; node < 6; ++node )
+                {
+                    const int dx = WEDGE_NODE_OFF[w][node][0];
+                    const int dy = WEDGE_NODE_OFF[w][node][1];
+                    const int dr = WEDGE_NODE_OFF[w][node][2];
+
+                    const int xy  = dx + 2 * dy;
+                    const int lvl = lvl0 + dr;
+
+                    k_sum += k_sh( xy, lvl );
+                }
+                const double k_eval = ONE_SIXTH * k_sum;
+
+                double wJ = 0.0;
+
+                double i00, i01, i02;
+                double i10, i11, i12;
+                double i20, i21, i22;
+
+                {
+                    const double half_dr = 0.5 * ( r_1 - r_0 );
+                    const double r_mid   = 0.5 * ( r_0 + r_1 );
+
+                    const double J_0_0 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 0 ) + wedge_surf_phy_coords( w, 1, 0 ) );
+                    const double J_0_1 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 0 ) + wedge_surf_phy_coords( w, 2, 0 ) );
+                    const double J_0_2 =
+                        half_dr * ( ONE_THIRD * ( wedge_surf_phy_coords( w, 0, 0 ) + wedge_surf_phy_coords( w, 1, 0 ) +
+                                                  wedge_surf_phy_coords( w, 2, 0 ) ) );
+
+                    const double J_1_0 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 1 ) + wedge_surf_phy_coords( w, 1, 1 ) );
+                    const double J_1_1 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 1 ) + wedge_surf_phy_coords( w, 2, 1 ) );
+                    const double J_1_2 =
+                        half_dr * ( ONE_THIRD * ( wedge_surf_phy_coords( w, 0, 1 ) + wedge_surf_phy_coords( w, 1, 1 ) +
+                                                  wedge_surf_phy_coords( w, 2, 1 ) ) );
+
+                    const double J_2_0 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 2 ) + wedge_surf_phy_coords( w, 1, 2 ) );
+                    const double J_2_1 =
+                        r_mid * ( -wedge_surf_phy_coords( w, 0, 2 ) + wedge_surf_phy_coords( w, 2, 2 ) );
+                    const double J_2_2 =
+                        half_dr * ( ONE_THIRD * ( wedge_surf_phy_coords( w, 0, 2 ) + wedge_surf_phy_coords( w, 1, 2 ) +
+                                                  wedge_surf_phy_coords( w, 2, 2 ) ) );
+
+                    const double J_det = J_0_0 * J_1_1 * J_2_2 - J_0_0 * J_1_2 * J_2_1 - J_0_1 * J_1_0 * J_2_2 +
+                                         J_0_1 * J_1_2 * J_2_0 + J_0_2 * J_1_0 * J_2_1 - J_0_2 * J_1_1 * J_2_0;
+
+                    const double invJ = 1.0 / J_det;
+
+                    i00 = invJ * ( J_1_1 * J_2_2 - J_1_2 * J_2_1 );
+                    i01 = invJ * ( -J_1_0 * J_2_2 + J_1_2 * J_2_0 );
+                    i02 = invJ * ( J_1_0 * J_2_1 - J_1_1 * J_2_0 );
+
+                    i10 = invJ * ( -J_0_1 * J_2_2 + J_0_2 * J_2_1 );
+                    i11 = invJ * ( J_0_0 * J_2_2 - J_0_2 * J_2_0 );
+                    i12 = invJ * ( -J_0_0 * J_2_1 + J_0_1 * J_2_0 );
+
+                    i20 = invJ * ( J_0_1 * J_1_2 - J_0_2 * J_1_1 );
+                    i21 = invJ * ( -J_0_0 * J_1_2 + J_0_2 * J_1_0 );
+                    i22 = invJ * ( J_0_0 * J_1_1 - J_0_1 * J_1_0 );
+
+                    wJ = Kokkos::abs( J_det );
+                }
+
+                const double kwJ = k_eval * wJ;
+
+                {
+                    double gu00 = 0.0;
+                    double gu10 = 0.0, gu11 = 0.0;
+                    double gu20 = 0.0, gu21 = 0.0, gu22 = 0.0;
+                    double div_u = 0.0;
+
+                    if ( !diagonal_ )
+                    {
+                        for ( int dimj = 0; dimj < 3; ++dimj )
+                        {
+#pragma unroll
+                            for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                            {
+                                const double gx = dN_ref[node_idx][0];
+                                const double gy = dN_ref[node_idx][1];
+                                const double gz = dN_ref[node_idx][2];
+
+                                const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                                const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                                const double g2 = i20 * gx + i21 * gy + i22 * gz;
+
+                                double E00, E11, E22, sym01, sym02, sym12, gdd;
+                                column_grad_to_sym( dimj, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+
+                                const int dx = WEDGE_NODE_OFF[w][node_idx][0];
+                                const int dy = WEDGE_NODE_OFF[w][node_idx][1];
+                                const int dr = WEDGE_NODE_OFF[w][node_idx][2];
+
+                                const int xy  = dx + 2 * dy;
+                                const int lvl = lvl0 + dr;
+
+                                const double s = src_sh( xy, dimj, lvl );
+
+                                gu00 += E00 * s;
+                                gu10 += sym01 * s;
+                                gu11 += E11 * s;
+                                gu20 += sym02 * s;
+                                gu21 += sym12 * s;
+                                gu22 += E22 * s;
+
+                                div_u += gdd * s;
+                            }
+                        }
+
+                        for ( int dimi = 0; dimi < 3; ++dimi )
+                        {
+#pragma unroll
+                            for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                            {
+                                const double gx = dN_ref[node_idx][0];
+                                const double gy = dN_ref[node_idx][1];
+                                const double gz = dN_ref[node_idx][2];
+
+                                const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                                const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                                const double g2 = i20 * gx + i21 * gy + i22 * gz;
+
+                                double E00, E11, E22, sym01, sym02, sym12, gdd;
+                                column_grad_to_sym( dimi, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+
+                                const double pairing0 = 2.0 * sym01;
+                                const double pairing1 = 2.0 * sym02;
+                                const double pairing2 = 2.0 * sym12;
+
+                                const int u = WEDGE_TO_UNIQUE[w][node_idx];
+
+                                dst8[dimi][u] += kwJ * ( NEG_TWO_THIRDS * div_u * gdd + 2.0 * pairing0 * gu10 +
+                                                         2.0 * pairing1 * gu20 + 2.0 * pairing2 * gu21 +
+                                                         2.0 * E00 * gu00 + 2.0 * E11 * gu11 + 2.0 * E22 * gu22 );
+                            }
+                        }
                     }
                 }
 
-                for ( int dimi = 0; dimi < 3; ++dimi )
+                if ( diagonal_ || ( treat_boundary && at_boundary ) )
                 {
-#pragma unroll
-                    for ( int node_idx = cmb_shift; node_idx < 6 - surface_shift; ++node_idx )
+                    for ( int dim_diagBC = 0; dim_diagBC < 3; ++dim_diagBC )
                     {
-                        const double gx = dN_ref[node_idx][0];
-                        const double gy = dN_ref[node_idx][1];
-                        const double gz = dN_ref[node_idx][2];
-
-                        const double g0 = i00 * gx + i01 * gy + i02 * gz;
-                        const double g1 = i10 * gx + i11 * gy + i12 * gz;
-                        const double g2 = i20 * gx + i21 * gy + i22 * gz;
-
-                        double E00, E11, E22, sym01, sym02, sym12, gdd;
-                        column_grad_to_sym( dimi, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
-
-                        const double pairing0 = 2.0 * sym01;
-                        const double pairing1 = 2.0 * sym02;
-                        const double pairing2 = 2.0 * sym12;
-
-                        const int u = WEDGE_TO_UNIQUE[w][node_idx];
-
-                        dst8[dimi][u] += kwJ * ( NEG_TWO_THIRDS * div_u * gdd + 2.0 * pairing0 * gu10 +
-                                                 2.0 * pairing1 * gu20 + 2.0 * pairing2 * gu21 + 2.0 * E00 * gu00 +
-                                                 2.0 * E11 * gu11 + 2.0 * E22 * gu22 );
-                    }
-                }
-            }
-
-            if ( diagonal_ || ( treat_boundary && at_boundary ) )
-            {
-                for ( int dim_diagBC = 0; dim_diagBC < 3; ++dim_diagBC )
-                {
 #pragma unroll
-                    for ( int node_idx = surface_shift; node_idx < 6 - cmb_shift; ++node_idx )
-                    {
-                        const double gx = dN_ref[node_idx][0];
-                        const double gy = dN_ref[node_idx][1];
-                        const double gz = dN_ref[node_idx][2];
+                        for ( int node_idx = surface_shift; node_idx < 6 - cmb_shift; ++node_idx )
+                        {
+                            const double gx = dN_ref[node_idx][0];
+                            const double gy = dN_ref[node_idx][1];
+                            const double gz = dN_ref[node_idx][2];
 
                         const double g0 = i00 * gx + i01 * gy + i02 * gz;
                         const double g1 = i10 * gx + i11 * gy + i12 * gz;
@@ -710,6 +951,57 @@ class EpsilonDivDivKerngen
             Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, dim_add ), dst8[dim_add][7] );
         }
     }
+                            const double g0 = i00 * gx + i01 * gy + i02 * gz;
+                            const double g1 = i10 * gx + i11 * gy + i12 * gz;
+                            const double g2 = i20 * gx + i21 * gy + i22 * gz;
+
+                            double E00, E11, E22, sym01, sym02, sym12, gdd;
+                            column_grad_to_sym( dim_diagBC, g0, g1, g2, E00, E11, E22, sym01, sym02, sym12, gdd );
+
+                            const int dx = WEDGE_NODE_OFF[w][node_idx][0];
+                            const int dy = WEDGE_NODE_OFF[w][node_idx][1];
+                            const int dr = WEDGE_NODE_OFF[w][node_idx][2];
+
+                            const int xy  = dx + 2 * dy;
+                            const int lvl = lvl0 + dr;
+
+                            const double s = src_sh( xy, dim_diagBC, lvl );
+
+                            const double pairing0 = 4.0 * s;
+                            const double pairing1 = 2.0 * s;
+
+                            const int u = WEDGE_TO_UNIQUE[w][node_idx];
+
+                            dst8[dim_diagBC][u] += kwJ * ( pairing0 * ( sym01 * sym01 ) + pairing0 * ( sym02 * sym02 ) +
+                                                           pairing0 * ( sym12 * sym12 ) + pairing1 * ( E00 * E00 ) +
+                                                           pairing1 * ( E11 * E11 ) + pairing1 * ( E22 * E22 ) +
+                                                           NEG_TWO_THIRDS * ( gdd * gdd ) * s );
+                        }
+                    }
+                }
+            } // w
+
+            for ( int dim_add = 0; dim_add < 3; ++dim_add )
+            {
+                Kokkos::atomic_add( &dst_( local_subdomain_id, x_cell, y_cell, r_cell, dim_add ), dst8[dim_add][0] );
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell, dim_add ), dst8[dim_add][1] );
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell, dim_add ), dst8[dim_add][2] );
+
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell, y_cell, r_cell + 1, dim_add ), dst8[dim_add][3] );
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell, r_cell + 1, dim_add ), dst8[dim_add][4] );
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell, y_cell + 1, r_cell + 1, dim_add ), dst8[dim_add][5] );
+
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell, dim_add ), dst8[dim_add][6] );
+                Kokkos::atomic_add(
+                    &dst_( local_subdomain_id, x_cell + 1, y_cell + 1, r_cell + 1, dim_add ), dst8[dim_add][7] );
+            }
+        }
     }
 
     /// @brief: For both trial and test space this function sets up a vector:
