@@ -356,13 +356,26 @@ class EpsilonDivDivKerngen
         }
         else
         {
-            // Launch bounds: 256 threads/block, min 3 blocks/SM to reduce register pressure
-            Kokkos::TeamPolicy<  > dn_policy( blocks_, team_size_ );
+            Kokkos::TeamPolicy<> dn_policy( blocks_, team_size_ );
             dn_policy.set_scratch_size( 0, Kokkos::PerTeam( team_shmem_size( team_size_ ) ) );
-            Kokkos::parallel_for(
-                "epsilon_divdiv_apply_kernel_fast_dirichlet_neumann",
-                dn_policy,
-                KOKKOS_CLASS_LAMBDA( const Team& team ) { this->run_team_fast_dirichlet_neumann( team ); } );
+            if ( diagonal_ )
+            {
+                Kokkos::parallel_for(
+                    "epsilon_divdiv_apply_kernel_fast_dn_diag",
+                    dn_policy,
+                    KOKKOS_CLASS_LAMBDA( const Team& team ) {
+                        this->template run_team_fast_dirichlet_neumann< true >( team );
+                    } );
+            }
+            else
+            {
+                Kokkos::parallel_for(
+                    "epsilon_divdiv_apply_kernel_fast_dn_matvec",
+                    dn_policy,
+                    KOKKOS_CLASS_LAMBDA( const Team& team ) {
+                        this->template run_team_fast_dirichlet_neumann< false >( team );
+                    } );
+            }
         }
 
         Kokkos::fence();
@@ -428,7 +441,7 @@ class EpsilonDivDivKerngen
      * @brief Team scratch memory size for fast paths.
      *
      * Layout per team:
-     *   [coords_sh | src_sh | k_sh | r_sh | padding]
+     *   [coords_sh | src_sh | k_sh | r_sh]
      */
     KOKKOS_INLINE_FUNCTION
     size_t team_shmem_size( const int ts ) const
@@ -524,7 +537,11 @@ class EpsilonDivDivKerngen
 
     /**
      * @brief Team entry for fast Dirichlet/Neumann matrix-free path.
+     *
+     * Templated on Diagonal so the compiler can dead-code-eliminate the
+     * unused matvec or diagonal-only path, reducing register pressure.
      */
+    template < bool Diagonal >
     KOKKOS_INLINE_FUNCTION
     void run_team_fast_dirichlet_neumann( const Team& team ) const
     {
@@ -537,7 +554,7 @@ class EpsilonDivDivKerngen
         const bool at_cmb     = has_flag( local_subdomain_id, x_cell, y_cell, r_cell, CMB );
         const bool at_surface = has_flag( local_subdomain_id, x_cell, y_cell, r_cell + 1, SURFACE );
 
-        operator_fast_dirichlet_neumann_path(
+        operator_fast_dirichlet_neumann_path< Diagonal >(
             team, local_subdomain_id, x0, y0, r0, tx, ty, tr, x_cell, y_cell, r_cell, at_cmb, at_surface );
     }
 
@@ -793,6 +810,7 @@ class EpsilonDivDivKerngen
     }
 
     // ===================== FAST DIRICHLET/NEUMANN PATH =====================
+    template < bool Diagonal >
     KOKKOS_INLINE_FUNCTION
     void operator_fast_dirichlet_neumann_path(
         const Team& team,
@@ -903,9 +921,9 @@ class EpsilonDivDivKerngen
             treat_boundary_dirichlet    = ( get_boundary_condition_flag( bcs_, sbf ) == DIRICHLET );
         }
 
-        const int cmb_shift = ( ( at_boundary && treat_boundary_dirichlet && ( !diagonal_ ) && at_cmb ) ? 3 : 0 );
+        const int cmb_shift = ( ( at_boundary && treat_boundary_dirichlet && ( !Diagonal ) && at_cmb ) ? 3 : 0 );
         const int surface_shift =
-            ( ( at_boundary && treat_boundary_dirichlet && ( !diagonal_ ) && at_surface ) ? 3 : 0 );
+            ( ( at_boundary && treat_boundary_dirichlet && ( !Diagonal ) && at_surface ) ? 3 : 0 );
 
         static constexpr int WEDGE_NODE_OFF[2][6][3] = {
             { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 0, 1, 1 } },
@@ -1003,7 +1021,7 @@ class EpsilonDivDivKerngen
             double gu20 = 0.0, gu21 = 0.0, gu22 = 0.0;
             double div_u = 0.0;
 
-            if ( !diagonal_ )
+            if ( !Diagonal )
             {
                 // Trial side: accumulate symmetric gradient of u (fused dim loops).
                 // Physical gradients computed inline to avoid local memory spills.
@@ -1058,7 +1076,7 @@ class EpsilonDivDivKerngen
                 }
             }
 
-            if ( diagonal_ || ( treat_boundary_dirichlet && at_boundary ) )
+            if ( Diagonal || ( treat_boundary_dirichlet && at_boundary ) )
             {
                 // Diagonal action: kwJ * s_d * (|g|^2 + (1/3) * g_d^2)
 #pragma unroll
