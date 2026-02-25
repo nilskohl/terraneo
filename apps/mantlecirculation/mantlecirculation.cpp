@@ -200,7 +200,22 @@ Result<> run( const Parameters& prm )
         return create_directories_result.error();
     }
 
-    // Set up domains for all levels.
+    // Set up domains and masks (node ownership and boundary) for all levels.
+    //
+    // What do the various level indices mean?
+    //
+    // The refinement levels from the parameter file determine the global number of micro-elements, regardless
+    // of the number of subdomains. Then subdomain refinement is applied. In order to refine the domain into
+    // subdomains, the global refinement level must be greater or equal to the subdomain refinement level
+    // (since we cannot split micro elements).
+    //
+    // Since we store various things in std::vectors, the indexing therein always starts with 0.
+    // That may not be equal to the coarsest refinement level. So the index in the std::vectors must be set to
+    //
+    //   idx = refinement_level - min_refinement_level
+    //
+    // Better not mix that up.
+
     std::vector< DistributedDomain >                                  domains;
     std::vector< Grid3DDataVec< ScalarType, 3 > >                     coords_shell;
     std::vector< Grid2DDataScalar< ScalarType > >                     coords_radii;
@@ -228,7 +243,7 @@ Result<> run( const Parameters& prm )
     }
 
     const auto subdomain_distr = grid::shell::subdomain_distribution( domains.back() );
-    logroot << "Subdomain distribution: \n";
+    logroot << "Subdomain distribution (subdomains per MPI process): \n";
     logroot << " - total: " << subdomain_distr.total << "\n";
     logroot << " - min:   " << subdomain_distr.min << "\n";
     logroot << " - avg:   " << subdomain_distr.avg << "\n";
@@ -261,6 +276,11 @@ Result<> run( const Parameters& prm )
     auto& f = stok_vecs["f"];
 
     // Set up viscosity.
+    //
+    // For simplicity, we do not optimize for the isoviscous case, but always use the full Stokes operator.
+    // That means in the isoviscous case we choose a constant radial viscosity profile.
+    //
+    // Temp dep. visc. not yet implemented.
 
     std::vector< Grid2DDataScalar< ScalarType > > radial_viscosity_profile;
 
@@ -276,7 +296,6 @@ Result<> run( const Parameters& prm )
     else
     {
         logroot << "Using radially varying viscosity profile." << std::endl;
-        // Temp dep. visc. not yet implemented.
         for ( int level = 0; level < num_levels; level++ )
         {
             radial_viscosity_profile.push_back(
@@ -288,6 +307,7 @@ Result<> run( const Parameters& prm )
         }
     }
 
+    // We project the viscosity into an FE space. Thus, we need some coefficient vectors.
     std::vector< VectorQ1Scalar< ScalarType > > eta;
     eta.reserve( num_levels );
     for ( int level = 0; level < num_levels; level++ )
@@ -311,7 +331,8 @@ Result<> run( const Parameters& prm )
         viscosity_interpolator.interpolate( eta[level].grid_data() );
     }
 
-    // determine AGCA elements
+    // Setting up the (adaptive) Galerkin coarse grid approximation (AGCA / GCA)
+    // Determine AGCA elements.
     VectorQ1Scalar< ScalarType > GCAElements( "GCAElements", domains[0], ownership_mask_data[0] );
     int                          gca = 1;
     if ( gca == 2 )
@@ -327,7 +348,7 @@ Result<> run( const Parameters& prm )
         assign( GCAElements, 1 );
     }
 
-    // Set up tmp vecs for FGMRES
+    // Set up tmp vecs for FGMRES (Stokes). We need quite a few :(
 
     std::vector< VectorQ1IsoQ2Q1< ScalarType > > stokes_tmp_fgmres;
 
@@ -344,7 +365,7 @@ Result<> run( const Parameters& prm )
             ownership_mask_data[pressure_level] );
     }
 
-    // Set up tmp vecs for multigrid preconditioner.
+    // Set up tmp vecs for Stokes multigrid preconditioner.
 
     std::vector< VectorQ1Vec< ScalarType > > tmp_mg;
     std::vector< VectorQ1Vec< ScalarType > > tmp_mg_2;
@@ -362,7 +383,7 @@ Result<> run( const Parameters& prm )
         }
     }
 
-    // Set up temperature and viscosity vectors.
+    // Set up vectors for energy equation.
 
     const std::string label_temperature = "T";
 
@@ -385,18 +406,19 @@ Result<> run( const Parameters& prm )
     auto& q = temp_vecs["q"];
 
     // Counting DoFs.
-    int world_size = 0;
-    MPI_Comm_size( MPI_COMM_WORLD, &world_size ); // total number of MPI processes
+    int world_size = mpi::num_processes();
 
     const auto num_dofs_temperature =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 1], grid::NodeOwnershipFlag::OWNED );
     const auto num_dofs_velocity = 3 * num_dofs_temperature;
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
+
     logroot << "Degrees of freedom in (T,u,p) = (" << num_dofs_temperature << ", " << num_dofs_velocity << ", "
             << num_dofs_pressure << ")" << std::endl;
-    logroot << "DoFs/process in (T,u,p) = (" << num_dofs_temperature / world_size << ", "
+    logroot << "Avg DoFs/process in (T,u,p)   = (" << num_dofs_temperature / world_size << ", "
             << num_dofs_velocity / world_size << ", " << num_dofs_pressure / world_size << ")" << std::endl;
+
     // Set up operators.
 
     using Stokes      = fe::wedge::operators::shell::EpsDivDivStokes< ScalarType >;
@@ -407,6 +429,12 @@ Result<> run( const Parameters& prm )
 
     using Prolongation = fe::wedge::operators::shell::ProlongationVecConstant< ScalarType >;
     using Restriction  = fe::wedge::operators::shell::RestrictionVecConstant< ScalarType >;
+
+    // Setting up Stokes velocity boundary conditions.
+    //
+    // Currently, we can choose either no-slip or free-slip.
+    //
+    // Plates will also be a Dirichlet BCs (to be implemented).
 
     BoundaryConditions bcs = {
         { CMB, DIRICHLET },
@@ -422,6 +450,9 @@ Result<> run( const Parameters& prm )
     {
         grid::shell::set_boundary_condition_flag( bcs, SURFACE, FREESLIP );
     }
+
+    // For strong BC elimination, we also need the Neumann operators.
+    // So we have this set of BCs as well (will not be used in the solver later, just for the RHS set up).
 
     BoundaryConditions bcs_neumann = {
         { CMB, NEUMANN },
@@ -458,6 +489,9 @@ Result<> run( const Parameters& prm )
     std::vector< Prolongation > P;
     std::vector< Restriction >  R;
 
+    // Coarse grid operators.
+    // For GCA we need to store the local element matrices on the coarser grids.
+
     for ( int level = 0; level < num_levels - 1; level++ )
     {
         A_c.emplace_back(
@@ -481,7 +515,7 @@ Result<> run( const Parameters& prm )
         R.emplace_back( domains[level] );
     }
 
-    // GCA
+    // GCA assembly
     if ( gca > 0 )
     {
         for ( int level = num_levels - 2; level >= 0; level-- )
@@ -639,6 +673,8 @@ Result<> run( const Parameters& prm )
 
     using AD = fe::wedge::operators::shell::UnsteadyAdvectionDiffusionSUPG< ScalarType >;
 
+    // The advection-diffusion operator executes a matvec with (alpha * M + dt * A),
+    // where M is the mass matrix and A the adv-diff operator. For higher order BDF schemes we need a mass
     constexpr auto mass_scaling = 1.0;
 
     AD A(
@@ -740,6 +776,8 @@ Result<> run( const Parameters& prm )
     table->print_pretty();
     table->clear();
 
+    // Setting up XDMF output (serves for both checkpointing and visualization).
+
     io::XDMFOutput xdmf_output(
         prm.io_parameters.outdir + "/" + prm.io_parameters.xdmf_dir,
         domains[velocity_level],
@@ -750,19 +788,22 @@ Result<> run( const Parameters& prm )
     xdmf_output.add( u.block_1().grid_data() );
     xdmf_output.add( eta[velocity_level].grid_data() );
 
-    int timestep_start = 0;
+    int timestep_initial = 0;
 
     const bool loading_checkpoint = !prm.io_parameters.checkpoint_dir.empty() && prm.io_parameters.checkpoint_step >= 0;
 
     if ( loading_checkpoint )
     {
-        logroot << "Loading checkpoint from " << prm.io_parameters.checkpoint_dir << " at step "
-                << prm.io_parameters.checkpoint_step << std::endl;
+        // Starting the time stepping from the next step after the loaded step.
+        timestep_initial = prm.io_parameters.checkpoint_step;
+
+        logroot << "Loading checkpoint from " << prm.io_parameters.checkpoint_dir << " at step " << timestep_initial
+                << std::endl;
 
         auto success_vel = io::read_xdmf_checkpoint_grid(
             prm.io_parameters.checkpoint_dir,
             label_stokes + "_u",
-            prm.io_parameters.checkpoint_step,
+            timestep_initial,
             domains[velocity_level],
             u.block_1().grid_data() );
 
@@ -774,7 +815,7 @@ Result<> run( const Parameters& prm )
         auto success_temp = io::read_xdmf_checkpoint_grid(
             prm.io_parameters.checkpoint_dir,
             label_temperature,
-            prm.io_parameters.checkpoint_step,
+            timestep_initial,
             domains[velocity_level],
             T.grid_data() );
 
@@ -783,16 +824,10 @@ Result<> run( const Parameters& prm )
             Kokkos::abort( success_temp.error().c_str() );
         }
 
-        if ( loading_checkpoint )
-        {
-            // Starting the time stepping from the next step after the loaded step.
-            timestep_start = prm.io_parameters.checkpoint_step + 1;
-
-            // Setting XDMF to the same step as we have loaded.
-            // Thus, we will now re-write the loaded data.
-            // Maybe a good sanity check.
-            xdmf_output.set_write_counter( prm.io_parameters.checkpoint_step );
-        }
+        // Setting XDMF to the same step as we have loaded.
+        // Thus, we will now re-write the loaded data.
+        // Maybe a good sanity check.
+        xdmf_output.set_write_counter( timestep_initial );
     }
 
     logroot << "Writing initial XDMF ..." << std::endl;
@@ -801,9 +836,10 @@ Result<> run( const Parameters& prm )
 
     logroot << "Writing initial radial profiles ..." << std::endl;
 
-    compute_and_write_radial_profiles( T, subdomain_shell_idx, domains[velocity_level], prm.io_parameters, 0 );
     compute_and_write_radial_profiles(
-        eta[velocity_level], subdomain_shell_idx, domains[velocity_level], prm.io_parameters, 0 );
+        T, subdomain_shell_idx, domains[velocity_level], prm.io_parameters, timestep_initial );
+    compute_and_write_radial_profiles(
+        eta[velocity_level], subdomain_shell_idx, domains[velocity_level], prm.io_parameters, timestep_initial );
 
     ScalarType simulated_time = 0.0;
 
@@ -815,7 +851,7 @@ Result<> run( const Parameters& prm )
 
     logroot << "Starting time stepping!" << std::endl;
 
-    for ( int timestep = timestep_start; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
+    for ( int timestep = timestep_initial + 1; timestep < prm.time_stepping_parameters.max_timesteps; timestep++ )
     {
         logroot << "\n### Timestep " << timestep << " ###" << std::endl;
 
@@ -839,8 +875,7 @@ Result<> run( const Parameters& prm )
 
         fe::strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
             stok_vecs["f"], boundary_mask_data[velocity_level], grid::shell::ShellBoundaryFlag::BOUNDARY );
-     
-        
+
         logroot << "Solving Stokes ..." << std::endl;
 
         // Solve Stokes.
