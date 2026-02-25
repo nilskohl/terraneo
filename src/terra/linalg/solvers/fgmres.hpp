@@ -207,7 +207,21 @@ class FGMRES
 
                 // Compute h_{j+1,j} and normalize to get v_{j+1}
                 const ScalarType h_jp1j = std::sqrt( dot( w, w ) );
-                H( j + 1, j )           = h_jp1j;
+
+                // SAFE BREAK 1: Arnoldi Breakdown
+                if ( h_jp1j < std::numeric_limits< ScalarType >::epsilon() * initial_residual )
+                {
+                    H( j + 1, j ) = 0;
+                    inner_its     = j + 1;
+
+                    util::logroot << "FGMRES: Arnoldi breakdown. Restarting.\n"
+                                     "        (Details: total_iters = "
+                                  << total_iters << ", j = " << j << ")" << std::endl;
+
+                    break; // Subspace is "full" or converged; exit to solve current least squares
+                }
+
+                H( j + 1, j ) = h_jp1j;
 
                 if ( h_jp1j > ScalarType( 0 ) )
                 {
@@ -232,6 +246,18 @@ class FGMRES
                     sn[j]                 = ( r_ab == ScalarType( 0 ) ) ? ScalarType( 0 ) : b / r_ab;
                     H( j, j )             = r_ab;
                     H( j + 1, j )         = 0;
+
+                    // SAFE BREAK 2: Stagnation / Singularity
+                    if ( std::abs( H( j, j ) ) < std::numeric_limits< ScalarType >::epsilon() )
+                    {
+                        inner_its = j; // Don't include this column in the back-solve
+
+                        util::logroot << "FGMRES: Stagnation after Givens rotation. Restarting.\n"
+                                         "        (Details: total_iters = "
+                                      << total_iters << ", j = " << j << ")" << std::endl;
+
+                        break;
+                    }
 
                     // Apply new Givens rotation to g
                     const ScalarType gj  = g( j );
