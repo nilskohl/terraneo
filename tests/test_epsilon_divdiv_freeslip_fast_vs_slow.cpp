@@ -43,13 +43,14 @@ struct VectorFieldInterpolator
     {
         const auto coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
         const auto rr     = radii_( local_subdomain_id, r );
+        (void)rr;
 
         data_( local_subdomain_id, x, y, r, 0 ) =
-            ( rr - 1.0 ) * ( rr - 0.5 ) * 0.5 * Kokkos::sin( 2.0 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
+            Kokkos::sin( 2.0 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
         data_( local_subdomain_id, x, y, r, 1 ) =
-            ( rr - 1.0 ) * ( rr - 0.5 ) * 0.5 * Kokkos::sin( 3.0 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
+            Kokkos::sin( 3.0 * coords( 1 ) ) * Kokkos::sinh( coords( 1 ) );
         data_( local_subdomain_id, x, y, r, 2 ) =
-            ( rr - 1.0 ) * ( rr - 0.5 ) * 0.5 * Kokkos::sin( 4.0 * coords( 0 ) ) * Kokkos::sinh( coords( 1 ) );
+            Kokkos::sin( 4.0 * coords( 2 ) ) * Kokkos::sinh( coords( 1 ) );
     }
 };
 
@@ -75,12 +76,13 @@ struct ScalarCoeffInterpolator
         const auto rr     = radii_( local_subdomain_id, r );
 
         data_( local_subdomain_id, x, y, r ) =
-            1.0 + 0.1 * ( rr - 0.75 ) + 0.05 * Kokkos::cos( coords( 0 ) ) * Kokkos::cosh( 0.25 * coords( 1 ) );
+            1.0 + 0.1 * ( rr - 0.75 ) +
+            0.05 * Kokkos::cos( coords( 0 ) ) * Kokkos::cosh( 0.25 * coords( 1 ) );
     }
 };
 
 template < typename ScalarT >
-void compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface( int level, bool diagonal, int repeats = 5 )
+void compare_epsilon_divdiv_path_comparison( int level, bool diagonal, int repeats = 5 )
 {
     using Op = fe::wedge::operators::shell::EpsilonDivDivKerngen< ScalarT >;
 
@@ -93,11 +95,18 @@ void compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface( int level, bool diag
     const auto coords_radii = terra::grid::shell::subdomain_shell_radii< ScalarT >( domain );
 
     VectorQ1Vec< ScalarT > src( "src", domain, mask_data );
+
+    // Freeslip/Dirichlet outputs (fast + slow)
     VectorQ1Vec< ScalarT > dst_fast_fs( "dst_fast_fs", domain, mask_data );
     VectorQ1Vec< ScalarT > dst_slow_fs( "dst_slow_fs", domain, mask_data );
-    VectorQ1Vec< ScalarT > dst_dd( "dst_dd", domain, mask_data );
 
+    // Dirichlet/Dirichlet outputs (fast + slow)
+    VectorQ1Vec< ScalarT > dst_dd_fast( "dst_dd_fast", domain, mask_data );
+    VectorQ1Vec< ScalarT > dst_dd_slow( "dst_dd_slow", domain, mask_data );
+
+    // Error vectors
     VectorQ1Vec< ScalarT > err_fast_vs_slow( "err_fast_vs_slow", domain, mask_data );
+    VectorQ1Vec< ScalarT > err_dd_fast_vs_slow( "err_dd_fast_vs_slow", domain, mask_data );
     VectorQ1Vec< ScalarT > err_fast_vs_dd( "err_fast_vs_dd", domain, mask_data );
     VectorQ1Vec< ScalarT > err_slow_vs_dd( "err_slow_vs_dd", domain, mask_data );
 
@@ -127,7 +136,7 @@ void compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface( int level, bool diag
         { SURFACE, DIRICHLET }
     };
 
-    // 1) Fast freeslip operator (expected fast_freeslip path)
+    // 1) Fast freeslip operator (expected fast path)
     Op op_fast_fs(
         domain,
         coords_shell,
@@ -156,8 +165,8 @@ void compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface( int level, bool diag
     op_slow_fs.set_stored_matrix_mode(
         linalg::OperatorStoredMatrixMode::Selective, /*level_range=*/0, gca_elements.grid_data() );
 
-    // 3) Dirichlet-Dirichlet operator (expected fast_dirichlet_neumann path)
-    Op op_dd(
+    // 3) Fast Dirichlet-Dirichlet operator
+    Op op_dd_fast(
         domain,
         coords_shell,
         coords_radii,
@@ -169,10 +178,27 @@ void compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface( int level, bool diag
         linalg::OperatorCommunicationMode::CommunicateAdditively,
         linalg::OperatorStoredMatrixMode::Off );
 
+    // 4) Slow Dirichlet-Dirichlet operator (force slow path via stored-matrix mode)
+    Op op_dd_slow(
+        domain,
+        coords_shell,
+        coords_radii,
+        boundary_mask_data,
+        k_coeff.grid_data(),
+        bcs_dirichlet_dirichlet,
+        diagonal,
+        linalg::OperatorApplyMode::Replace,
+        linalg::OperatorCommunicationMode::CommunicateAdditively,
+        linalg::OperatorStoredMatrixMode::Off );
+
+    op_dd_slow.set_stored_matrix_mode(
+        linalg::OperatorStoredMatrixMode::Selective, /*level_range=*/0, gca_elements.grid_data() );
+
     // Warmup
     linalg::apply( op_fast_fs, src, dst_fast_fs );
     linalg::apply( op_slow_fs, src, dst_slow_fs );
-    linalg::apply( op_dd, src, dst_dd );
+    linalg::apply( op_dd_fast, src, dst_dd_fast );
+    linalg::apply( op_dd_slow, src, dst_dd_slow );
     Kokkos::fence();
 
     // Timings
@@ -192,66 +218,92 @@ void compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface( int level, bool diag
     Kokkos::fence();
     const double t_slow_fs = timer_slow_fs.seconds();
 
-    Kokkos::Timer timer_dd;
+    Kokkos::Timer timer_dd_fast;
     for ( int i = 0; i < repeats; ++i )
     {
-        linalg::apply( op_dd, src, dst_dd );
+        linalg::apply( op_dd_fast, src, dst_dd_fast );
     }
     Kokkos::fence();
-    const double t_dd = timer_dd.seconds();
+    const double t_dd_fast = timer_dd_fast.seconds();
+
+    Kokkos::Timer timer_dd_slow;
+    for ( int i = 0; i < repeats; ++i )
+    {
+        linalg::apply( op_dd_slow, src, dst_dd_slow );
+    }
+    Kokkos::fence();
+    const double t_dd_slow = timer_dd_slow.seconds();
 
     // Comparisons
     linalg::lincomb( err_fast_vs_slow, { 1.0, -1.0 }, { dst_fast_fs, dst_slow_fs } );
-    linalg::lincomb( err_fast_vs_dd, { 1.0, -1.0 }, { dst_fast_fs, dst_dd } );
-    linalg::lincomb( err_slow_vs_dd, { 1.0, -1.0 }, { dst_slow_fs, dst_dd } );
+    linalg::lincomb( err_dd_fast_vs_slow, { 1.0, -1.0 }, { dst_dd_fast, dst_dd_slow } );
+
+    // Cross-BC comparisons (generally nonzero by design)
+    linalg::lincomb( err_fast_vs_dd, { 1.0, -1.0 }, { dst_fast_fs, dst_dd_fast } );
+    linalg::lincomb( err_slow_vs_dd, { 1.0, -1.0 }, { dst_slow_fs, dst_dd_fast } );
 
     const auto num_dofs = kernels::common::count_masked< long >( mask_data, grid::NodeOwnershipFlag::OWNED );
 
-    const auto l2_fast_vs_slow   = std::sqrt( dot( err_fast_vs_slow, err_fast_vs_slow ) / num_dofs );
-    const auto inf_fast_vs_slow  = linalg::norm_inf( err_fast_vs_slow );
-    const auto l2_fast_vs_dd     = std::sqrt( dot( err_fast_vs_dd, err_fast_vs_dd ) / num_dofs );
-    const auto inf_fast_vs_dd    = linalg::norm_inf( err_fast_vs_dd );
-    const auto l2_slow_vs_dd     = std::sqrt( dot( err_slow_vs_dd, err_slow_vs_dd ) / num_dofs );
-    const auto inf_slow_vs_dd    = linalg::norm_inf( err_slow_vs_dd );
+    const auto l2_fast_vs_slow      = std::sqrt( dot( err_fast_vs_slow, err_fast_vs_slow ) / num_dofs );
+    const auto inf_fast_vs_slow     = linalg::norm_inf( err_fast_vs_slow );
+
+    const auto l2_dd_fast_vs_slow   = std::sqrt( dot( err_dd_fast_vs_slow, err_dd_fast_vs_slow ) / num_dofs );
+    const auto inf_dd_fast_vs_slow  = linalg::norm_inf( err_dd_fast_vs_slow );
+
+    const auto l2_fast_vs_dd        = std::sqrt( dot( err_fast_vs_dd, err_fast_vs_dd ) / num_dofs );
+    const auto inf_fast_vs_dd       = linalg::norm_inf( err_fast_vs_dd );
+
+    const auto l2_slow_vs_dd        = std::sqrt( dot( err_slow_vs_dd, err_slow_vs_dd ) / num_dofs );
+    const auto inf_slow_vs_dd       = linalg::norm_inf( err_slow_vs_dd );
 
     std::cout << "  repeats           = " << repeats << std::endl;
 
     std::cout << "  fast(freeslip)    = " << t_fast_fs << " s  (" << ( t_fast_fs / repeats ) << " s/apply)" << std::endl;
     std::cout << "  slow(freeslip)    = " << t_slow_fs << " s  (" << ( t_slow_fs / repeats ) << " s/apply)" << std::endl;
-    std::cout << "  fast(dirichlet)   = " << t_dd << " s  (" << ( t_dd / repeats ) << " s/apply)" << std::endl;
+    std::cout << "  fast(dirichlet)   = " << t_dd_fast << " s  (" << ( t_dd_fast / repeats ) << " s/apply)" << std::endl;
+    std::cout << "  slow(dirichlet)   = " << t_dd_slow << " s  (" << ( t_dd_slow / repeats ) << " s/apply)" << std::endl;
 
     if ( t_fast_fs > 0.0 )
     {
         std::cout << "  slow/fast(fs)     = " << ( t_slow_fs / t_fast_fs ) << "x" << std::endl;
-        std::cout << "  dd/fast(fs)       = " << ( t_dd / t_fast_fs ) << "x" << std::endl;
+        std::cout << "  dd_fast/fast(fs)  = " << ( t_dd_fast / t_fast_fs ) << "x" << std::endl;
+    }
+    if ( t_dd_fast > 0.0 )
+    {
+        std::cout << "  slow/fast(dd)     = " << ( t_dd_slow / t_dd_fast ) << "x" << std::endl;
     }
 
-    // This is the main correctness check (same BCs, different execution paths)
-    std::cout << "  [fast_fs vs slow_fs] L2 = " << l2_fast_vs_slow << ", inf = " << inf_fast_vs_slow << std::endl;
+    // Main correctness checks (same BCs, different execution paths)
+    std::cout << "  [fast_fs vs slow_fs] L2 = " << l2_fast_vs_slow
+              << ", inf = " << inf_fast_vs_slow << std::endl;
+    std::cout << "  [fast_dd vs slow_dd] L2 = " << l2_dd_fast_vs_slow
+              << ", inf = " << inf_dd_fast_vs_slow << std::endl;
 
-    // These compare against the third operator (different BCs -> generally nonzero by design)
-    std::cout << "  [fast_fs vs dd]    L2 = " << l2_fast_vs_dd << ", inf = " << inf_fast_vs_dd << std::endl;
-    std::cout << "  [slow_fs vs dd]    L2 = " << l2_slow_vs_dd << ", inf = " << inf_slow_vs_dd << std::endl;
+    // Cross-BC comparisons (informational)
+    std::cout << "  [fast_fs vs dd_fast] L2 = " << l2_fast_vs_dd
+              << ", inf = " << inf_fast_vs_dd << std::endl;
+    std::cout << "  [slow_fs vs dd_fast] L2 = " << l2_slow_vs_dd
+              << ", inf = " << inf_slow_vs_dd << std::endl;
 }
 
 int main( int argc, char** argv )
 {
     util::terra_initialize( &argc, &argv );
 
-    constexpr int repeats = 5;
+    constexpr int repeats = 1;
 
-    for ( auto diagonal : {  false } )
+    for ( auto diagonal : { true, false } )
     {
         std::cout << "==================================================" << std::endl;
         std::cout << "EpsilonDivDivKerngen path comparison" << std::endl;
         std::cout << "BC set A: CMB=FREESLIP, SURFACE=DIRICHLET (fast vs slow)" << std::endl;
-        std::cout << "BC set B: CMB=DIRICHLET, SURFACE=DIRICHLET (third operator)" << std::endl;
+        std::cout << "BC set B: CMB=DIRICHLET, SURFACE=DIRICHLET (fast vs slow)" << std::endl;
         std::cout << "diagonal = " << diagonal << std::endl;
 
-        for ( int level = 0; level < 9; ++level )
+        for ( int level = 0; level < 6; ++level )
         {
             std::cout << "level = " << level << std::endl;
-            compare_epsilon_divdiv_freeslip_cmb_dirichlet_surface< double >( level, diagonal, repeats );
+            compare_epsilon_divdiv_path_comparison< double >( level, diagonal, repeats );
         }
     }
 
