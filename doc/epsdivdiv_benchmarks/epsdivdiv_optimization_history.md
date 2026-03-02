@@ -129,7 +129,7 @@ The operator is optimized for **NVIDIA H100 SXM GPUs** ([Hopper architecture](ht
 
 ## 4. Version History
 
-### V-2: EpsilonDivDivSimple (aba88f1 — "Add viscosity weighted mass, block triangular preconditioners")
+### v00a: EpsilonDivDivSimple (aba88f1 — "Add viscosity weighted mass, block triangular preconditioners")
 
 File: `src/terra/fe/wedge/operators/shell/epsilon_divdiv_simple.hpp`
 
