@@ -416,21 +416,23 @@ File: `src/terra/fe/wedge/operators/shell/epsilon_divdiv.hpp`
 
 ## 5. Summary Table
 
-| Version | Commit | File | Key Innovation | Perf |
-|---------|--------|------|----------------|------|
-| V-2 | [aba88f1](https://github.com/mantleconvection/terraneo/commit/aba88f1) | `_simple.hpp` | Textbook: assemble 18×18 A, then A·src; Hadamard BC mask | — |
-| V-1 | [bdb954c](https://github.com/mantleconvection/terraneo/commit/bdb954c) | `.hpp` | Fused local matvec (no full A), trial/test vecs, GCA support | — |
-| V01 | [e7ae1b3](https://github.com/mantleconvection/terraneo/commit/e7ae1b3) | `_kerngen.hpp` | Code-gen: MDRange, 6-qp, O(3×3) dimi/dimj, scalar arith | — |
-| V02 | [c9c1e21](https://github.com/mantleconvection/terraneo/commit/c9c1e21) | `_kerngen.hpp` | Split dimi/dimj → O(3+3), fewer FLOPs | — |
-| V03 | [b875f4c](https://github.com/mantleconvection/terraneo/commit/b875f4c) | `_kerngen.hpp` | TeamPolicy, 1-qp collapse, shmem coords | — |
-| V04 | [fe1c12e](https://github.com/mantleconvection/terraneo/commit/fe1c12e) | `_kerngen.hpp` | `Kokkos::single(PerTeam)` coord load, `column_grad_to_sym` | — |
-| V05 | [70bacff](https://github.com/mantleconvection/terraneo/commit/70bacff) | `_kerngen.hpp` | Shmem for src+k, `WEDGE_TO_UNIQUE` dedup | — |
-| V06 | [7f053dd](https://github.com/mantleconvection/terraneo/commit/7f053dd) | `_kerngen.hpp` | 3D xy+r tiling (4×4×8), cooperative loads | — |
-| V07 | [95fbf31](https://github.com/mantleconvection/terraneo/commit/95fbf31) | `_kerngen.hpp` | Host-side fast/slow path dispatch | ~47× |
-| V08 | [03f228d](https://github.com/mantleconvection/terraneo/commit/03f228d) | `_kerngen.hpp` | Coalesced r-first mapping, 3-way path, per-wedge scatter | — |
-| V09 | [d208988](https://github.com/mantleconvection/terraneo/commit/d208988) | `_kerngen.hpp` | Separate gather/scatter (2× J), LB<128,5>, `template<Diagonal>` | 7.6 Gdof/s |
-| V10 | [c20ae75](https://github.com/mantleconvection/terraneo/commit/c20ae75) | `_kerngen.hpp` | Sequential r_passes=2, amortized shmem | 7.8 Gdof/s |
-| Cur | [f6ae663](https://github.com/mantleconvection/terraneo/commit/f6ae663) | `_kerngen.hpp` | Cross-product J (80 regs), stress-tensor gather, FMA scatter, LB<128,6> | ~7.8 Gdof/s |
+| Version | Commit | File | Key Innovation | Gdof/s | Speedup |
+|---------|--------|------|----------------|--------|---------|
+| V-2 | [aba88f1](https://github.com/mantleconvection/terraneo/commit/aba88f1) | [`epsilon_divdiv_simple.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_simple.hpp) | Textbook: assemble 18×18 A, then A·src; Hadamard BC mask | 0.012 | 1× |
+| V-1 | [bdb954c](https://github.com/mantleconvection/terraneo/commit/bdb954c) | [`epsilon_divdiv.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv.hpp) | Fused local matvec (no full A), trial/test vecs, GCA support | 0.019 | 1.6× |
+| V01 | [e7ae1b3](https://github.com/mantleconvection/terraneo/commit/e7ae1b3) | [`epsilon_divdiv_kerngen_v01_initial.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v01_initial.hpp) | Code-gen: MDRange, 6-qp, O(3×3) dimi/dimj, scalar arith | 0.044 | 3.8× |
+| V02 | [c9c1e21](https://github.com/mantleconvection/terraneo/commit/c9c1e21) | [`epsilon_divdiv_kerngen_v02_split_dimij.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v02_split_dimij.hpp) | Split dimi/dimj → O(3+3), fewer FLOPs | 0.107 | 9.2× |
+| V03 | [b875f4c](https://github.com/mantleconvection/terraneo/commit/b875f4c) | [`epsilon_divdiv_kerngen_v03_teams_precomp.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v03_teams_precomp.hpp) | TeamPolicy, 1-qp collapse, shmem coords | 1.71 | 146× |
+| V04 | [fe1c12e](https://github.com/mantleconvection/terraneo/commit/fe1c12e) | [`epsilon_divdiv_kerngen_v04_shmem_coords.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v04_shmem_coords.hpp) | `Kokkos::single(PerTeam)` coord load, `column_grad_to_sym` | 4.30 | 368× |
+| V05 | [70bacff](https://github.com/mantleconvection/terraneo/commit/70bacff) | [`epsilon_divdiv_kerngen_v05_shmem_src_k.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v05_shmem_src_k.hpp) | Shmem for src+k, `WEDGE_TO_UNIQUE` dedup | 5.41 | 463× |
+| V06 | [7f053dd](https://github.com/mantleconvection/terraneo/commit/7f053dd) | [`epsilon_divdiv_kerngen_v06_xy_tiling.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v06_xy_tiling.hpp) | 3D xy+r tiling (4×4×8), cooperative loads | 4.87 | 416× |
+| V07 | [95fbf31](https://github.com/mantleconvection/terraneo/commit/95fbf31) | [`epsilon_divdiv_kerngen_v07_split_paths.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v07_split_paths.hpp) | Host-side fast/slow path dispatch | 4.85 | 415× |
+| V08 | [03f228d](https://github.com/mantleconvection/terraneo/commit/03f228d) | [`epsilon_divdiv_kerngen_v08_scalar_coalesced.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v08_scalar_coalesced.hpp) | Coalesced r-first mapping, 3-way path, per-wedge scatter | 6.44 | 551× |
+| V09 | [d208988](https://github.com/mantleconvection/terraneo/commit/d208988) | [`epsilon_divdiv_kerngen_v09_separate_scatter.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v09_separate_scatter.hpp) | Separate gather/scatter (2× J), LB<128,5>, `template<Diagonal>` | 7.69 | 658× |
+| V10 | [c20ae75](https://github.com/mantleconvection/terraneo/commit/c20ae75) | [`epsilon_divdiv_kerngen_v10_seq_rpasses.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen_v10_seq_rpasses.hpp) | Sequential r_passes=2, amortized shmem | 7.84 | 670× |
+| Cur | [f6ae663](https://github.com/mantleconvection/terraneo/commit/f6ae663) | [`epsilon_divdiv_kerngen.hpp`](../../src/terra/fe/wedge/operators/shell/epsilon_divdiv_kerngen.hpp) | Cross-product J (80 regs), stress-tensor gather, FMA scatter, LB<128,6> | ~7.8 | ~670× |
+
+Benchmarked on NVIDIA H100 SXM, level 8 (505M dofs), 10 executions, single GPU. See `throughput_data.csv` for raw data.
 
 ## 6. Optimization Themes
 

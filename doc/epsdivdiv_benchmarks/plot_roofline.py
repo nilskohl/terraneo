@@ -138,10 +138,11 @@ cmap = plt.cm.plasma
 n = len(sorted_versions)
 colors = [cmap(0.15 + 0.75 * i / max(n - 1, 1)) for i in range(n)]
 
-fig = plt.figure(figsize=(30, 10))
-ax_dram = fig.add_subplot(1, 3, 1)
-ax_l2 = fig.add_subplot(1, 3, 2)
-ax_tp = fig.add_subplot(1, 3, 3)
+fig = plt.figure(figsize=(24, 20))
+ax_dram = fig.add_subplot(2, 2, 1)
+ax_l2 = fig.add_subplot(2, 2, 2)
+ax_tp = fig.add_subplot(2, 2, 3)
+ax_pct = fig.add_subplot(2, 2, 4)
 
 oi_range = np.logspace(-2, 2.5, 500)
 
@@ -219,10 +220,10 @@ bars = ax_tp.bar(range(n), bar_values, color=colors, edgecolor="black", linewidt
 for i, (val, bar) in enumerate(zip(bar_values, bars)):
     if val >= 0.1:
         ax_tp.text(bar.get_x() + bar.get_width() / 2, val + 0.15,
-                   f"{val:.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+                   f"{val:.1f}", ha="center", va="bottom", fontsize=13, fontweight="bold")
     else:
         ax_tp.text(bar.get_x() + bar.get_width() / 2, val + 0.15,
-                   f"{val*1000:.0f}M", ha="center", va="bottom", fontsize=9, fontweight="bold")
+                   f"{val*1000:.0f}M", ha="center", va="bottom", fontsize=12, fontweight="bold")
 
 ax_tp.set_xticks(range(n))
 ax_tp.set_xticklabels([l.split()[0] for l in bar_labels], rotation=45, ha="right", fontsize=11)
@@ -232,8 +233,38 @@ ax_tp.grid(True, axis="y", alpha=0.3)
 ax_tp.tick_params(labelsize=12)
 ax_tp.set_xlim(-0.6, n - 0.4)
 
-fig.suptitle("EpsilonDivDiv Optimization History", fontsize=18, fontweight="bold", y=0.98)
-plt.tight_layout(rect=[0, 0, 1, 0.96])
+# --- % of peak bar chart ---
+bar_labels_short = [l.split()[0] for l in bar_labels]
+pct_dram = [version_data[l]["bw_dram"] / PEAK_HBM * 100 for l in bar_labels]
+pct_l2 = [version_data[l]["bw_l2"] / PEAK_L2 * 100 for l in bar_labels]
+pct_fp64 = [version_data[l]["perf_flops"] / PEAK_FP64 * 100 for l in bar_labels]
+
+x = np.arange(n)
+bw = 0.25
+bars_dram = ax_pct.bar(x - bw, pct_dram, bw, label=f"DRAM BW ({PEAK_HBM_TB_S} TB/s)", color="#4477AA", edgecolor="black", linewidth=0.6, zorder=3)
+bars_l2 = ax_pct.bar(x, pct_l2, bw, label=f"L2 BW ({PEAK_L2_TB_S} TB/s)", color="#66CCEE", edgecolor="black", linewidth=0.6, zorder=3)
+bars_fp64 = ax_pct.bar(x + bw, pct_fp64, bw, label=f"FP64 ({PEAK_FP64_TFLOPS} TFLOP/s)", color="#EE6677", edgecolor="black", linewidth=0.6, zorder=3)
+
+# value labels
+for bars_group in [bars_dram, bars_l2, bars_fp64]:
+    for bar in bars_group:
+        h = bar.get_height()
+        if h >= 1:
+            ax_pct.text(bar.get_x() + bar.get_width() / 2, h + 0.5,
+                        f"{h:.0f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+ax_pct.set_xticks(x)
+ax_pct.set_xticklabels(bar_labels_short, rotation=45, ha="right", fontsize=11)
+ax_pct.set_ylabel("% of Peak", fontsize=14)
+ax_pct.set_title("Hardware Utilization (NVIDIA H100)", fontsize=15, fontweight="bold")
+ax_pct.legend(fontsize=10, loc="upper left")
+ax_pct.grid(True, axis="y", alpha=0.3)
+ax_pct.tick_params(labelsize=12)
+ax_pct.set_xlim(-0.6, n - 0.4)
+ax_pct.set_ylim(0, max(max(pct_dram), max(pct_l2), max(pct_fp64)) * 1.2)
+
+fig.suptitle("EpsilonDivDiv Optimization History", fontsize=18, fontweight="bold", y=0.99)
+plt.tight_layout(rect=[0, 0, 1, 0.97])
 plt.savefig("roofline_history.png", dpi=200)
 plt.savefig("roofline_history.pdf")
 print(f"\nSaved roofline_history.png and roofline_history.pdf")
