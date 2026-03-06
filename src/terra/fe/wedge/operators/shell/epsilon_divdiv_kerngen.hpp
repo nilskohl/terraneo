@@ -10,6 +10,8 @@
 #include "impl/Kokkos_Profiling.hpp"
 #include "linalg/operator.hpp"
 #include "linalg/solvers/gca/local_matrix_storage.hpp"
+#include "grid/bit_masks.hpp"
+#include "kernels/common/grid_operations.hpp"
 #include "linalg/trafo/local_basis_trafo_normal_tangential.hpp"
 #include "linalg/vector.hpp"
 #include "linalg/vector_q1.hpp"
@@ -128,6 +130,12 @@ class EpsilonDivDivKerngen
     };
     KernelPath kernel_path_ = KernelPath::FastDirichletNeumann;
 
+    // Rotation null-space penalty (active only for fs/fs)
+    bool                                              penalty_active_  = false;
+    ScalarT                                           penalty_epsilon_ = 1.0;
+    grid::Grid4DDataVec< ScalarType, VecDim >         null_modes_[3];
+    grid::Grid4DDataScalar< grid::NodeOwnershipFlag > ownership_mask_;
+
   private:
     /**
      * @brief Recompute the kernel path on host.
@@ -152,6 +160,7 @@ class EpsilonDivDivKerngen
         else
             kernel_path_ = KernelPath::FastDirichletNeumann;
     }
+
 
   public:
     EpsilonDivDivKerngen(
@@ -215,6 +224,145 @@ class EpsilonDivDivKerngen
                                 ( kernel_path_ == KernelPath::FastFreeslip ) ? "fast-freeslip" :
                                                                                "fast-dirichlet-neumann";
         util::logroot << "[EpsilonDivDiv] kernel path = " << path_name << std::endl;
+
+        init_penalty();
+    }
+
+    void set_penalty_epsilon( ScalarT eps ) { penalty_epsilon_ = eps; }
+
+    /**
+     * @brief Initialize penalty for fs/fs null-space regularization.
+     *
+     * Builds 3 orthonormal rotation-mode vectors (ê_i × r) with free-slip
+     * enforcement, then Gram-Schmidt orthonormalizes them.
+     * Only called when both CMB and SURFACE have FREESLIP BCs.
+     */
+    void init_penalty()
+    {
+        const BoundaryConditionFlag cmb_bc     = get_boundary_condition_flag( bcs_, CMB );
+        const BoundaryConditionFlag surface_bc = get_boundary_condition_flag( bcs_, SURFACE );
+
+        penalty_active_ = ( cmb_bc == FREESLIP ) && ( surface_bc == FREESLIP );
+        if ( !penalty_active_ )
+            return;
+
+        util::logroot << "[EpsilonDivDiv] Initializing fs/fs null-space penalty (epsilon="
+                      << penalty_epsilon_ << ")" << std::endl;
+
+        ownership_mask_ = grid::setup_node_ownership_mask_data( domain_ );
+
+        const int nsub = domain_.subdomains().size();
+        const int nlat = domain_.domain_info().subdomain_num_nodes_per_side_laterally();
+        const int nrad = domain_.domain_info().subdomain_num_nodes_radially();
+
+        auto grid_local  = grid_;
+        auto radii_local = radii_;
+        auto mask_local  = mask_;
+
+        // Build 3 rotation modes: axis i => ê_i × r
+        for ( int axis = 0; axis < 3; ++axis )
+        {
+            null_modes_[axis] = grid::Grid4DDataVec< ScalarType, VecDim >(
+                "penalty_null_mode_" + std::to_string( axis ), nsub, nlat, nlat, nrad );
+
+            auto nm = null_modes_[axis];
+
+            Kokkos::parallel_for(
+                "penalty_fill_mode_" + std::to_string( axis ),
+                Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
+                    { 0, 0, 0, 0 }, { nsub, nlat, nlat, nrad } ),
+                KOKKOS_LAMBDA( int s, int x, int y, int r ) {
+                    const auto c = grid::shell::coords( s, x, y, r, grid_local, radii_local );
+                    // ê_axis × r: cyclic cross product
+                    // axis=0: (0, z, -y), axis=1: (-z, 0, x), axis=2: (y, -x, 0)
+                    const int a1 = ( axis + 1 ) % 3;
+                    const int a2 = ( axis + 2 ) % 3;
+                    for ( int d = 0; d < VecDim; ++d )
+                        nm( s, x, y, r, d ) = 0.0;
+                    nm( s, x, y, r, a1 ) =  c( a2 );
+                    nm( s, x, y, r, a2 ) = -c( a1 );
+                } );
+            Kokkos::fence();
+
+            // Free-slip enforce: transform to n-t, zero normal, transform back
+            // Do this for both CMB and SURFACE boundaries
+            auto freeslip_boundary_mask =
+                static_cast< grid::shell::ShellBoundaryFlag >(
+                    static_cast< uint8_t >( CMB ) | static_cast< uint8_t >( SURFACE ) );
+
+            Kokkos::parallel_for(
+                "penalty_fs_enforce_" + std::to_string( axis ),
+                Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
+                    { 0, 0, 0, 0 }, { nsub, nlat, nlat, nrad } ),
+                KOKKOS_LAMBDA( int s, int x, int y, int r ) {
+                    if ( !util::has_flag( mask_local( s, x, y, r ), freeslip_boundary_mask ) )
+                        return;
+
+                    dense::Vec< ScalarType, 3 > v;
+                    for ( int d = 0; d < 3; ++d )
+                        v( d ) = nm( s, x, y, r, d );
+
+                    dense::Vec< ScalarType, 3 > normal;
+                    for ( int d = 0; d < 3; ++d )
+                        normal( d ) = grid_local( s, x, y, d );
+
+                    // R * v -> normal-tangential
+                    const auto R  = trafo_mat_cartesian_to_normal_tangential( normal );
+                    auto       nt = R * v;
+
+                    // Zero normal component
+                    nt( 0 ) = 0.0;
+
+                    // R^T * nt -> back to Cartesian
+                    const auto Rt   = R.transposed();
+                    const auto cart = Rt * nt;
+
+                    for ( int d = 0; d < 3; ++d )
+                        nm( s, x, y, r, d ) = cart( d );
+                } );
+            Kokkos::fence();
+        }
+
+        // Gram-Schmidt orthonormalization
+        for ( int i = 0; i < 3; ++i )
+        {
+            // Subtract projections of previous modes
+            for ( int j = 0; j < i; ++j )
+            {
+                ScalarType dot_ij = kernels::common::masked_dot_product(
+                    null_modes_[i], null_modes_[j], ownership_mask_, grid::NodeOwnershipFlag::OWNED );
+
+                auto ni = null_modes_[i];
+                auto nj = null_modes_[j];
+                Kokkos::parallel_for(
+                    "penalty_gs_subtract",
+                    Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
+                        { 0, 0, 0, 0 }, { nsub, nlat, nlat, nrad } ),
+                    KOKKOS_LAMBDA( int s, int x, int y, int r ) {
+                        for ( int d = 0; d < VecDim; ++d )
+                            ni( s, x, y, r, d ) -= dot_ij * nj( s, x, y, r, d );
+                    } );
+                Kokkos::fence();
+            }
+
+            // Normalize
+            ScalarType norm_sq = kernels::common::masked_dot_product(
+                null_modes_[i], null_modes_[i], ownership_mask_, grid::NodeOwnershipFlag::OWNED );
+            ScalarType inv_norm = 1.0 / Kokkos::sqrt( norm_sq );
+
+            auto ni = null_modes_[i];
+            Kokkos::parallel_for(
+                "penalty_gs_normalize",
+                Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
+                    { 0, 0, 0, 0 }, { nsub, nlat, nlat, nrad } ),
+                KOKKOS_LAMBDA( int s, int x, int y, int r ) {
+                    for ( int d = 0; d < VecDim; ++d )
+                        ni( s, x, y, r, d ) *= inv_norm;
+                } );
+            Kokkos::fence();
+        }
+
+        util::logroot << "[EpsilonDivDiv] Null-space penalty initialized (3 modes)" << std::endl;
     }
 
     void set_operator_apply_and_communication_modes(
@@ -398,6 +546,31 @@ class EpsilonDivDivKerngen
 
         Kokkos::fence();
         timer_kernel.stop();
+
+        // Null-space penalty for fs/fs: dst += epsilon * sum_i (n_i^T src) n_i
+        if ( penalty_active_ && !diagonal_ )
+        {
+            for ( int i = 0; i < 3; ++i )
+            {
+                ScalarType alpha = penalty_epsilon_ *
+                    kernels::common::masked_dot_product(
+                        null_modes_[i], src_, ownership_mask_, grid::NodeOwnershipFlag::OWNED );
+
+                auto nm        = null_modes_[i];
+                auto dst_local = dst_;
+                Kokkos::parallel_for(
+                    "penalty_axpy",
+                    Kokkos::MDRangePolicy< Kokkos::Rank< 4 > >(
+                        { 0, 0, 0, 0 },
+                        { dst_local.extent( 0 ), dst_local.extent( 1 ),
+                          dst_local.extent( 2 ), dst_local.extent( 3 ) } ),
+                    KOKKOS_LAMBDA( int s, int x, int y, int r ) {
+                        for ( int d = 0; d < VecDim; ++d )
+                            dst_local( s, x, y, r, d ) += alpha * nm( s, x, y, r, d );
+                    } );
+            }
+            Kokkos::fence( "penalty" );
+        }
 
         if ( operator_communication_mode_ == linalg::OperatorCommunicationMode::CommunicateAdditively )
         {
