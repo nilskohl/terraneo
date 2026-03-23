@@ -593,6 +593,20 @@ KOKKOS_INLINE_FUNCTION constexpr dense::Vec< T, 3 > forward_map_lat(
 }
 
 template < std::floating_point T >
+KOKKOS_INLINE_FUNCTION constexpr dense::Vec< T, 3 > forward_map(
+    const dense::Vec< T, 3 >& p1_phy,
+    const dense::Vec< T, 3 >& p2_phy,
+    const dense::Vec< T, 3 >& p3_phy,
+    const T                   r_1,
+    const T                   r_2,
+    const T                   xi,
+    const T                   eta,
+    const T                   zeta )
+{
+    return forward_map_rad( r_1, r_2, zeta ) * forward_map_lat( p1_phy, p2_phy, p3_phy, xi, eta );
+}
+
+template < std::floating_point T >
 KOKKOS_INLINE_FUNCTION constexpr T grad_forward_map_rad( const T r_1, const T r_2 )
 {
     return 0.5 * ( r_2 - r_1 );
