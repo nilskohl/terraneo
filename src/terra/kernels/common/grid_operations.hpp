@@ -463,6 +463,31 @@ ScalarType max_abs_entry(
     return max_mag;
 }
 
+template < typename ScalarType >
+ScalarType max_abs_entry_subset(
+    const grid::Grid4DDataScalar< ScalarType >& x,
+    dense::Vec< int, 4 >                        start,
+    dense::Vec< int, 4 >                        end_excl )
+{
+    ScalarType max_mag = 0.0;
+    Kokkos::parallel_reduce(
+        "max_abs_entry",
+        Kokkos::MDRangePolicy(
+            { start( 0 ), start( 1 ), start( 2 ), start( 3 ) },
+            { end_excl( 0 ), end_excl( 1 ), end_excl( 2 ), end_excl( 3 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, ScalarType& local_max ) {
+            ScalarType val = Kokkos::abs( x( local_subdomain, i, j, k ) );
+            local_max      = Kokkos::max( local_max, val );
+        },
+        Kokkos::Max< ScalarType >( max_mag ) );
+
+    Kokkos::fence();
+
+    MPI_Allreduce( MPI_IN_PLACE, &max_mag, 1, mpi::mpi_datatype< ScalarType >(), MPI_MAX, MPI_COMM_WORLD );
+
+    return max_mag;
+}
+
 template < typename ScalarType, int VecDim >
 ScalarType max_vector_magnitude( const grid::Grid4DDataVec< ScalarType, VecDim >& x )
 {
@@ -728,6 +753,33 @@ ScalarType masked_dot_product(
             const ScalarType mask_val = util::has_flag( mask( local_subdomain, i, j, k ), mask_value ) ? 1.0 : 0.0;
             ScalarType       val      = x( local_subdomain, i, j, k, d ) * y( local_subdomain, i, j, k, d ) * mask_val;
             local_dot_prod            = local_dot_prod + val;
+        },
+        Kokkos::Sum< ScalarType >( dot_prod ) );
+
+    Kokkos::fence( "masked_dot_product" );
+
+    MPI_Allreduce( MPI_IN_PLACE, &dot_prod, 1, mpi::mpi_datatype< ScalarType >(), MPI_SUM, MPI_COMM_WORLD );
+
+    return dot_prod;
+}
+
+template < typename ScalarType >
+ScalarType dot_product_subset(
+    const grid::Grid4DDataScalar< ScalarType >& x,
+    const grid::Grid4DDataScalar< ScalarType >& y,
+    dense::Vec< int, 4 >                        start,
+    dense::Vec< int, 4 >                        end_excl )
+{
+    ScalarType dot_prod = 0.0;
+
+    Kokkos::parallel_reduce(
+        "masked_dot_product",
+        Kokkos::MDRangePolicy(
+            { start( 0 ), start( 1 ), start( 2 ), start( 3 ) },
+            { end_excl( 0 ), end_excl( 1 ), end_excl( 2 ), end_excl( 3 ) } ),
+        KOKKOS_LAMBDA( int local_subdomain, int i, int j, int k, ScalarType& local_dot_prod ) {
+            ScalarType val = x( local_subdomain, i, j, k ) * y( local_subdomain, i, j, k );
+            local_dot_prod = local_dot_prod + val;
         },
         Kokkos::Sum< ScalarType >( dot_prod ) );
 
