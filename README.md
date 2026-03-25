@@ -36,9 +36,8 @@ mainly focused on massively parallel mantle convection simulations on GPU (and C
 
 An incomplete list of features
 * Runs in massively parallel settings on CPU and GPU systems (via [Kokkos](https://github.com/kokkos/kokkos) and MPI)
-* Spherical wedge finite-elements
-* Stable discretization of the generalized, compressible Stokes equations (Q1-iso-Q2 / Q1)
-* Advection-Diffusion discretization using SUPG
+* Stable discretization of the generalized, compressible Stokes equations (Q1-iso-Q2 / Q1) using spherical wedge finite-elements
+* Advection-diffusion discretization using hexahedral [finite volumes with algebraic flux corrected transport (FCT)](#advection-diffusion)
 * Plate boundary conditions
 * Fully matrix-free
 * Krylov methods and geometric multigrid preconditioners (using GCA coarse grid operators)
