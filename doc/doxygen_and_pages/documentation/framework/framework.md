@@ -15,3 +15,4 @@ Below is a list of the documentation pages for the framework introducing various
 | [Boundary Conditions](#boundary-conditions)          | Definition and application of boundary conditions.                                     |
 | [Input and Output](#input-output)                    | Data formats, visualization, radial profiles, checkpoints, logging, etc.               |
 | [Mantle circulation app](#mcm-app)                   | Details on the mantle circulation app.                                                 |
+| [Advection-Diffusion](#advection-diffusion)          | Handling of the advection-diffusion equation ("energy equation")                       |

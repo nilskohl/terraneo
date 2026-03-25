@@ -31,6 +31,7 @@
       <tab type="user" url="@ref boundary-conditions" visible="yes" title="Boundary Conditions" intro=""/>
       <tab type="user" url="@ref input-output" visible="yes" title="Input-Output" intro=""/>
       <tab type="user" url="@ref mcm-app" visible="yes" title="Mantle Circulation App" intro=""/>
+      <tab type="user" url="@ref advection-diffusion" visible="yes" title="Advection-Diffusion" intro=""/>
     </tab>
 
     <tab type="user" url="@ref contributing" visible="yes" title="Contributing"/>
