@@ -5,6 +5,8 @@ Below is a list of the documentation pages for the framework introducing various
 | Section                                              | Description                                                                            |
 |------------------------------------------------------|----------------------------------------------------------------------------------------|
 | [Model / Partial Differential Equations](#model-pde) | Core PDE formulation and governing equations.                                          |
+| [Stokes Discretization and Solver](#stokes)          | FE discretization of the incompressible Stokes equations and the block-structured solver. |
+| [Advection-Diffusion](#advection-diffusion)          | Handling of the advection-diffusion equation ("energy equation")                       |
 | [Grid Structure](#grid-subdomains)                   | Grids, subdomains, allocation, kernels, Kokkos, etc.                                   |
 | [Finite Element Discretization](#finite-elements)    | Overview of the FEM approach and element definitions.                                  |
 | [Linear Algebra](#linear-algebra)                    | Matrix and vector representations, solvers, and preconditioners (including multigrid). |
@@ -15,4 +17,5 @@ Below is a list of the documentation pages for the framework introducing various
 | [Boundary Conditions](#boundary-conditions)          | Definition and application of boundary conditions.                                     |
 | [Input and Output](#input-output)                    | Data formats, visualization, radial profiles, checkpoints, logging, etc.               |
 | [Mantle circulation app](#mcm-app)                   | Details on the mantle circulation app.                                                 |
-| [Advection-Diffusion](#advection-diffusion)          | Handling of the advection-diffusion equation ("energy equation")                       |
+
+
