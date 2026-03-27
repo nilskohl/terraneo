@@ -7,6 +7,7 @@
 #include "grid/shell/spherical_shell.hpp"
 #include "linalg/vector_fv.hpp"
 #include "linalg/vector_q1.hpp"
+#include "util/timer.hpp"
 
 namespace terra::fv::hex::operators {
 
@@ -269,8 +270,12 @@ void fct_predictor(
     const grid::Grid4DDataScalar< ScalarT >&    source               = {},
     const bool                                  subtract_divergence  = true )
 {
-    // Update ghost layers of T_old so the predictor kernel can read neighbour values.
-    communication::shell::update_fv_ghost_layers( domain, T_old.grid_data(), bufs.ghost_T );
+    util::Timer timer_predictor( "fct_predictor" );
+
+    {
+        util::Timer timer_comm( "fct_predictor_comm" );
+        communication::shell::update_fv_ghost_layers( domain, T_old.grid_data(), bufs.ghost_T );
+    }
 
     FCTPredictorKernel< ScalarT > kernel{
         .grid_                 = grid,
@@ -287,11 +292,14 @@ void fct_predictor(
         .subtract_divergence_  = subtract_divergence,
     };
 
-    Kokkos::parallel_for(
-        "fct_predictor",
-        grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domain ),
-        kernel );
-    Kokkos::fence();
+    {
+        util::Timer timer_kernel( "fct_predictor_kernel" );
+        Kokkos::parallel_for(
+            "fct_predictor",
+            grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domain ),
+            kernel );
+        Kokkos::fence();
+    }
 }
 
 // ============================================================================
@@ -393,8 +401,12 @@ void fct_limiter(
     const grid::shell::DistributedDomain& domain,
     FVFCTBuffers< ScalarT >&              bufs )
 {
-    // T_L ghost layers must be current so the min/max neighbourhood stencil is correct.
-    communication::shell::update_fv_ghost_layers( domain, bufs.T_L, bufs.ghost_T );
+    util::Timer timer_limiter( "fct_limiter" );
+
+    {
+        util::Timer timer_comm( "fct_limiter_comm_tl" );
+        communication::shell::update_fv_ghost_layers( domain, bufs.T_L, bufs.ghost_T );
+    }
 
     FCTLimiterKernel< ScalarT > kernel{
         .T_L_      = bufs.T_L,
@@ -403,15 +415,21 @@ void fct_limiter(
         .R_minus_  = bufs.R_minus,
     };
 
-    Kokkos::parallel_for(
-        "fct_limiter",
-        grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domain ),
-        kernel );
-    Kokkos::fence();
+    {
+        util::Timer timer_kernel( "fct_limiter_kernel" );
+        Kokkos::parallel_for(
+            "fct_limiter",
+            grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domain ),
+            kernel );
+        Kokkos::fence();
+    }
 
     // R+/R- ghost layers must be filled before the correction kernel reads neighbours.
-    communication::shell::update_fv_ghost_layers( domain, bufs.R_plus,  bufs.ghost_R_plus );
-    communication::shell::update_fv_ghost_layers( domain, bufs.R_minus, bufs.ghost_R_minus );
+    {
+        util::Timer timer_comm_r( "fct_limiter_comm_r" );
+        communication::shell::update_fv_ghost_layers( domain, bufs.R_plus,  bufs.ghost_R_plus );
+        communication::shell::update_fv_ghost_layers( domain, bufs.R_minus, bufs.ghost_R_minus );
+    }
 }
 
 // ============================================================================
@@ -497,6 +515,8 @@ void fct_correction(
     linalg::VectorFVScalar< ScalarT >&    T_new,
     FVFCTBuffers< ScalarT >&              bufs )
 {
+    util::Timer timer_correction( "fct_correction" );
+
     FCTCorrectionKernel< ScalarT > kernel{
         .T_L_      = bufs.T_L,
         .antidiff_ = bufs.antidiff,
@@ -505,11 +525,14 @@ void fct_correction(
         .T_new_    = T_new.grid_data(),
     };
 
-    Kokkos::parallel_for(
-        "fct_correction",
-        grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domain ),
-        kernel );
-    Kokkos::fence();
+    {
+        util::Timer timer_kernel( "fct_correction_kernel" );
+        Kokkos::parallel_for(
+            "fct_correction",
+            grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domain ),
+            kernel );
+        Kokkos::fence();
+    }
 }
 
 // ============================================================================
@@ -556,6 +579,7 @@ void fct_explicit_step(
     const grid::Grid4DDataScalar< ScalarT >& source              = {},
     const bool                               subtract_divergence = true )
 {
+    util::Timer timer_fct( "fct_explicit_step" );
     fct_predictor ( domain, T, vel, cell_centers, grid, radii, dt, bufs, diffusivity, source, subtract_divergence );
     fct_limiter   ( domain, bufs );
     fct_correction( domain, T, bufs );
@@ -600,6 +624,7 @@ void upwind_explicit_step(
     const grid::Grid4DDataScalar< ScalarT >&    source              = {},
     const bool                                  subtract_divergence = true )
 {
+    util::Timer timer_upwind( "upwind_explicit_step" );
     fct_predictor( domain, T, vel, cell_centers, grid, radii, dt, bufs, diffusivity, source, subtract_divergence );
     Kokkos::deep_copy( T.grid_data(), bufs.T_L );
 }
