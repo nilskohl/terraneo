@@ -12,6 +12,21 @@
 #include "fe/wedge/operators/shell/restriction_constant.hpp"
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/unsteady_advection_diffusion_supg.hpp"
+
+// Define USE_FCT_ENERGY to switch the energy equation from SUPG (implicit FE) to FCT
+// (explicit finite-volume).  The two paths share all Stokes machinery and use the same
+// Q1 temperature field `T` for the Stokes RHS and output; FCT internally advects a
+// cell-centred FV field `T_fct` and projects back to Q1 after each step.
+//
+#define USE_FCT_ENERGY
+
+#ifdef USE_FCT_ENERGY
+#include "communication/shell/fv_communication.hpp"
+#include "fv/hex/conversion.hpp"
+#include "fv/hex/helpers.hpp"
+#include "fv/hex/operators/fct_advection_diffusion.hpp"
+#include "linalg/vector_fv.hpp"
+#endif
 #include "fe/wedge/operators/shell/vector_mass.hpp"
 #include "geophysics/viscosity/viscosity_interpolation.hpp"
 #include "grid/grid_types.hpp"
@@ -189,6 +204,48 @@ struct NoiseAdder
         rand_pool_.free_state( generator );
     }
 };
+
+#ifdef USE_FCT_ENERGY
+
+/// Initial condition for FV cell-centred temperature: same radial profile as the Q1 version,
+/// evaluated at the precomputed cell centres.
+struct FVInitialConditionInterpolator
+{
+    ScalarType                     r_min_, r_max_;
+    Grid4DDataVec< ScalarType, 3 > cell_centers_;
+    Grid4DDataScalar< ScalarType > data_;
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int id, const int x, const int y, const int r ) const
+    {
+        const ScalarType cx     = cell_centers_( id, x, y, r, 0 );
+        const ScalarType cy     = cell_centers_( id, x, y, r, 1 );
+        const ScalarType cz     = cell_centers_( id, x, y, r, 2 );
+        const ScalarType radius = Kokkos::sqrt( cx * cx + cy * cy + cz * cz );
+        const ScalarType frac   = ( r_max_ - radius ) / ( r_max_ - r_min_ );
+        data_( id, x, y, r )   = Kokkos::pow( frac, ScalarType( 5 ) );
+    }
+};
+
+/// Noise adder for FV cells.  All non-ghost cells are owned by the local subdomain,
+/// so no ownership mask is needed.
+struct FVNoiseAdder
+{
+    Grid4DDataScalar< ScalarType >   data_T_;
+    Kokkos::Random_XorShift64_Pool<> rand_pool_;
+
+    KOKKOS_INLINE_FUNCTION
+    void operator()( const int id, const int x, const int y, const int r ) const
+    {
+        auto             gen          = rand_pool_.get_state();
+        const ScalarType eps          = 1e-1;
+        const ScalarType perturbation = eps * ( 2.0 * gen.drand() - 1.0 );
+        data_T_( id, x, y, r )       = Kokkos::clamp( data_T_( id, x, y, r ) + perturbation, 0.0, 1.0 );
+        rand_pool_.free_state( gen );
+    }
+};
+
+#endif // USE_FCT_ENERGY
 
 Result<> run( const Parameters& prm )
 {
@@ -404,6 +461,23 @@ Result<> run( const Parameters& prm )
 
     auto& T = temp_vecs["T"];
     auto& q = temp_vecs["q"];
+
+#ifdef USE_FCT_ENERGY
+    // FV cell-centred temperature field (the FCT prognostic variable).
+    linalg::VectorFVScalar< ScalarType > T_fct( "T_fct", domains[velocity_level] );
+    // Pre-computed cell centres (with ghost layers filled once and reused every step).
+    linalg::VectorFVVec< ScalarType, 3 > fv_cell_centers( "fv_cell_centers", domains[velocity_level] );
+    fv::hex::initialize_cell_centers( fv_cell_centers, domains[velocity_level],
+                                      coords_shell[velocity_level], coords_radii[velocity_level] );
+    // Pre-allocated FCT scratch buffers (reused every step).
+    fv::hex::operators::FVFCTBuffers< ScalarType > fv_fct_bufs( domains[velocity_level] );
+    // Temporaries for the FV→Q1 L2 projection (reused every step; share storage with temp_vecs).
+    // l2_project_fv_to_fe requires at least 5 Q1 temporaries.
+    std::vector< VectorQ1Scalar< ScalarType > > l2_proj_tmps = {
+        temp_vecs["tmp_0"], temp_vecs["tmp_1"], temp_vecs["tmp_2"],
+        temp_vecs["tmp_3"], temp_vecs["tmp_4"]
+    };
+#endif
 
     // Counting DoFs.
     int world_size = mpi::num_processes();
@@ -671,6 +745,7 @@ Result<> run( const Parameters& prm )
 
     logroot << "Setting up energy equation solver ..." << std::endl;
 
+#ifndef USE_FCT_ENERGY
     using AD = fe::wedge::operators::shell::UnsteadyAdvectionDiffusionSUPG< ScalarType >;
 
     // The advection-diffusion operator executes a matvec with (alpha * M + dt * A),
@@ -716,9 +791,38 @@ Result<> run( const Parameters& prm )
     using TempMass = fe::wedge::operators::shell::Mass< ScalarType >;
 
     TempMass M_T( domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], false );
+#endif // !USE_FCT_ENERGY
 
     // Set up the initial temperature.
 
+#ifdef USE_FCT_ENERGY
+    // --- FCT: initialise T_fct on FV cell centres ---
+    Kokkos::parallel_for(
+        "initial temp interpolation (FCT)",
+        grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domains[velocity_level] ),
+        FVInitialConditionInterpolator{
+            domains[velocity_level].domain_info().radii().front(),
+            domains[velocity_level].domain_info().radii().back(),
+            fv_cell_centers.grid_data(),
+            T_fct.grid_data() } );
+
+    Kokkos::fence();
+
+    Kokkos::parallel_for(
+        "adding noise to temp (FCT)",
+        grid::shell::local_domain_md_range_policy_cells_fv_skip_ghost_layers( domains[velocity_level] ),
+        FVNoiseAdder{ T_fct.grid_data(), Kokkos::Random_XorShift64_Pool<>( 12345 ) } );
+
+    Kokkos::fence();
+    communication::shell::update_fv_ghost_layers( domains[velocity_level], T_fct.grid_data() );
+
+    // Project T_fct to Q1 T via L2 projection for use as Stokes RHS and output.
+    fv::hex::l2_project_fv_to_fe(
+        T, T_fct, domains[velocity_level],
+        coords_shell[velocity_level], coords_radii[velocity_level], l2_proj_tmps );
+
+#else
+    // --- SUPG: initialise Q1 nodal T ---
     Kokkos::parallel_for(
         "initial temp interpolation",
         local_domain_md_range_policy_nodes( domains[velocity_level] ),
@@ -744,7 +848,9 @@ Result<> run( const Parameters& prm )
 
     communication::shell::send_recv(
         domains[velocity_level], T.grid_data(), communication::CommunicationReduction::SUM );
+#endif
 
+#ifndef USE_FCT_ENERGY
     const auto num_energy_fgmres_tmps = 2 * prm.energy_solver_parameters.krylov_restart + 4;
 
     std::vector< VectorQ1Scalar< ScalarType > > energy_tmp_fgmres;
@@ -763,6 +869,7 @@ Result<> run( const Parameters& prm )
           .max_iterations              = prm.energy_solver_parameters.krylov_max_iterations },
         table );
     energy_solver.set_tag( "energy_fgmres" );
+#endif
 
     table->add_row( {
         { "tag", "setup" },
@@ -828,6 +935,15 @@ Result<> run( const Parameters& prm )
         // Thus, we will now re-write the loaded data.
         // Maybe a good sanity check.
         xdmf_output.set_write_counter( timestep_initial );
+
+#ifdef USE_FCT_ENERGY
+        // T_fct is not stored in checkpoints (only Q1 T is).  Recover the FV cell-average
+        // field from the restored Q1 T via an L2 projection.  Ghost layers are populated
+        // inside l2_project_fe_to_fv, so the result is immediately usable by FCT kernels.
+        fv::hex::l2_project_fe_to_fv(
+            T_fct, T, domains[velocity_level],
+            coords_shell[velocity_level], coords_radii[velocity_level] );
+#endif
     }
 
     logroot << "Writing initial XDMF ..." << std::endl;
@@ -928,6 +1044,59 @@ Result<> run( const Parameters& prm )
         logroot << "    h:       " << h << std::endl;
         logroot << "=>  dt:      " << dt << std::endl;
 
+#ifdef USE_FCT_ENERGY
+        // --- FCT explicit time-stepping ---
+        // Note: FCT is explicit; pseudo_cfl must be < 1 for stability (CFL < 1).
+        {
+            util::Timer timer_fct_substeps( "fct_substeps" );
+
+            for ( int i = 0; i < prm.time_stepping_parameters.energy_substeps; i++ )
+            {
+                logroot << "Solving energy (FCT, substep " << i << ") ..." << std::endl;
+
+                {
+                    util::Timer timer_fct_step( "fct_explicit_step" );
+                    fv::hex::operators::fct_explicit_step(
+                        domains[velocity_level],
+                        T_fct,
+                        u.block_1(),
+                        fv_cell_centers.grid_data(),
+                        coords_shell[velocity_level],
+                        coords_radii[velocity_level],
+                        dt,
+                        fv_fct_bufs,
+                        prm.physics_parameters.diffusivity );
+                    timer_fct_step.stop();
+                }
+
+                // Enforce Dirichlet boundary conditions.
+                fv::hex::apply_dirichlet_bcs(
+                    T_fct,
+                    boundary_mask_data[velocity_level],
+                    fv::hex::DirichletBCs< ScalarType >{
+                        .T_cmb         = static_cast< ScalarType >( 1 ),
+                        .T_surface     = static_cast< ScalarType >( 0 ),
+                        .apply_cmb     = true,
+                        .apply_surface = true },
+                    domains[velocity_level] );
+            }
+
+            timer_fct_substeps.stop();
+        }
+
+        // Project T_fct → Q1 T once after all substeps.
+        // T is only needed for the Stokes buoyancy RHS and XDMF output; projecting
+        // inside the substep loop would run a mass-matrix CG solve every substep.
+        {
+            util::Timer timer_fct_projection( "fct_l2_projection" );
+            fv::hex::l2_project_fv_to_fe(
+                T, T_fct, domains[velocity_level],
+                coords_shell[velocity_level], coords_radii[velocity_level], l2_proj_tmps );
+            timer_fct_projection.stop();
+        }
+
+#else
+        // --- SUPG implicit time-stepping ---
         A.dt()              = dt;
         A_neumann.dt()      = dt;
         A_neumann_diag.dt() = dt;
@@ -986,6 +1155,7 @@ Result<> run( const Parameters& prm )
 
             table->clear();
         }
+#endif // USE_FCT_ENERGY
 
         timer_energy.stop();
 

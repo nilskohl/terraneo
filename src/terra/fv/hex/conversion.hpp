@@ -1,5 +1,6 @@
 
 #pragma once
+#include "communication/shell/fv_communication.hpp"
 #include "fe/wedge/integrands.hpp"
 #include "fe/wedge/kernel_helpers.hpp"
 #include "fe/wedge/operators/shell/mass.hpp"
@@ -207,6 +208,95 @@ void l2_project_fv_to_fe(
         linalg::solvers::IterativeSolverParameters( 1000, 1e-12, 1e-12 ), nullptr, tmps );
 
     linalg::solvers::solve( solver, M, dst, b );
+}
+
+/// @brief L2 projection from a Q1 finite element function into a finite volume function.
+///
+/// For each FV cell \f$K\f$ computes the exact volume-weighted cell average of the Q1 field:
+/// \f[
+///     u_K^{FV} = \frac{1}{|K|} \int_K u_h^{FE}(x) \, dx
+///              = \frac{1}{|K|} \int_K \sum_i u_i \, \phi_i(\xi(x)) \, dx
+/// \f]
+/// where \f$\phi_i\f$ are the wedge Q1 shape functions and \f$u_i\f$ are the Q1 nodal values
+/// surrounding the cell.  The integral is evaluated with the same Felippa quadrature rule
+/// used throughout the codebase, so the result is consistent with `l2_project_fv_to_fe`.
+///
+/// Ghost layers of `dst` are populated via MPI exchange on exit so the result is immediately
+/// usable as input to FCT kernels.
+///
+/// @param dst          [out] FV scalar field.
+/// @param src          Q1 finite element scalar field (read-only).
+/// @param domain       Distributed domain (used for MPI ghost-layer exchange).
+/// @param coords_shell Lateral node coordinates of the unit-sphere surface.
+/// @param coords_radii Radial shell radii.
+template < typename ScalarType, typename GridScalarType >
+void l2_project_fe_to_fv(
+    linalg::VectorFVScalar< ScalarType >&                     dst,
+    const linalg::VectorQ1Scalar< ScalarType >&               src,
+    const grid::shell::DistributedDomain&                     domain,
+    const grid::Grid3DDataVec< GridScalarType, 3 >&           coords_shell,
+    const grid::Grid2DDataScalar< GridScalarType >&           coords_radii )
+{
+    grid::Grid4DDataScalar< ScalarType > fv_grid  = dst.grid_data();
+    grid::Grid4DDataScalar< ScalarType > q1_grid  = src.grid_data();
+
+    Kokkos::parallel_for(
+        "l2_project_fe_to_fv",
+        Kokkos::MDRangePolicy(
+            { 0, 1, 1, 1 },
+            { fv_grid.extent( 0 ), fv_grid.extent( 1 ) - 1, fv_grid.extent( 2 ) - 1, fv_grid.extent( 3 ) - 1 } ),
+        KOKKOS_LAMBDA(
+            const int local_subdomain_id, const int hex_cell_x, const int hex_cell_y, const int hex_cell_r ) {
+            // Q1 cell coordinates (0-indexed, no ghost-layer offset).
+            const auto x_no_gl = hex_cell_x - 1;
+            const auto y_no_gl = hex_cell_y - 1;
+            const auto r_no_gl = hex_cell_r - 1;
+
+            constexpr auto              num_quad_points = fe::wedge::quadrature::quad_felippa_3x2_num_quad_points;
+            dense::Vec< ScalarType, 3 > quad_points[num_quad_points];
+            ScalarType                  quad_weights[num_quad_points];
+            fe::wedge::quadrature::quad_felippa_3x2_quad_points( quad_points );
+            fe::wedge::quadrature::quad_felippa_3x2_quad_weights( quad_weights );
+
+            // Gather Q1 nodal values for the two wedges of this hex cell.
+            dense::Vec< ScalarType, 6 > local_u[fe::wedge::num_wedges_per_hex_cell] = {};
+            fe::wedge::extract_local_wedge_scalar_coefficients(
+                local_u, local_subdomain_id, x_no_gl, y_no_gl, r_no_gl, q1_grid );
+
+            dense::Vec< ScalarType, 3 > wedge_phy_surf[fe::wedge::num_wedges_per_hex_cell]
+                                                      [fe::wedge::num_nodes_per_wedge_surface] = {};
+            fe::wedge::wedge_surface_physical_coords(
+                wedge_phy_surf, coords_shell, local_subdomain_id, x_no_gl, y_no_gl );
+
+            const auto r_1 = coords_radii( local_subdomain_id, r_no_gl );
+            const auto r_2 = coords_radii( local_subdomain_id, hex_cell_r );
+
+            ScalarType volume   = ScalarType( 0 );
+            ScalarType integral = ScalarType( 0 );
+
+            for ( int wedge = 0; wedge < fe::wedge::num_wedges_per_hex_cell; ++wedge )
+            {
+                for ( int q = 0; q < num_quad_points; ++q )
+                {
+                    const auto J       = fe::wedge::jac( wedge_phy_surf[wedge], r_1, r_2, quad_points[q] );
+                    const auto abs_det = Kokkos::abs( J.det() );
+                    const auto Jw      = abs_det * quad_weights[q];
+                    volume += Jw;
+
+                    // Evaluate Q1 function at the quadrature point via shape functions.
+                    ScalarType u_q = ScalarType( 0 );
+                    for ( int i = 0; i < fe::wedge::num_nodes_per_wedge; ++i )
+                        u_q += local_u[wedge]( i ) * fe::wedge::shape< ScalarType >( i, quad_points[q] );
+
+                    integral += u_q * Jw;
+                }
+            }
+
+            fv_grid( local_subdomain_id, hex_cell_x, hex_cell_y, hex_cell_r ) = integral / volume;
+        } );
+
+    Kokkos::fence();
+    communication::shell::update_fv_ghost_layers( domain, fv_grid );
 }
 
 } // namespace terra::fv::hex
