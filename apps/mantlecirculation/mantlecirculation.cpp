@@ -223,7 +223,7 @@ struct FVInitialConditionInterpolator
         const ScalarType cz     = cell_centers_( id, x, y, r, 2 );
         const ScalarType radius = Kokkos::sqrt( cx * cx + cy * cy + cz * cz );
         const ScalarType frac   = ( r_max_ - radius ) / ( r_max_ - r_min_ );
-        data_( id, x, y, r )   = Kokkos::pow( frac, ScalarType( 5 ) );
+        data_( id, x, y, r )    = Kokkos::pow( frac, ScalarType( 5 ) );
     }
 };
 
@@ -240,7 +240,7 @@ struct FVNoiseAdder
         auto             gen          = rand_pool_.get_state();
         const ScalarType eps          = 1e-1;
         const ScalarType perturbation = eps * ( 2.0 * gen.drand() - 1.0 );
-        data_T_( id, x, y, r )       = Kokkos::clamp( data_T_( id, x, y, r ) + perturbation, 0.0, 1.0 );
+        data_T_( id, x, y, r )        = Kokkos::clamp( data_T_( id, x, y, r ) + perturbation, 0.0, 1.0 );
         rand_pool_.free_state( gen );
     }
 };
@@ -467,16 +467,14 @@ Result<> run( const Parameters& prm )
     linalg::VectorFVScalar< ScalarType > T_fct( "T_fct", domains[velocity_level] );
     // Pre-computed cell centres (with ghost layers filled once and reused every step).
     linalg::VectorFVVec< ScalarType, 3 > fv_cell_centers( "fv_cell_centers", domains[velocity_level] );
-    fv::hex::initialize_cell_centers( fv_cell_centers, domains[velocity_level],
-                                      coords_shell[velocity_level], coords_radii[velocity_level] );
+    fv::hex::initialize_cell_centers(
+        fv_cell_centers, domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
     // Pre-allocated FCT scratch buffers (reused every step).
     fv::hex::operators::FVFCTBuffers< ScalarType > fv_fct_bufs( domains[velocity_level] );
     // Temporaries for the FV→Q1 L2 projection (reused every step; share storage with temp_vecs).
     // l2_project_fv_to_fe requires at least 5 Q1 temporaries.
     std::vector< VectorQ1Scalar< ScalarType > > l2_proj_tmps = {
-        temp_vecs["tmp_0"], temp_vecs["tmp_1"], temp_vecs["tmp_2"],
-        temp_vecs["tmp_3"], temp_vecs["tmp_4"]
-    };
+        temp_vecs["tmp_0"], temp_vecs["tmp_1"], temp_vecs["tmp_2"], temp_vecs["tmp_3"], temp_vecs["tmp_4"] };
 #endif
 
     // Counting DoFs.
@@ -834,8 +832,7 @@ Result<> run( const Parameters& prm )
 
     // Project T_fct to Q1 T via L2 projection for use as Stokes RHS and output.
     fv::hex::l2_project_fv_to_fe(
-        T, T_fct, domains[velocity_level],
-        coords_shell[velocity_level], coords_radii[velocity_level], l2_proj_tmps );
+        T, T_fct, domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level], l2_proj_tmps );
 
 #else
     // --- SUPG: initialise Q1 nodal T ---
@@ -957,8 +954,7 @@ Result<> run( const Parameters& prm )
         // field from the restored Q1 T via an L2 projection.  Ghost layers are populated
         // inside l2_project_fe_to_fv, so the result is immediately usable by FCT kernels.
         fv::hex::l2_project_fe_to_fv(
-            T_fct, T, domains[velocity_level],
-            coords_shell[velocity_level], coords_radii[velocity_level] );
+            T_fct, T, domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
 #endif
     }
 
@@ -1006,7 +1002,15 @@ Result<> run( const Parameters& prm )
         linalg::apply( M, stok_vecs["tmp"].block_1(), stok_vecs["f"].block_1() );
 
         fe::strong_algebraic_homogeneous_velocity_dirichlet_enforcement_stokes_like(
-            stok_vecs["f"], boundary_mask_data[velocity_level], grid::shell::ShellBoundaryFlag::BOUNDARY );
+            stok_vecs["f"],
+            boundary_mask_data[velocity_level],
+            grid::shell::get_shell_boundary_flag( bcs, DIRICHLET ) );
+
+        fe::strong_algebraic_freeslip_enforcement_in_place(
+            stok_vecs["f"],
+            coords_shell[velocity_level],
+            boundary_mask_data[velocity_level],
+            grid::shell::get_shell_boundary_flag( bcs, FREESLIP ) );
 
         logroot << "Solving Stokes ..." << std::endl;
 
@@ -1098,10 +1102,7 @@ Result<> run( const Parameters& prm )
 
                 // Enforce Dirichlet BCs on T^{n+1} after the full FCT step.
                 fv::hex::apply_dirichlet_bcs(
-                    T_fct,
-                    boundary_mask_data[velocity_level],
-                    fct_bcs,
-                    domains[velocity_level] );
+                    T_fct, boundary_mask_data[velocity_level], fct_bcs, domains[velocity_level] );
             }
 
             timer_fct_substeps.stop();
@@ -1113,8 +1114,12 @@ Result<> run( const Parameters& prm )
         {
             util::Timer timer_fct_projection( "fct_l2_projection" );
             fv::hex::l2_project_fv_to_fe(
-                T, T_fct, domains[velocity_level],
-                coords_shell[velocity_level], coords_radii[velocity_level], l2_proj_tmps );
+                T,
+                T_fct,
+                domains[velocity_level],
+                coords_shell[velocity_level],
+                coords_radii[velocity_level],
+                l2_proj_tmps );
             timer_fct_projection.stop();
         }
 
