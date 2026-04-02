@@ -448,6 +448,8 @@ Result<> run( const Parameters& prm )
     auto& T = temp_vecs["T"];
     auto& q = temp_vecs["q"];
 
+    // Finite-volume functions/vectors.
+
     // FV cell-centred temperature field (the FCT prognostic variable).
     linalg::VectorFVScalar< ScalarType > T_fct( "T_fct", domains[velocity_level] );
     // Pre-computed cell centres (with ghost layers filled once and reused every step).
@@ -461,14 +463,18 @@ Result<> run( const Parameters& prm )
     std::vector< VectorQ1Scalar< ScalarType > > l2_proj_tmps = {
         temp_vecs["tmp_0"], temp_vecs["tmp_1"], temp_vecs["tmp_2"], temp_vecs["tmp_3"], temp_vecs["tmp_4"] };
 
+    linalg::VectorFVScalar< ScalarType > T_source( "T_source", domains[velocity_level] );
+    linalg::assign( T_source, 0.0 );
+
     // Counting DoFs.
     int world_size = mpi::num_processes();
 
-    const auto num_dofs_temperature =
+    const auto num_dofs_fe_scalar =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 1], grid::NodeOwnershipFlag::OWNED );
-    const auto num_dofs_velocity = 3 * num_dofs_temperature;
+    const auto num_dofs_velocity = 3 * num_dofs_fe_scalar;
     const auto num_dofs_pressure =
         kernels::common::count_masked< long >( ownership_mask_data[num_levels - 2], grid::NodeOwnershipFlag::OWNED );
+    const auto num_dofs_temperature = domains[velocity_level].domain_info().num_global_micro_hex_cells();
 
     logroot << "Degrees of freedom in (T,u,p) = (" << num_dofs_temperature << ", " << num_dofs_velocity << ", "
             << num_dofs_pressure << ")" << std::endl;
@@ -753,15 +759,14 @@ Result<> run( const Parameters& prm )
     // boundaries (CMB r=0, surface r=N) are set to the correct BC values.
     // update_fv_ghost_layers does not touch those ghost cells (no subdomain
     // neighbour exists beyond a physical boundary).
-    fv::hex::apply_dirichlet_bcs(
-        T_fct,
-        boundary_mask_data[velocity_level],
-        fv::hex::DirichletBCs< ScalarType >{
-            .T_cmb         = static_cast< ScalarType >( 1 ),
-            .T_surface     = static_cast< ScalarType >( 0 ),
-            .apply_cmb     = true,
-            .apply_surface = true },
-        domains[velocity_level] );
+
+    const fv::hex::DirichletBCs< ScalarType > fct_bcs{
+        .T_cmb         = static_cast< ScalarType >( prm.boundary_conditions_parameters.temperature_cmb ),
+        .T_surface     = static_cast< ScalarType >( prm.boundary_conditions_parameters.temperature_surface ),
+        .apply_cmb     = true,
+        .apply_surface = true };
+
+    fv::hex::apply_dirichlet_bcs( T_fct, boundary_mask_data[velocity_level], fct_bcs, domains[velocity_level] );
 
     communication::shell::update_fv_ghost_layers( domains[velocity_level], T_fct.grid_data() );
 
@@ -932,12 +937,6 @@ Result<> run( const Parameters& prm )
 
         logroot << "Setting up energy solve ..." << std::endl;
 
-        // Reusable BC descriptor used inside fct_explicit_step (for T_L) and after each substep.
-        const fv::hex::DirichletBCs< ScalarType > fct_bcs{
-            .T_cmb         = static_cast< ScalarType >( 1 ),
-            .T_surface     = static_cast< ScalarType >( 0 ),
-            .apply_cmb     = true,
-            .apply_surface = true };
         // --- FCT explicit time-stepping ---
         // Compute the exact stable dt from the actual face-normal velocity fluxes and cell
         // volumes via a parallel reduce over all cells.  This is more accurate than the
@@ -953,8 +952,8 @@ Result<> run( const Parameters& prm )
         const auto dt = prm.time_stepping_parameters.pseudo_cfl * dt_stable;
 
         logroot << "Computing dt (FCT stable) ..." << std::endl;
-        logroot << "    dt_stable: " << dt_stable << std::endl;
-        logroot << "=>  dt:        " << dt << std::endl;
+        logroot << "    dt_stable:                     " << dt_stable << std::endl;
+        logroot << "=>  dt (= dt_stable * pseudo_cfl): " << dt << std::endl;
 
         {
             util::Timer timer_fct_substeps( "fct_substeps" );
@@ -964,6 +963,13 @@ Result<> run( const Parameters& prm )
                 logroot << "Solving energy (FCT, substep " << i << ") ..." << std::endl;
 
                 {
+                    util::Timer timer_fct_source_step( "fct_explicit_step_updating_source_term" );
+                    if ( prm.physics_parameters.constant_internal_heating )
+                    {
+                        linalg::assign( T_source, prm.physics_parameters.constant_internal_heating_value );
+                    }
+                    timer_fct_source_step.stop();
+
                     util::Timer timer_fct_step( "fct_explicit_step" );
                     fv::hex::operators::fct_explicit_step(
                         domains[velocity_level],
@@ -975,7 +981,7 @@ Result<> run( const Parameters& prm )
                         dt,
                         fv_fct_bufs,
                         prm.physics_parameters.diffusivity,
-                        /*source=*/{},
+                        T_source.grid_data(),
                         /*subtract_divergence=*/true,
                         boundary_mask_data[velocity_level],
                         fct_bcs );
