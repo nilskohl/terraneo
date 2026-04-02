@@ -36,12 +36,11 @@ mainly focused on massively parallel mantle convection simulations on GPU (and C
 
 An incomplete list of features
 * Runs in massively parallel settings on CPU and GPU systems (via [Kokkos](https://github.com/kokkos/kokkos) and MPI)
-* Stable discretization of the generalized, compressible Stokes equations (Q1-iso-Q2 / Q1) using spherical wedge finite-elements
-* Advection-diffusion discretization using hexahedral [finite volumes with algebraic flux corrected transport (FCT)](#advection-diffusion)
-* Plate boundary conditions
+* Stable discretization of the [generalized, compressible Stokes equations](https://mantleconvection.github.io/terraneo/stokes.html) (Q1-iso-Q2 / Q1) using spherical wedge finite-elements
+* Advection-diffusion discretization using hexahedral [finite volumes with algebraic flux corrected transport (FCT)](https://mantleconvection.github.io/terraneo/advection-diffusion.html)
 * Fully matrix-free
-* Krylov methods and geometric multigrid preconditioners (using GCA coarse grid operators)
-* Memory efficient unified visualization and checkpoint format (using XDMF)
+* [Krylov methods and geometric multigrid preconditioners (using GCA coarse grid operators)](https://mantleconvection.github.io/terraneo/stokes.html)
+* Memory efficient [unified visualization and checkpoint format](https://mantleconvection.github.io/terraneo/classterra_1_1io_1_1XDMFOutput.html#details) (using XDMF)
 * Tools (input and output of radial profiles, spherical harmonics)
 * Written in modern C++20
 
