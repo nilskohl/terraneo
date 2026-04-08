@@ -80,9 +80,9 @@ class UnsteadyAdvectionDiffusion
     /// @param rhs    [out] Receives \f$M\,T^n\f$ (or \f$M\,T^n + \Delta t\,M\,f\f$).
     /// @param source Optional volumetric source term \f$f\f$ [T/time] (default: none).
     void compute_rhs(
-        const SrcVectorType&                       T_old,
-        DstVectorType&                             rhs,
-        const grid::Grid4DDataScalar< ScalarT >&   source = {} )
+        const SrcVectorType&                     T_old,
+        DstVectorType&                           rhs,
+        const grid::Grid4DDataScalar< ScalarT >& source = {} )
     {
         const bool has_source = ( source.data() != nullptr );
 
@@ -108,7 +108,7 @@ class UnsteadyAdvectionDiffusion
                 const ScalarT r_1 = radii( id, r - 1 );
                 const ScalarT r_2 = radii( id, r );
 
-                constexpr auto num_quad_points = fe::wedge::quadrature::quad_felippa_3x2_num_quad_points;
+                constexpr auto           num_quad_points = fe::wedge::quadrature::quad_felippa_3x2_num_quad_points;
                 dense::Vec< ScalarT, 3 > quad_points[num_quad_points];
                 ScalarT                  quad_weights[num_quad_points];
                 fe::wedge::quadrature::quad_felippa_3x2_quad_points( quad_points );
@@ -117,8 +117,8 @@ class UnsteadyAdvectionDiffusion
                 ScalarT M_ii = ScalarT( 0 );
                 for ( int wedge = 0; wedge < fe::wedge::num_wedges_per_hex_cell; ++wedge )
                     for ( int q = 0; q < num_quad_points; ++q )
-                        M_ii += Kokkos::abs( fe::wedge::jac( wedge_phy_surf[wedge], r_1, r_2, quad_points[q] ).det() )
-                                * quad_weights[q];
+                        M_ii += Kokkos::abs( fe::wedge::jac( wedge_phy_surf[wedge], r_1, r_2, quad_points[q] ).det() ) *
+                                quad_weights[q];
 
                 ScalarT val = M_ii * T_old_grid( id, x, y, r );
                 if ( has_source )
@@ -154,13 +154,15 @@ class UnsteadyAdvectionDiffusion
     KOKKOS_INLINE_FUNCTION void
         operator()( const int local_subdomain_id, const int x_cell, const int y_cell, const int r_cell ) const
     {
+        constexpr int cell_offset_x[num_neighbors] = { -1, 1, 0, 0, 0, 0 };
+        constexpr int cell_offset_y[num_neighbors] = { 0, 0, -1, 1, 0, 0 };
+        constexpr int cell_offset_r[num_neighbors] = { 0, 0, 0, 0, -1, 1 };
+
         ScalarT beta[num_neighbors];
         ScalarT M_ii;
         Vec3    S_f[num_neighbors];
         GH::compute_geometry(
-            grid_, radii_, cell_centers_, vel_grid_,
-            local_subdomain_id, x_cell, y_cell, r_cell,
-            beta, M_ii, S_f );
+            grid_, radii_, cell_centers_, vel_grid_, local_subdomain_id, x_cell, y_cell, r_cell, beta, M_ii, S_f );
 
         // Assemble (M + dt*A_upwind) stencil.
         ScalarT AD_ii                = ScalarT( 0 );
@@ -180,9 +182,9 @@ class UnsteadyAdvectionDiffusion
             // Diffusion (two-point flux, cell-to-cell vector from precomputed centers).
             if ( diffusivity_ != ScalarT( 0 ) )
             {
-                const int  nx = x_cell + GH::cell_offset_x[n];
-                const int  ny = y_cell + GH::cell_offset_y[n];
-                const int  nr = r_cell + GH::cell_offset_r[n];
+                const int  nx = x_cell + cell_offset_x[n];
+                const int  ny = y_cell + cell_offset_y[n];
+                const int  nr = r_cell + cell_offset_r[n];
                 const Vec3 neighbor_center{
                     cell_centers_( local_subdomain_id, nx, ny, nr, 0 ),
                     cell_centers_( local_subdomain_id, nx, ny, nr, 1 ),
@@ -194,7 +196,7 @@ class UnsteadyAdvectionDiffusion
                 const Vec3       dx                = neighbor_center - cell_center;
                 const ScalarType denom             = dx.dot( S_f[n] );
                 const ScalarType offdiag_diffusion = -diffusivity_ * ( S_f[n].dot( S_f[n] ) / denom );
-                AD_ii    -= offdiag_diffusion; // diagonal gets the negative of offdiag
+                AD_ii -= offdiag_diffusion; // diagonal gets the negative of offdiag
                 AD_ij[n] += offdiag_diffusion;
             }
         }
@@ -208,11 +210,12 @@ class UnsteadyAdvectionDiffusion
         ScalarType result = ( M_ii + dt_ * AD_ii ) * src_( local_subdomain_id, x_cell, y_cell, r_cell );
         for ( int n = 0; n < num_neighbors; ++n )
         {
-            result += dt_ * AD_ij[n] * src_(
-                local_subdomain_id,
-                x_cell + GH::cell_offset_x[n],
-                y_cell + GH::cell_offset_y[n],
-                r_cell + GH::cell_offset_r[n] );
+            result += dt_ * AD_ij[n] *
+                      src_(
+                          local_subdomain_id,
+                          x_cell + cell_offset_x[n],
+                          y_cell + cell_offset_y[n],
+                          r_cell + cell_offset_r[n] );
         }
         dst_( local_subdomain_id, x_cell, y_cell, r_cell ) = result;
     }
