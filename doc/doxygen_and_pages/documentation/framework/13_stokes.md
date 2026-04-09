@@ -14,9 +14,17 @@ We solve the steady-state Stokes equations governing slow, viscous mantle flow:
 -\nabla \cdot \boldsymbol{\tau}(\mathbf{u})
 
 + \nabla p &= \mathbf{f}, \\
-  \nabla \cdot \mathbf{u} &= g.
-  \end{aligned}
-  \f]
+    - \nabla \cdot \mathbf{u} &= g.
+      \end{aligned}
+      \f]
+
+> Note that we adhere to the convention of having a negative sign in front of the divergence term in the mass
+> conservation equation. This is important for the correct implementation of the compressibility terms later.
+> While this convection is not typical in the literature, it is more natural here because it reflects the implementation
+> and is required to make the system symmetric. This comes from the fact that the weak form of the pressure gradient 
+> in the momentum equation also introduces a negative sign 
+> (\f$\int_\Omega \mathbf{v} \cdot \nabla p = - \int_\Omega p \nabla \cdot \mathbf{v} + 
+> \int_{\partial \Omega} p \mathbf{n} \cdot \mathbf{v} \f$, with test function \f$\mathbf{v}\f$) 
 
 In the incompressible (Boussinesq) case \f$g = 0\f$. For compressible/anelastic
 extensions \f$g \neq 0\f$ but the momentum operator on the left-hand side stays the same
@@ -29,8 +37,10 @@ extensions \f$g \neq 0\f$ but the momentum operator on the left-hand side stays 
 - \f$\eta > 0\f$ — dynamic viscosity (scalar, possibly spatially varying),
 - \f$\boldsymbol{\varepsilon}(\mathbf{u}) = \frac{1}{2}(\nabla\mathbf{u} + (\nabla\mathbf{u})^T)\f$
   — symmetric strain-rate tensor,
-- \f$\boldsymbol{\tau}(\mathbf{u}) = 2\eta\bigl(\boldsymbol{\varepsilon}(\mathbf{u}) - \frac{1}{3}(\nabla\cdot\mathbf{u})\,\mathbf{I}\bigr)\f$
-  — deviatoric stress tensor,
+-
+
+\f$\boldsymbol{\tau}(\mathbf{u}) = 2\eta\bigl(\boldsymbol{\varepsilon}(\mathbf{u}) - \frac{1}{3}(\nabla\cdot\mathbf{u})\,\mathbf{I}\bigr)\f$
+— deviatoric stress tensor,
 
 - \f$\mathbf{f}\f$ — body force; for mantle convection the buoyancy
   \f$\mathbf{f} = \mathrm{Ra}\,T\,\hat{r}\f$ (Rayleigh number \f$\mathrm{Ra}\f$,
@@ -317,8 +327,6 @@ reflects the unconstrained stiffness rather than the BC-modified rows).
 
 ## Compressible and anelastic extensions {#stokes-compressible}
 
-> **Not yet tested - operator and linear forms have been implemented, though.**
-
 The goal is to approximate the full compressible mass conservation
 \f[
 \nabla\cdot(\rho\,\mathbf{u}) = 0
@@ -339,28 +347,27 @@ pressure equation gains a non-zero term \f$\mathbf{g}\f$:
 \f$A\f$, \f$B\f$, \f$B^T\f$, and the block-triangular preconditioner are unchanged
 (the Schur complement \f$S = -BA^{-1}B^T\f$ is independent of \f$\mathbf{g}\f$).
 
-### Truncated anelastic approximation and the frozen-velocity approach
+### Truncated anelastic liquid approximation (TALA) and the frozen-velocity approach
 
 > **Following [Ilangovan et al. (2026)](https://doi.org/10.5194/gmd-19-1455-2026). Consult the paper for details and
-> derivations.
-**
+> derivations.**
+
 
 The frozen velocity approach applied to the truncated anelastic approximation (TALA) replaces
-\f$\nabla\cdot\mathbf{u} = 0\f$ with:
+\f$-\nabla\cdot\mathbf{u} = 0\f$ with:
 \f[
-\nabla\cdot\mathbf{u} = -\frac{\nabla \rho}{\rho} \cdot \mathbf{u}^{\text{(old)}},
+- \nabla\cdot\mathbf{u} = \frac{\nabla \rho}{\rho} \cdot \mathbf{u}^{\text{(old)}},
 \f]
-introducing a linearization that results in the left-hand side of the pressure equation
+introducing a linearization that results in the left-hand side of the mass conservation equation
 being the same as in the incompressible case. The downside of this linearization is that
 the right-hand-side velocity is 'frozen' and typically taken from the previous time step,
 or improved via an outer iteration over the Stokes solver.
 
-The linear form that evaluates the left-hand side of the pressure equation is
+The linear form that evaluates the right-hand side of the pressure equation is
 \f[
 \mathbf{g}^\text{TALA}_i = \int_\Omega \frac{1}{\rho} \nabla\rho \cdot \mathbf{u} \, \phi_i \, \mathrm{d}x,
 \f]
 and implemented in `terra::fe::wedge::linearforms::shell::InvRhoGradRhoDotU`.
-Note that the minus sign in front of the integral is not part of the linear form.
 
 ### Projected density approximation (PDA)
 
@@ -370,15 +377,14 @@ derivations.**
 Therein, compressible flow is approximated by adding another term to the right-hand side of the mass conservation
 equation:
 \f[
-\nabla\cdot\mathbf{u} = \underbrace{-\frac{1}{\rho} \frac{\partial \rho}{\partial t}}_{\text{new term}} \quad
-\underbrace{-\frac{\nabla \rho}{\rho} \cdot \mathbf{u}^{\text{(old)}}}_{\text{see TALA}}.
+-\nabla\cdot\mathbf{u} = \underbrace{\frac{1}{\rho} \frac{\partial \rho}{\partial t}}_{\text{new term}} \quad + \quad
+\underbrace{\frac{\nabla \rho}{\rho} \cdot \mathbf{u}^{\text{(old)}}}_{\text{see TALA}}.
 \f]
 The new term involves a time derivative of the density \f$\rho\f$ that has to be approximated (via Euler or BDF2 for
 example) before the linear form is evaluated.
 
 The full right-hand side is evaluated via the PDA linear form:
 \f[
-\mathbf{g}^\text{PDA}_i = \mathbf{g}^\text{TALA}_i - \int_\Omega \frac{1}{\rho} \dot\rho \, \phi_i \, \mathrm{d}x.
+\mathbf{g}^\text{PDA}_i = \mathbf{g}^\text{TALA}_i + \int_\Omega \frac{1}{\rho} \dot\rho \, \phi_i \, \mathrm{d}x.
 \f]
 The second term is implemented in `terra::fe::wedge::linearforms::shell::InvRhoDrhoDt`.
-Note that the minus sign in front of the integral is not part of the linear form.
