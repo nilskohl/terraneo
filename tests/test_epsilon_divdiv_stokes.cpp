@@ -6,7 +6,6 @@
 //  - Sanity check: for a fixed global level, L2 errors must match across level_subdomains (0..2).
 
 #include "../src/terra/communication/shell/communication.hpp"
-
 #include "fe/strong_algebraic_dirichlet_enforcement.hpp"
 #include "fe/strong_algebraic_freeslip_enforcement.hpp"
 #include "fe/wedge/integrands.hpp"
@@ -22,9 +21,7 @@
 #include "fe/wedge/operators/shell/stokes.hpp"
 #include "fe/wedge/operators/shell/vector_laplace_simple.hpp"
 #include "fe/wedge/operators/shell/vector_mass.hpp"
-
 #include "grid/shell/bit_masks.hpp" // for util::has_flag + ShellBoundaryFlag helpers
-
 #include "io/xdmf.hpp"
 #include "linalg/solvers/block_preconditioner_2x2.hpp"
 #include "linalg/solvers/fgmres.hpp"
@@ -34,10 +31,8 @@
 #include "linalg/solvers/multigrid.hpp"
 #include "linalg/solvers/pcg.hpp"
 #include "linalg/solvers/pminres.hpp"
-#include "util/info.hpp"
 #include "linalg/solvers/richardson.hpp"
 #include "linalg/vector_q1isoq2_q1.hpp"
-
 #include "terra/dense/mat.hpp"
 #include "terra/fe/wedge/operators/shell/mass.hpp"
 #include "terra/grid/grid_types.hpp"
@@ -49,7 +44,7 @@
 #include "terra/linalg/solvers/diagonal_solver.hpp"
 #include "terra/linalg/solvers/power_iteration.hpp"
 #include "terra/shell/radial_profiles.hpp"
-
+#include "util/info.hpp"
 #include "util/init.hpp"
 #include "util/table.hpp"
 // If util::logroot() is declared in a dedicated header in your tree,
@@ -129,7 +124,7 @@ struct SolutionVelocityInterpolator
             const double cz = coords( 2 );
 
             data_u_( local_subdomain_id, x, y, r, 0 ) = -4 * Kokkos::cos( 4 * cz );
-            data_u_( local_subdomain_id, x, y, r, 1 ) =  8 * Kokkos::cos( 8 * cx );
+            data_u_( local_subdomain_id, x, y, r, 1 ) = 8 * Kokkos::cos( 8 * cx );
             data_u_( local_subdomain_id, x, y, r, 2 ) = -2 * Kokkos::cos( 2 * cy );
         }
     }
@@ -195,7 +190,7 @@ struct RHSVelocityInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        const real_t x0 = 4 * coords( 2 );
+        const real_t                  x0     = 4 * coords( 2 );
 
         data_( local_subdomain_id, x, y, r, 0 ) =
             -64.0 * ( Kokkos::sin( coords( 2 ) ) + 2 ) * Kokkos::cos( x0 ) -
@@ -235,7 +230,7 @@ struct KInterpolator
     void operator()( const int local_subdomain_id, const int x, const int y, const int r ) const
     {
         const dense::Vec< double, 3 > coords = grid::shell::coords( local_subdomain_id, x, y, r, grid_, radii_ );
-        const double value                   = 2 + Kokkos::sin( coords( 2 ) );
+        const double                  value  = 2 + Kokkos::sin( coords( 2 ) );
         data_( local_subdomain_id, x, y, r ) = value;
     }
 };
@@ -244,13 +239,13 @@ struct KInterpolator
 // Test
 // -----------------------------------------------------------------------------
 
-std::tuple< double, double, int >
-test( double kmax,
-      int gca,
-      int min_level,
-      int max_level,
-      int level_subdomains,
-      const std::shared_ptr< util::Table >& table )
+std::tuple< double, double, int > test(
+    double                                kmax,
+    int                                   gca,
+    int                                   min_level,
+    int                                   max_level,
+    int                                   level_subdomains,
+    const std::shared_ptr< util::Table >& table )
 {
     using ScalarType = double;
 
@@ -269,8 +264,7 @@ test( double kmax,
         const int idx = level - min_level;
 
         domains.push_back(
-            DistributedDomain::create_uniform(
-                level, level, r_min, r_max, level_subdomains, level_subdomains ) );
+            DistributedDomain::create_uniform( level, level, r_min, r_max, level_subdomains, level_subdomains ) );
 
         coords_shell.push_back( grid::shell::subdomain_unit_sphere_single_shell_coords< ScalarType >( domains[idx] ) );
         coords_radii.push_back( grid::shell::subdomain_shell_radii< ScalarType >( domains[idx] ) );
@@ -574,8 +568,7 @@ test( double kmax,
 
     constexpr auto num_mg_cycles = 1;
 
-    using PrecVisc =
-        linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
+    using PrecVisc = linalg::solvers::Multigrid< Viscous, Prolongation, Restriction, Smoother, CoarseGridSolver >;
 
     PrecVisc prec_11(
         P, R, A_c, tmp_mg_r, tmp_mg_e, tmp_mg, smoothers, smoothers, coarse_grid_solver, num_mg_cycles, 1e-8 );
@@ -603,9 +596,8 @@ test( double kmax,
     using PrecSchur = linalg::solvers::DiagonalSolver< PressureMass >;
     PrecSchur inv_lumped_pmass( lumped_diagonal_pmass );
 
-    using PrecStokes =
-        linalg::solvers::BlockTriangularPreconditioner2x2<
-            Stokes, Viscous, PressureMass, Gradient, PrecVisc, PrecSchur >;
+    using PrecStokes = linalg::solvers::
+        BlockTriangularPreconditioner2x2< Stokes, Viscous, PressureMass, Gradient, PrecVisc, PrecSchur >;
 
     VectorQ1IsoQ2Q1< ScalarType > triangular_prec_tmp(
         "triangular_prec_tmp",
@@ -635,7 +627,7 @@ test( double kmax,
     fgmres_options.max_iterations              = iters;
     fgmres_options.relative_residual_tolerance = 1e-10;
 
-    auto solver_table = std::make_shared< util::Table >();
+    auto                                          solver_table = std::make_shared< util::Table >();
     linalg::solvers::FGMRES< Stokes, PrecStokes > fgmres( tmp_fgmres, fgmres_options, solver_table, prec_stokes );
 
     util::logroot << "Solve ...\n";
@@ -684,10 +676,7 @@ test( double kmax,
 
     // Keep file outputs as-is (not "cout" related)
     io::XDMFOutput xdmf(
-        "out_eps",
-        domains[velocity_level],
-        coords_shell[velocity_level],
-        coords_radii[velocity_level] );
+        "out_eps", domains[velocity_level], coords_shell[velocity_level], coords_radii[velocity_level] );
     xdmf.add( k.grid_data() );
     xdmf.add( u.block_1().grid_data() );
     xdmf.add( solution.block_1().grid_data() );
@@ -710,8 +699,7 @@ test( double kmax,
     return {
         l2_error_velocity,
         l2_error_pressure,
-        static_cast<int>( solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() )
-    };
+        static_cast< int >( solver_table->query_rows_equals( "tag", "fgmres_solver" ).rows().size() ) };
 }
 
 // -----------------------------------------------------------------------------
@@ -752,7 +740,6 @@ int main( int argc, char** argv )
                 // Loop levels outer, so we can compare subdomain refinements on each fixed level.
                 for ( int level = minlevel + 1; level <= max_level; ++level )
                 {
-                  
                     // convergence orders (computed against previous level, using subdomain=0)
                     static bool   have_prev_level = false;
                     static double prev_l2_vel     = 1.0;
@@ -770,14 +757,13 @@ int main( int argc, char** argv )
 
                         const auto time_total = timer.seconds();
 
-                        table->add_row( { { "level", level },
-                                          { "level_subdomains", level_subdomains },
-                                          { "time_total", time_total } } );
+                        table->add_row(
+                            { { "level", level },
+                              { "level_subdomains", level_subdomains },
+                              { "time_total", time_total } } );
 
-                        util::logroot << "  errors: vel=" << l2_error_vel
-                                        << " pre=" << l2_error_pre
-                                        << " iters=" << iterations
-                                        << " time_total=" << time_total << "\n";
+                        util::logroot << "  errors: vel=" << l2_error_vel << " pre=" << l2_error_pre
+                                      << " iters=" << iterations << " time_total=" << time_total << "\n";
 
                         // store and sanity-check invariance across subdomain refinements at fixed level
                         err_vel[level][level_subdomains] = l2_error_vel;
@@ -785,17 +771,17 @@ int main( int argc, char** argv )
 
                         if ( level_subdomains > 0 )
                         {
-                            const double dv = std::abs( err_vel[level][level_subdomains] - err_vel[level][level_subdomains - 1] );
-                            const double dp = std::abs( err_pre[level][level_subdomains] - err_pre[level][level_subdomains - 1] );
+                            const double dv =
+                                std::abs( err_vel[level][level_subdomains] - err_vel[level][level_subdomains - 1] );
+                            const double dp =
+                                std::abs( err_pre[level][level_subdomains] - err_pre[level][level_subdomains - 1] );
 
                             // same spirit as your working test
                             if ( dv > 1e-3 || dp > 1e-3 )
                             {
                                 util::logroot
                                     << "ERROR: Same global level should have same error regardless of subdomains.\n"
-                                    << "  level=" << level
-                                    << " vel_diff=" << dv
-                                    << " pre_diff=" << dp << "\n";
+                                    << "  level=" << level << " vel_diff=" << dv << " pre_diff=" << dp << "\n";
                                 Kokkos::abort( "Error invariance w.r.t. subdomain refinement violated." );
                             }
                         }
@@ -803,9 +789,12 @@ int main( int argc, char** argv )
                         terra::util::Table::Row cycles;
                         cycles[std::string( "k_max=" ) + std::to_string( kmax )] = iterations;
 
-                        if ( gca == 1 )      table_gca->add_row( cycles );
-                        else if ( gca == 2 ) table_agca->add_row( cycles );
-                        else                 table_dca->add_row( cycles );
+                        if ( gca == 1 )
+                            table_gca->add_row( cycles );
+                        else if ( gca == 2 )
+                            table_agca->add_row( cycles );
+                        else
+                            table_dca->add_row( cycles );
                     }
 
                     // compute per-level order using subdomain refinement 0 (arbitrary choice; all match)
@@ -817,17 +806,18 @@ int main( int argc, char** argv )
                         const double order_vel = prev_l2_vel / curr_l2_vel;
                         const double order_pre = prev_l2_pre / curr_l2_pre;
 
-                        util::logroot << "Level " << level
-                                        << ": order_vel=" << order_vel
-                                        << " order_pre=" << order_pre
-                                        << " (using level_subdomains=0)\n";
+                        util::logroot << "Level " << level << ": order_vel=" << order_vel << " order_pre=" << order_pre
+                                      << " (using level_subdomains=0)\n";
 
                         table->add_row(
-                            { { "level", level }, { "level_subdomains", 0 }, { "order_vel", order_vel }, { "order_pre", order_pre } } );
+                            { { "level", level },
+                              { "level_subdomains", 0 },
+                              { "order_vel", order_vel },
+                              { "order_pre", order_pre } } );
                     }
 
-                    prev_l2_vel = curr_l2_vel;
-                    prev_l2_pre = curr_l2_pre;
+                    prev_l2_vel     = curr_l2_vel;
+                    prev_l2_pre     = curr_l2_pre;
                     have_prev_level = true;
                 }
             }
@@ -835,7 +825,14 @@ int main( int argc, char** argv )
 
         table->query_rows_not_none( "dofs_vel" )
             .select_columns(
-                { "level", "level_subdomains", "dofs_pre", "dofs_vel", "l2_error_pre", "l2_error_vel", "h_vel", "h_p" } )
+                { "level",
+                  "level_subdomains",
+                  "dofs_pre",
+                  "dofs_vel",
+                  "l2_error_pre",
+                  "l2_error_vel",
+                  "h_vel",
+                  "h_p" } )
             .print_pretty();
 
         table->query_rows_not_none( "order_vel" )
