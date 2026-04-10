@@ -949,11 +949,11 @@ Result<> run( const Parameters& prm )
             coords_shell[velocity_level],
             coords_radii[velocity_level],
             prm.physics_parameters.diffusivity );
-        const auto dt = prm.time_stepping_parameters.pseudo_cfl * dt_stable;
+        const auto dt = prm.time_stepping_parameters.dt_scaling * dt_stable;
 
         logroot << "Computing dt (FCT stable) ..." << std::endl;
         logroot << "    dt_stable:                     " << dt_stable << std::endl;
-        logroot << "=>  dt (= dt_stable * pseudo_cfl): " << dt << std::endl;
+        logroot << "=>  dt (= dt_stable * dt_scaling): " << dt << std::endl;
 
         {
             util::Timer timer_fct_substeps( "fct_substeps" );

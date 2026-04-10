@@ -173,9 +173,12 @@ struct ComputeDtStableKernel
 /// unlike the approximate estimate \f$h_\text{min,radial} / u_\text{max}\f$ which ignores
 /// lateral cell sizes and diffusion stiffness on non-orthogonal cells.
 ///
+/// @note The resulting time step size can still be too large to ensure an "accurate" time discretization.
+///       It can be a good idea to scale it down further in practice.
+///
 /// **Typical usage:**
 /// @code
-///   const ScalarType dt = pseudo_cfl * fv::hex::operators::compute_dt_stable(
+///   const ScalarType dt = dt_scaling * fv::hex::operators::compute_dt_stable(
 ///       domain, u, cell_centers.grid_data(), coords_shell, coords_radii, diffusivity);
 /// @endcode
 ///

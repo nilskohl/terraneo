@@ -77,7 +77,7 @@ struct EnergySolverParameters
 
 struct TimeSteppingParameters
 {
-    double pseudo_cfl = 0.5;
+    double dt_scaling = 0.5;
     double t_end      = 1.0;
 
     int max_timesteps = 10;
@@ -236,7 +236,7 @@ inline util::Result< std::variant< CLIHelp, Parameters > > parse_parameters( int
     /// Time discretization ///
     ///////////////////////////
 
-    add_option_with_default( app, "--pseudo-cfl", parameters.time_stepping_parameters.pseudo_cfl )
+    add_option_with_default( app, "--dt-scaling", parameters.time_stepping_parameters.dt_scaling )
         ->description(
             "A robust (stable) dt is computed the the actual face-normal velocity fluxes and cell volumes via a "
             "parallel reduce over all cells. However, a smaller value might still be desired due to accuracy "
